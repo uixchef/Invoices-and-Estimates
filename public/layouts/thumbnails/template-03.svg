@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="849" viewBox="0 0 600 849" fill="none">
+<rect width="600" height="849" fill="#ffffff"/>
+
+<defs><linearGradient id="g3" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#7a5af8"/><stop offset="1" stop-color="#b692f6"/></linearGradient></defs>
+<path d="M0 0 H600 V128 Q300 168 0 128 Z" fill="url(#g3)"/>
+
+    <rect x="56" y="40" width="34" height="34" rx="9" fill="#ffffff"/>
+    <path d="M66 51 h14 M73 51 v14" stroke="#7a5af8" stroke-width="2.6" stroke-linecap="round"/>
+    <text x="100" y="55" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="800" fill="#ffffff">brandX</text>
+    <text x="100" y="70" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#ffffff" opacity="0.6">www.brandx.studio</text>
+    
+<text x="544" y="60" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="28" font-weight="800" fill="#ffffff" text-anchor="end" letter-spacing="3">INVOICE</text>
+<text x="544" y="82" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="11" fill="#ffffff" opacity="0.85" text-anchor="end">No. SET-010301</text>
+
+
+    <text x="56" y="164" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="700" fill="#7a5af8" letter-spacing="1">BILL TO</text>
+    <text x="56" y="186" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#101828">Sarthak Goyal</text>
+    <text x="56" y="204" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10.5" fill="#667085">hello@brandx.com</text>
+    <text x="56" y="220" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10.5" fill="#667085">Raja Park, Jaipur, India</text>
+    
+<g>
+    <text x="544" y="164" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10.5" fill="#667085" text-anchor="end">Invoice No.</text>
+    <text x="544" y="180" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="700" fill="#101828" text-anchor="end">SET-010301</text>
+    <text x="544" y="204" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10.5" fill="#667085" text-anchor="end">Issue date</text>
+    <text x="544" y="220" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828" text-anchor="end">Aug 6, 2025</text>
+    </g>
+<rect x="56" y="250" width="488" height="30" rx="6" fill="#7a5af8" opacity="0.10"/>
+<text x="56" y="270" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="11" font-weight="700" fill="#7a5af8" text-anchor="start" letter-spacing="0.5">ITEM</text>
+<text x="360" y="270" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="11" font-weight="700" fill="#7a5af8" text-anchor="end" letter-spacing="0.5">QTY</text>
+<text x="438" y="270" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="11" font-weight="700" fill="#7a5af8" text-anchor="end" letter-spacing="0.5">RATE</text>
+<text x="516" y="270" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="11" font-weight="700" fill="#7a5af8" text-anchor="end" letter-spacing="0.5">AMOUNT</text>
+<text x="56" y="294" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828">Service item 1</text>
+<text x="56" y="309" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#667085">Description of the delivered work</text>
+<text x="360" y="294" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" fill="#667085" text-anchor="end">1</text>
+<text x="438" y="294" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" fill="#667085" text-anchor="end">$120</text>
+<text x="516" y="294" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828" text-anchor="end">$120.00</text>
+<line x1="56" y1="316" x2="544" y2="316" stroke="#667085" stroke-opacity="0.18"/>
+<rect x="50" y="324" width="500" height="34" rx="4" fill="#f7f9fc"/>
+<text x="56" y="340" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828">Service item 2</text>
+<text x="56" y="355" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#667085">Description of the delivered work</text>
+<text x="360" y="340" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" fill="#667085" text-anchor="end">2</text>
+<text x="438" y="340" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" fill="#667085" text-anchor="end">$120</text>
+<text x="516" y="340" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828" text-anchor="end">$240.00</text>
+<line x1="56" y1="362" x2="544" y2="362" stroke="#667085" stroke-opacity="0.18"/>
+<text x="56" y="386" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828">Service item 3</text>
+<text x="56" y="401" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#667085">Description of the delivered work</text>
+<text x="360" y="386" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" fill="#667085" text-anchor="end">3</text>
+<text x="438" y="386" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" fill="#667085" text-anchor="end">$120</text>
+<text x="516" y="386" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828" text-anchor="end">$360.00</text>
+<line x1="56" y1="408" x2="544" y2="408" stroke="#667085" stroke-opacity="0.18"/>
+<rect x="50" y="416" width="500" height="34" rx="4" fill="#f7f9fc"/>
+<text x="56" y="432" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828">Service item 4</text>
+<text x="56" y="447" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#667085">Description of the delivered work</text>
+<text x="360" y="432" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" fill="#667085" text-anchor="end">4</text>
+<text x="438" y="432" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" fill="#667085" text-anchor="end">$120</text>
+<text x="516" y="432" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828" text-anchor="end">$480.00</text>
+<line x1="56" y1="454" x2="544" y2="454" stroke="#667085" stroke-opacity="0.18"/>
+<text x="56" y="478" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828">Service item 5</text>
+<text x="56" y="493" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#667085">Description of the delivered work</text>
+<text x="360" y="478" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" fill="#667085" text-anchor="end">5</text>
+<text x="438" y="478" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" fill="#667085" text-anchor="end">$120</text>
+<text x="516" y="478" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#101828" text-anchor="end">$600.00</text>
+<line x1="56" y1="500" x2="544" y2="500" stroke="#667085" stroke-opacity="0.18"/>
+<text x="364" y="538" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#667085">Subtotal</text>
+<text x="544" y="538" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="11.5" font-weight="400" fill="#101828" text-anchor="end">$1,800.00</text>
+<text x="364" y="562" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#667085">Tax (18%)</text>
+<text x="544" y="562" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="11.5" font-weight="400" fill="#101828" text-anchor="end">$324.00</text>
+<rect x="364" y="576" width="180" height="38" rx="8" fill="#7a5af8"/>
+<text x="376" y="600" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="12" font-weight="600" fill="#ffffff" opacity="0.85">Total Due</text>
+<text x="532" y="601" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="15" font-weight="700" fill="#ffffff" text-anchor="end">$2,124.00</text>
+<text x="56" y="795" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10.5" font-weight="700" fill="#101828">Thank you for your business</text>
+<text x="56" y="813" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#667085">Payment due within 30 days · ACH / Card accepted</text>
+</svg>

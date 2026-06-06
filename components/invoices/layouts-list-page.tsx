@@ -1,0 +1,126 @@
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
+import { useFilterBarState } from "@/hooks/use-filter-bar-state"
+import { LayoutGrid } from "@/components/invoices/layout-grid"
+import { LayoutToolbar, type LayoutsViewMode } from "@/components/invoices/layout-toolbar"
+import {
+  LAYOUTS_PAGINATION_THRESHOLD,
+  LayoutTable,
+} from "@/components/invoices/layout-table"
+import { LayoutsPagination } from "@/components/invoices/layouts-pagination"
+import {
+  buildLayoutFilterDefinitions,
+  EMPTY_SELECTIONS,
+  FILTER_TYPES,
+} from "@/lib/layout-filters"
+import { filterRows } from "@/lib/filter-layouts"
+import type { LayoutRow } from "@/lib/layouts-data"
+import { useMediumsStore } from "@/lib/mediums-store"
+import { compareByMostRecent } from "@/lib/sort-by-updated"
+
+type LayoutsListPageProps = {
+  rows: LayoutRow[]
+}
+
+export function LayoutsListPage({ rows }: LayoutsListPageProps) {
+  const { mediums } = useMediumsStore()
+  const filterDefinitions = useMemo(
+    () => buildLayoutFilterDefinitions(mediums),
+    [mediums]
+  )
+
+  const [searchQuery, setSearchQuery] = useState("")
+  const [view, setView] = useState<LayoutsViewMode>("grid")
+  const [sort, setSort] = useState<"name" | "updated">("updated")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+
+  const {
+    openFilterId,
+    openFilterAnchor,
+    selections,
+    filterDraftIds,
+    visibleFilterTags,
+    setFilterDraftIds,
+    handleFilterApply,
+    handleToolbarFilterOpenChange,
+    handleTableFilterOpenChange,
+    handleAddFilter,
+    handleRemoveFilter,
+  } = useFilterBarState(FILTER_TYPES, EMPTY_SELECTIONS)
+
+  const filtered = useMemo(() => {
+    const result = filterRows(rows, selections, searchQuery)
+    return [...result].sort((a, b) => {
+      if (sort === "updated") {
+        return compareByMostRecent(a, b)
+      }
+      return a.name.localeCompare(b.name, undefined, { numeric: true })
+    })
+  }, [rows, selections, searchQuery, sort])
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, selections, sort, pageSize])
+
+  const pageItems = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page, pageSize])
+
+  const needsPagination = filtered.length >= LAYOUTS_PAGINATION_THRESHOLD
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <LayoutToolbar
+        filterDefinitions={filterDefinitions}
+        view={view}
+        onViewChange={setView}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onSortChange={setSort}
+        openFilterId={openFilterId}
+        openFilterAnchor={openFilterAnchor}
+        selections={selections}
+        filterDraftIds={filterDraftIds}
+        visibleFilterTags={visibleFilterTags}
+        onFilterDraftIdsChange={setFilterDraftIds}
+        onFilterApply={handleFilterApply}
+        onToolbarFilterOpenChange={handleToolbarFilterOpenChange}
+        onAddFilter={handleAddFilter}
+        onRemoveFilter={handleRemoveFilter}
+      />
+
+      {view === "list" ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <LayoutTable
+            items={pageItems}
+            needsPagination={needsPagination}
+            filterDefinitions={filterDefinitions}
+            openFilterId={openFilterId}
+            openFilterAnchor={openFilterAnchor}
+            selections={selections}
+            filterDraftIds={filterDraftIds}
+            onFilterOpenChange={handleTableFilterOpenChange}
+            onFilterDraftIdsChange={setFilterDraftIds}
+            onFilterApply={handleFilterApply}
+          />
+          {needsPagination ? (
+            <LayoutsPagination
+              total={filtered.length}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          ) : null}
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <LayoutGrid items={filtered} />
+        </div>
+      )}
+    </div>
+  )
+}

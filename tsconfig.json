@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@gohighlevel/ghl-icons/24/outline": ["./lib/highrise/ghl-icons/index.ts"]
     }
   },
   "include": [
