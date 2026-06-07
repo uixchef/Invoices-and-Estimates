@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="849" viewBox="0 0 600 849" fill="none">
+<rect width="600" height="849" fill="#ffffff"/>
+
+<text x="40" y="34" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#475467">BranditX, digital design agency</text>
+<text x="40" y="48" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#475467">www.branditx.co</text>
+<text x="40" y="62" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#475467">+918690001213</text>
+
+<text x="300" y="52" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="18" font-weight="600" fill="#3e4784" text-anchor="middle">INVOICE</text>
+
+<rect x="496" y="18" width="44" height="44" rx="8" fill="#eaecf5"/>
+<rect x="504" y="26" width="14" height="14" rx="2" fill="#3e4784"/>
+<rect x="522" y="26" width="14" height="14" rx="2" fill="#98a2b3"/>
+<rect x="504" y="44" width="14" height="14" rx="2" fill="#98a2b3"/>
+<rect x="522" y="44" width="14" height="14" rx="2" fill="#3e4784"/>
+
+<line x1="40" y1="78" x2="560" y2="78" stroke="#eaecf0"/>
+
+<text x="40" y="100" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#101828">Billed to</text>
+<text x="40" y="116" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#475467">Sarthak Goyal</text>
+<text x="40" y="130" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9.5" fill="#475467">hey@uixchef.com</text>
+
+<rect x="360" y="86" width="62" height="42" fill="#eaecf5"/>
+<text x="391" y="100" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="8" font-weight="500" fill="#3e4784" text-anchor="middle">Issue date</text>
+<text x="391" y="114" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="8" fill="#3e4784" text-anchor="middle">06/08/2025</text>
+
+<rect x="422" y="86" width="62" height="42" fill="#3e4784"/>
+<text x="453" y="100" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="8" font-weight="500" fill="#ffffff" text-anchor="middle">Invoice no.</text>
+<text x="453" y="114" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="8" fill="#ffffff" text-anchor="middle">SET010301</text>
+
+<rect x="484" y="86" width="76" height="42" fill="#eaecf5"/>
+<text x="522" y="100" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="8" font-weight="500" fill="#3e4784" text-anchor="middle">Due date</text>
+<text x="522" y="114" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="8" fill="#3e4784" text-anchor="middle">05/10/2025</text>
+
+<rect x="446" y="134" width="114" height="24" rx="4" fill="#3e4784"/>
+<text x="503" y="150" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="600" fill="#ffffff" text-anchor="middle">Pay $283.90</text>
+
+<line x1="40" y1="168" x2="560" y2="168" stroke="#d0d5dd"/>
+
+<text x="40" y="186" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="600" fill="#101828">Item</text>
+<text x="330" y="186" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="600" fill="#101828">Price</text>
+<text x="390" y="186" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="600" fill="#101828">Qty</text>
+<text x="430" y="186" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="600" fill="#101828">Tax</text>
+<text x="560" y="186" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="600" fill="#101828" text-anchor="end">Subtotal</text>
+<line x1="40" y1="192" x2="560" y2="192" stroke="#d0d5dd"/>
+
+<text x="40" y="212" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#475467">Product 1</text>
+<text x="330" y="212" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#475467">$35.00</text>
+<text x="390" y="212" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#475467">1</text>
+<text x="430" y="212" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#475467">18%</text>
+<text x="560" y="212" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#475467" text-anchor="end">$56.78</text>
+<text x="40" y="226" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="8.5" fill="#475467">Sustainably sourced from Colombia and Ethiopia...</text>
+<line x1="40" y1="236" x2="560" y2="236" stroke="#d0d5dd"/>
+
+<text x="40" y="254" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#475467">Product 2</text>
+<text x="560" y="254" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#475467" text-anchor="end">$56.78</text>
+<line x1="40" y1="262" x2="560" y2="262" stroke="#d0d5dd"/>
+<text x="40" y="280" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#475467">Product 3</text>
+<text x="560" y="280" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#475467" text-anchor="end">$56.78</text>
+<line x1="40" y1="288" x2="560" y2="288" stroke="#d0d5dd"/>
+<text x="40" y="306" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#475467">Product 4</text>
+<text x="560" y="306" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#475467" text-anchor="end">$56.78</text>
+<line x1="40" y1="314" x2="560" y2="314" stroke="#d0d5dd"/>
+<text x="40" y="332" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#475467">Product 5</text>
+<text x="560" y="332" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#475467" text-anchor="end">$56.78</text>
+
+<text x="360" y="364" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#475467">Subtotal</text>
+<text x="560" y="364" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#101828" text-anchor="end">$283.90</text>
+<text x="360" y="382" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#3e4784">Discount (12%)</text>
+<text x="560" y="382" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#101828" text-anchor="end">-$56.78</text>
+<text x="360" y="400" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#475467">Taxable subtotal</text>
+<text x="560" y="400" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#101828" text-anchor="end">$283.90</text>
+<text x="360" y="418" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#3e4784">Central tax (10%)</text>
+<text x="560" y="418" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#101828" text-anchor="end">$28.39</text>
+<text x="360" y="436" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#3e4784">City tax (8%)</text>
+<text x="560" y="436" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" fill="#101828" text-anchor="end">$22.71</text>
+
+<rect x="88" y="452" width="54" height="16" rx="8" fill="#fffaeb"/>
+<text x="115" y="463" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="8" font-weight="500" fill="#b54708" text-anchor="middle">Pending</text>
+<text x="150" y="463" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9" font-weight="500" fill="#3e4784">Payment 1 of 2</text>
+<text x="360" y="463" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9" font-weight="500" fill="#3e4784">Due Aug 15, 2024</text>
+<text x="560" y="463" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9" fill="#475467" text-anchor="end">$56.78</text>
+
+<rect x="88" y="474" width="54" height="16" rx="8" fill="#fffaeb"/>
+<text x="115" y="485" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="8" font-weight="500" fill="#b54708" text-anchor="middle">Pending</text>
+<text x="150" y="485" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9" font-weight="500" fill="#3e4784">Payment 2 of 2</text>
+<text x="360" y="485" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9" font-weight="500" fill="#3e4784">Due Sept 30, 2024</text>
+<text x="560" y="485" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9" fill="#475467" text-anchor="end">$56.78</text>
+
+<line x1="360" y1="500" x2="560" y2="500" stroke="#d0d5dd"/>
+<text x="360" y="520" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#101828">Amount due (in USD)</text>
+<text x="560" y="520" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="10" font-weight="500" fill="#101828" text-anchor="end">$283.90</text>
+
+<text x="560" y="812" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="9" fill="#475467" text-anchor="end">Reverse charge (Article 197 - Directive 2006/112 EC)</text>
+</svg>

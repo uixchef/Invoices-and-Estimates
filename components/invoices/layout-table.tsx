@@ -25,6 +25,7 @@ import type { FilterDefinition, LayoutFilterType } from "@/lib/layout-filters"
 import { FILTER_DEFINITIONS } from "@/lib/layout-filters"
 import type { LayoutFilterSelections } from "@/lib/filter-layouts"
 import type { LayoutRow } from "@/lib/layouts-data"
+import { useLayoutPreview } from "@/lib/layout-preview-context"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { cn } from "@/lib/utils"
 
@@ -170,6 +171,7 @@ function StatusBadge({ status }: { status: LayoutRow["status"] }) {
 
 function LayoutTableRow({ item }: { item: LayoutRow }) {
   const { getMediumName } = useMediumsStore()
+  const { open } = useLayoutPreview()
 
   return (
     <div
@@ -216,6 +218,7 @@ function LayoutTableRow({ item }: { item: LayoutRow }) {
           type="button"
           aria-label={`Preview ${item.name}`}
           className={ACTION_BUTTON_CLASS}
+          onClick={() => open(item)}
         >
           <Eye className="size-4" aria-hidden />
         </button>

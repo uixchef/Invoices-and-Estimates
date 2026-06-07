@@ -8,7 +8,9 @@ import {
 } from "@/components/payment-hub/hub-toast"
 import { Sidebar } from "@/components/payment-hub/Sidebar"
 import { Topbar } from "@/components/payment-hub/Topbar"
+import { LayoutPreviewPanel } from "@/components/invoices/layout-preview-panel"
 import { CreateWithAiProvider } from "@/lib/create-with-ai-context"
+import { LayoutPreviewProvider } from "@/lib/layout-preview-context"
 import { MediumEditorProvider } from "@/lib/medium-editor-context"
 import { isMediumEditorRoute } from "@/lib/medium-routes"
 import { MediumsStoreProvider } from "@/lib/mediums-store"
@@ -29,6 +31,7 @@ export function PaymentHubShell({
     <HubToastProvider>
       <MediumsStoreProvider>
         <CreateWithAiProvider>
+        <LayoutPreviewProvider>
         {isMediumEditor ? (
           <MediumEditorProvider>
             <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#ECEEF2] text-foreground">
@@ -53,6 +56,8 @@ export function PaymentHubShell({
             </div>
           </div>
         )}
+        <LayoutPreviewPanel />
+        </LayoutPreviewProvider>
         </CreateWithAiProvider>
       </MediumsStoreProvider>
     </HubToastProvider>

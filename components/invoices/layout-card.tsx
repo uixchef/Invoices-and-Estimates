@@ -5,6 +5,7 @@ import { Eye, MoreVertical, Pencil } from "lucide-react"
 import type { LayoutRow } from "@/lib/layouts-data"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { getLayoutThumbnail } from "@/lib/layout-thumbnails"
+import { useLayoutPreview } from "@/lib/layout-preview-context"
 import { usePreviewReveal } from "@/lib/use-preview-reveal"
 import { cn } from "@/lib/utils"
 
@@ -64,6 +65,8 @@ function ThumbnailSkeleton() {
 }
 
 function LayoutCardActions({ item }: { item: LayoutRow }) {
+  const { open } = useLayoutPreview()
+
   return (
     <div
       className={cn(
@@ -90,6 +93,7 @@ function LayoutCardActions({ item }: { item: LayoutRow }) {
       <button
         type="button"
         aria-label={`Preview ${item.name}`}
+        onClick={() => open(item)}
         className={cn(
           "inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-2 rounded border border-[#d0d5dd] bg-white px-2.5 py-1.5",
           "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#475467]",
