@@ -5,9 +5,12 @@ import { createPortal } from "react-dom"
 import { Copy, Pencil, Trash2, X } from "lucide-react"
 
 import type { LayoutRow } from "@/lib/layouts-data"
+import { useLayoutClone } from "@/lib/layout-clone-context"
+import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { useLayoutPreview } from "@/lib/layout-preview-context"
 import { getLayoutThumbnail } from "@/lib/layout-thumbnails"
 import { useMediumsStore } from "@/lib/mediums-store"
+import { Button } from "@/components/highrise/button"
 import { cn } from "@/lib/utils"
 
 function PreviewStatusTag({ status }: { status: LayoutRow["status"] }) {
@@ -45,17 +48,13 @@ function PreviewTypeTag({ label }: { label: LayoutRow["type"] }) {
   )
 }
 
-const FOOTER_BUTTON_BASE = cn(
-  "inline-flex h-9 w-full items-center justify-center gap-2 rounded border px-2.5 py-1.5",
-  "font-[family-name:var(--font-inter)] text-base font-semibold leading-6 outline-none transition-colors",
-  "focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-)
-
 /**
  * Figma: Preview · Side Panel (3175:35035).
  */
 export function LayoutPreviewPanel() {
   const { layout, isOpen, close } = useLayoutPreview()
+  const { cloneLayout } = useLayoutClone()
+  const { requestDelete } = useLayoutDelete()
   const { getMediumName } = useMediumsStore()
 
   useEffect(() => {
@@ -154,7 +153,7 @@ export function LayoutPreviewPanel() {
               <div className="h-full overflow-y-auto overflow-x-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={getLayoutThumbnail(layout.id)}
+                  src={getLayoutThumbnail(layout.id, layout.clonedFromId)}
                   alt={`Preview of ${layout.name}`}
                   className="block h-auto w-full"
                 />
@@ -162,38 +161,30 @@ export function LayoutPreviewPanel() {
             </div>
 
             <footer className="flex shrink-0 flex-col gap-3">
-              <button
-                type="button"
-                className={cn(
-                  FOOTER_BUTTON_BASE,
-                  "border-[#155eef] bg-[#155eef] text-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] hover:bg-[#004eeb]"
-                )}
-              >
+              <Button type="button" variant="primary" className="w-full px-2.5">
                 <Pencil className="size-4 shrink-0" aria-hidden />
                 Edit layout
-              </button>
+              </Button>
 
               <div className="flex gap-3">
-                <button
+                <Button
                   type="button"
-                  className={cn(
-                    FOOTER_BUTTON_BASE,
-                    "flex-1 border-[#d0d5dd] bg-white text-[#475467] shadow-[0_1px_2px_rgba(16,24,40,0.05)] hover:bg-[#f9fafb]"
-                  )}
+                  variant="neutral"
+                  className="w-full flex-1 px-2.5"
+                  onClick={() => layout && cloneLayout(layout)}
                 >
                   <Copy className="size-4 shrink-0" aria-hidden />
                   Clone
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className={cn(
-                    FOOTER_BUTTON_BASE,
-                    "flex-1 border-[#fef3f2] bg-[#fef3f2] text-[#b42318] hover:bg-[#fee4e2]"
-                  )}
+                  variant="destructive-tertiary"
+                  className="w-full flex-1 px-2.5"
+                  onClick={() => layout && requestDelete(layout)}
                 >
-                  <Trash2 className="size-4 shrink-0 text-[#b42318]" aria-hidden />
+                  <Trash2 className="size-4 shrink-0" aria-hidden />
                   Delete
-                </button>
+                </Button>
               </div>
             </footer>
           </div>

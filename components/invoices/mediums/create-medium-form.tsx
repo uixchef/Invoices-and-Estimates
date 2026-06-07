@@ -2,9 +2,11 @@
 
 import {
   ContentSwitcher,
-  FormSectionDivider,
   MediumFormLabel,
+  MediumSectionDivider,
+  MediumSectionTitle,
   NumberStepperInput,
+  SafeAreaPadding,
 } from "@/components/invoices/mediums/medium-form-fields"
 import {
   applyOrientation,
@@ -26,23 +28,13 @@ type CreateMediumFormProps = {
 export function CreateMediumForm({ state, onChange }: CreateMediumFormProps) {
   const isCustomPaper = isCustomPaperSize(state.paperSize)
 
-  const updateSafeArea = (
-    side: keyof MediumFormState["safeArea"],
-    value: number
-  ) => {
-    onChange({
-      ...state,
-      safeArea: { ...state.safeArea, [side]: value },
-    })
-  }
-
   return (
     <form
-      className="flex min-w-0 flex-col gap-8"
+      className="flex w-full flex-col gap-6"
       onSubmit={(event) => event.preventDefault()}
     >
       <section className="flex flex-col gap-4">
-        <FormSectionDivider label="Paper" />
+        <MediumSectionTitle>Paper</MediumSectionTitle>
 
         <div className="flex gap-4">
           <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -93,39 +85,20 @@ export function CreateMediumForm({ state, onChange }: CreateMediumFormProps) {
         </div>
       </section>
 
-      <section className="flex flex-col gap-4">
-        <FormSectionDivider label="Safe area" />
+      <MediumSectionDivider />
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <NumberStepperInput
-            id="safe-top"
-            label="Top"
-            value={state.safeArea.top}
-            onChange={(top) => updateSafeArea("top", top)}
-          />
-          <NumberStepperInput
-            id="safe-right"
-            label="Right"
-            value={state.safeArea.right}
-            onChange={(right) => updateSafeArea("right", right)}
-          />
-          <NumberStepperInput
-            id="safe-bottom"
-            label="Bottom"
-            value={state.safeArea.bottom}
-            onChange={(bottom) => updateSafeArea("bottom", bottom)}
-          />
-          <NumberStepperInput
-            id="safe-left"
-            label="Left"
-            value={state.safeArea.left}
-            onChange={(left) => updateSafeArea("left", left)}
-          />
-        </div>
+      <section className="flex flex-col gap-4">
+        <MediumSectionTitle>Safe area</MediumSectionTitle>
+        <SafeAreaPadding
+          value={state.safeArea}
+          onChange={(safeArea) => onChange({ ...state, safeArea })}
+        />
       </section>
 
+      <MediumSectionDivider />
+
       <section className="flex flex-col gap-4">
-        <FormSectionDivider label="Output" />
+        <MediumSectionTitle>Output</MediumSectionTitle>
 
         <div className="flex flex-col gap-1">
           <MediumFormLabel htmlFor="resolution">Resolution</MediumFormLabel>

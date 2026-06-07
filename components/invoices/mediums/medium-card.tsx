@@ -7,6 +7,7 @@ import { MediumPreviewStage } from "@/components/invoices/mediums/medium-preview
 import { mediumRowToFormState } from "@/lib/medium-form"
 import { getMediumEditorHref } from "@/lib/medium-routes"
 import type { MediumRow } from "@/lib/mediums-data"
+import { useMediumDelete } from "@/lib/medium-delete-context"
 import { usePreviewReveal } from "@/lib/use-preview-reveal"
 import { cn } from "@/lib/utils"
 
@@ -41,6 +42,8 @@ function MediumCardActions({
   item: MediumRow
   editHref: string
 }) {
+  const { requestDelete } = useMediumDelete()
+
   return (
     <div
       className={cn(
@@ -66,6 +69,7 @@ function MediumCardActions({
       <button
         type="button"
         aria-label={`Delete ${item.name}`}
+        onClick={() => requestDelete(item)}
         className={cn(
           "inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-2 rounded border border-[#fda29b] bg-white px-2.5 py-1.5",
           "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#b42318]",

@@ -28,6 +28,7 @@ type MediumsStoreValue = {
   updateMediumName: (mediumId: string, name: string) => void
   saveMedium: (mediumId: string, input: MediumSaveInput) => void
   createMedium: (input: MediumSaveInput) => string
+  deleteMedium: (mediumId: string) => void
 }
 
 const MediumsStoreContext = createContext<MediumsStoreValue | null>(null)
@@ -78,6 +79,10 @@ export function MediumsStoreProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const deleteMedium = useCallback((mediumId: string) => {
+    setMediums((current) => current.filter((medium) => medium.id !== mediumId))
+  }, [])
+
   const createMedium = useCallback((input: MediumSaveInput) => {
     const trimmed = input.name.trim() || "New medium"
     const fields = mediumFormToRowFields(input.formState)
@@ -104,6 +109,7 @@ export function MediumsStoreProvider({ children }: { children: ReactNode }) {
       updateMediumName,
       saveMedium,
       createMedium,
+      deleteMedium,
     }),
     [
       mediums,
@@ -112,6 +118,7 @@ export function MediumsStoreProvider({ children }: { children: ReactNode }) {
       updateMediumName,
       saveMedium,
       createMedium,
+      deleteMedium,
     ]
   )
 

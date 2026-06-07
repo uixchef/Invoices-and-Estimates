@@ -1,15 +1,17 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   ArrowUp,
   Check,
   ChevronDown,
+  FileText,
   ImageIcon,
   Paperclip,
   Ruler,
   Search,
   Upload,
+  X,
 } from "lucide-react"
 
 import {
@@ -19,6 +21,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { useCreateWithAi } from "@/lib/create-with-ai-context"
+import type { PromptAttachment } from "@/lib/create-with-ai-types"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { cn } from "@/lib/utils"
 
@@ -58,7 +62,46 @@ const AI_MODELS: AiModel[] = [
   },
 ]
 
-const PAGE_LAYOUT_PLACEHOLDER = "Page layout"
+const MEDIUM_PLACEHOLDER = "Medium"
+
+function PromptAttachmentChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: PromptAttachment
+  onRemove: (id: string) => void
+}) {
+  return (
+    <div
+      className={cn(
+        "inline-flex h-8 max-w-full items-center gap-2 rounded-md bg-[#f2f4f7] py-1 pl-1 pr-2",
+        "font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#344054]"
+      )}
+    >
+      {attachment.usedForGeneration && attachment.previewUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={attachment.previewUrl}
+          alt=""
+          className="size-6 shrink-0 rounded object-cover"
+        />
+      ) : (
+        <span className="flex size-6 shrink-0 items-center justify-center rounded bg-white text-[#667085]">
+          <FileText className="size-3.5" aria-hidden />
+        </span>
+      )}
+      <span className="min-w-0 truncate">{attachment.name}</span>
+      <button
+        type="button"
+        aria-label={`Remove ${attachment.name}`}
+        onClick={() => onRemove(attachment.id)}
+        className="inline-flex size-5 shrink-0 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:bg-[#eaecf0] hover:text-[#344054] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+      >
+        <X className="size-3.5" aria-hidden />
+      </button>
+    </div>
+  )
+}
 
 function PillButton({
   children,
@@ -109,7 +152,7 @@ type CreateWithAiPromptInputProps = {
 
 /**
  * Figma Prompt Input (3150:142530) — Default / Click × empty / filled,
- * with attachment, AI model, and page-layout (mediums) dropdowns.
+ * with attachment, AI model, and medium dropdowns.
  */
 export function CreateWithAiPromptInput({
   promptRef,
@@ -117,7 +160,39 @@ export function CreateWithAiPromptInput({
   onChange,
 }: CreateWithAiPromptInputProps) {
   const { mediums } = useMediumsStore()
+  const {
+    attachments,
+    addAttachments,
+    removeAttachment,
+    generateLayout,
+  } = useCreateWithAi()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+  const syncTextareaHeight = useCallback(() => {
+    const textarea = textareaRef.current
+    if (!textarea) {
+      return
+    }
+
+    textarea.style.height = "auto"
+    textarea.style.height = `${textarea.scrollHeight}px`
+  }, [])
+
+  const assignTextareaRef = useCallback(
+    (node: HTMLTextAreaElement | null) => {
+      textareaRef.current = node
+
+      if (promptRef) {
+        promptRef.current = node
+      }
+
+      if (node) {
+        syncTextareaHeight()
+      }
+    },
+    [promptRef, syncTextareaHeight]
+  )
 
   const [isFocused, setIsFocused] = useState(false)
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
@@ -134,9 +209,29 @@ export function CreateWithAiPromptInput({
       )
     : mediums
 
+  const hasReferenceImages = attachments.some(
+    (attachment) => attachment.usedForGeneration
+  )
   const isFilled = value.length > 0
-  const canSubmit = value.trim().length > 0
-  const showPlaceholder = !isFilled
+  const canSubmit = value.trim().length > 0 || hasReferenceImages
+  const showPlaceholder = !isFilled && attachments.length === 0
+
+  const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    addAttachments(files)
+    event.target.value = ""
+  }
+
+  const handleGenerate = () => {
+    if (!canSubmit) {
+      return
+    }
+
+    generateLayout({
+      mediumId: selectedMediumId,
+      modelId,
+    })
+  }
 
   const activeModel =
     AI_MODELS.find((model) => model.id === modelId) ?? AI_MODELS[0]
@@ -158,6 +253,10 @@ export function CreateWithAiPromptInput({
     return () => window.clearInterval(interval)
   }, [showPlaceholder])
 
+  useLayoutEffect(() => {
+    syncTextareaHeight()
+  }, [attachments.length, syncTextareaHeight, value])
+
   return (
     <div className="hero-prompt-slot w-full rounded-2xl shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]">
       <div
@@ -172,21 +271,38 @@ export function CreateWithAiPromptInput({
           Describe your invoice layout
         </label>
 
-        <div className="relative w-full">
-          {showPlaceholder ? (
-            <span
-              key={placeholderIndex}
-              aria-hidden
-              className={cn(
-                "prompt-placeholder pointer-events-none absolute inset-0",
-                "font-[family-name:var(--font-inter)] text-base font-normal leading-6 text-[#667085]"
-              )}
+        <div className="flex w-full flex-col gap-2">
+          {attachments.length > 0 ? (
+            <div
+              className="flex flex-wrap gap-2"
+              role="list"
+              aria-label="Attached files"
             >
-              {PROMPT_PLACEHOLDER_SUGGESTIONS[placeholderIndex]}
-            </span>
+              {attachments.map((attachment) => (
+                <PromptAttachmentChip
+                  key={attachment.id}
+                  attachment={attachment}
+                  onRemove={removeAttachment}
+                />
+              ))}
+            </div>
           ) : null}
-          <textarea
-            ref={promptRef}
+
+          <div className="relative w-full">
+            {showPlaceholder ? (
+              <span
+                key={placeholderIndex}
+                aria-hidden
+                className={cn(
+                  "prompt-placeholder pointer-events-none absolute inset-0",
+                  "font-[family-name:var(--font-inter)] text-base font-normal leading-6 text-[#667085]"
+                )}
+              >
+                {PROMPT_PLACEHOLDER_SUGGESTIONS[placeholderIndex]}
+              </span>
+            ) : null}
+            <textarea
+            ref={assignTextareaRef}
             id="create-with-ai-prompt"
             value={value}
             onChange={(event) =>
@@ -194,13 +310,14 @@ export function CreateWithAiPromptInput({
             }
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            rows={2}
+            rows={1}
             className={cn(
-              "relative min-h-[48px] w-full resize-none border-0 bg-transparent p-0",
+              "relative min-h-[48px] w-full resize-none overflow-hidden border-0 bg-transparent p-0",
               "font-[family-name:var(--font-inter)] text-base font-normal leading-6 text-[#101828] outline-none",
               "caret-[#6938ef]"
             )}
           />
+          </div>
         </div>
 
         <div className="prompt-bar__row flex items-center gap-2">
@@ -208,11 +325,12 @@ export function CreateWithAiPromptInput({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+              accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
               multiple
               className="hidden"
               aria-hidden
               tabIndex={-1}
+              onChange={handleFilesSelected}
             />
 
             <DropdownMenu>
@@ -284,10 +402,10 @@ export function CreateWithAiPromptInput({
               }}
             >
               <DropdownMenuTrigger asChild>
-                <PillButton aria-label="Select page layout">
+                <PillButton aria-label="Select medium">
                   <Ruler className="size-5 shrink-0 text-[#667085]" aria-hidden />
                   <span className="truncate">
-                    {selectedMedium?.name ?? PAGE_LAYOUT_PLACEHOLDER}
+                    {selectedMedium?.name ?? MEDIUM_PLACEHOLDER}
                   </span>
                   <ChevronDown className="size-5 shrink-0 text-[#667085]" aria-hidden />
                 </PillButton>
@@ -364,6 +482,7 @@ export function CreateWithAiPromptInput({
             type="button"
             disabled={!canSubmit}
             aria-label="Generate layout"
+            onClick={handleGenerate}
             className={cn(
               "prompt-send-button inline-flex size-9 shrink-0 items-center justify-center rounded-full border outline-none transition-colors",
               canSubmit

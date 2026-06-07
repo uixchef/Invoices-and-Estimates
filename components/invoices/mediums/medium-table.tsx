@@ -19,6 +19,7 @@ import type { MediumFilterType } from "@/lib/medium-filters"
 import { MEDIUM_FILTER_DEFINITIONS } from "@/lib/medium-filters"
 import type { MediumFilterSelections } from "@/lib/filter-mediums"
 import type { MediumRow } from "@/lib/mediums-data"
+import { useMediumDelete } from "@/lib/medium-delete-context"
 import { cn } from "@/lib/utils"
 
 const TABLE_COLUMNS =
@@ -121,6 +122,7 @@ function TableHeaderCell({
 
 function MediumTableRow({ item }: { item: MediumRow }) {
   const editHref = getMediumEditorHref(item.id)
+  const { requestDelete } = useMediumDelete()
 
   return (
     <div
@@ -173,6 +175,7 @@ function MediumTableRow({ item }: { item: MediumRow }) {
         <button
           type="button"
           aria-label={`Delete ${item.name}`}
+          onClick={() => requestDelete(item)}
           className="flex size-6 items-center justify-center rounded outline-none hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
         >
           <Trash2 className="size-4 text-[#667085]" aria-hidden />

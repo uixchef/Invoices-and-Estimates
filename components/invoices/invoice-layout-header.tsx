@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { Plus, Ruler } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/highrise/button"
 import { CreateWithAiButton } from "@/components/invoices/create-with-ai-button"
 import { neutralSecondaryButtonVariants } from "@/components/invoices/neutral-secondary-button"
 
@@ -31,10 +31,7 @@ export function InvoiceLayoutHeader() {
             Mediums
           </Link>
           <CreateWithAiButton />
-          <Button
-            type="button"
-            className="h-9 gap-2 rounded border-[#155eef] bg-[#155eef] px-3.5 text-base font-semibold leading-6 text-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] hover:bg-[#004eeb]"
-          >
+          <Button type="button" variant="primary">
             <Plus className="size-5 shrink-0" strokeWidth={2} aria-hidden />
             New
           </Button>

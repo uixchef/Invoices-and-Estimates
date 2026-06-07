@@ -22,6 +22,45 @@ type InitializeEditorInput = {
   initialName?: string
 }
 
+type EditorSnapshot = {
+  name: string
+  formState: MediumFormState
+}
+
+function editorSnapshotsEqual(a: EditorSnapshot, b: EditorSnapshot): boolean {
+  if (a.name !== b.name) {
+    return false
+  }
+
+  const left = a.formState
+  const right = b.formState
+
+  return (
+    left.paperSize === right.paperSize &&
+    left.orientation === right.orientation &&
+    left.width === right.width &&
+    left.height === right.height &&
+    left.resolution === right.resolution &&
+    left.safeArea.top === right.safeArea.top &&
+    left.safeArea.right === right.safeArea.right &&
+    left.safeArea.bottom === right.safeArea.bottom &&
+    left.safeArea.left === right.safeArea.left
+  )
+}
+
+function createSnapshot(
+  name: string,
+  formState: MediumFormState
+): EditorSnapshot {
+  return {
+    name,
+    formState: {
+      ...formState,
+      safeArea: { ...formState.safeArea },
+    },
+  }
+}
+
 export type MediumSaveResult =
   | { action: "updated"; name: string }
   | { action: "created"; name: string; newId: string }
@@ -40,6 +79,7 @@ type MediumEditorContextValue = {
   initializeEditor: (input: InitializeEditorInput) => void
   mediumId: string | null
   isSaving: boolean
+  isDirty: boolean
 }
 
 const MediumEditorContext = createContext<MediumEditorContextValue | null>(null)
@@ -57,6 +97,9 @@ export function MediumEditorProvider({ children }: { children: ReactNode }) {
   const [draftName, setDraftName] = useState("New medium")
   const [isEditingName, setIsEditingName] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [savedSnapshot, setSavedSnapshot] = useState<EditorSnapshot>(() =>
+    createSnapshot("New medium", DEFAULT_MEDIUM_FORM)
+  )
   const mediumId = routeMediumId
   const storedMedium = mediumId ? getMediumById(mediumId) : undefined
 
@@ -69,6 +112,7 @@ export function MediumEditorProvider({ children }: { children: ReactNode }) {
       setName(resolvedName)
       setDraftName(resolvedName)
       setIsEditingName(false)
+      setSavedSnapshot(createSnapshot(resolvedName, initialState))
     },
     [isNewRoute, storedMedium?.name]
   )
@@ -110,10 +154,12 @@ export function MediumEditorProvider({ children }: { children: ReactNode }) {
     try {
       if (mediumId) {
         saveMedium(mediumId, { name: resolvedName, formState })
+        setSavedSnapshot(createSnapshot(resolvedName, formState))
         return { action: "updated", name: resolvedName }
       }
 
       const newId = createMedium({ name: resolvedName, formState })
+      setSavedSnapshot(createSnapshot(resolvedName, formState))
       return { action: "created", name: resolvedName, newId }
     } finally {
       setIsSaving(false)
@@ -127,6 +173,14 @@ export function MediumEditorProvider({ children }: { children: ReactNode }) {
     name,
     saveMedium,
   ])
+
+  const isDirty = useMemo(() => {
+    const currentName = (isEditingName ? draftName : name).trim() || "New medium"
+    return !editorSnapshotsEqual(
+      savedSnapshot,
+      createSnapshot(currentName, formState)
+    )
+  }, [draftName, formState, isEditingName, name, savedSnapshot])
 
   const value = useMemo(
     () => ({
@@ -143,6 +197,7 @@ export function MediumEditorProvider({ children }: { children: ReactNode }) {
       initializeEditor,
       mediumId,
       isSaving,
+      isDirty,
     }),
     [
       cancelNameEdit,
@@ -150,6 +205,7 @@ export function MediumEditorProvider({ children }: { children: ReactNode }) {
       draftName,
       formState,
       initializeEditor,
+      isDirty,
       isEditingName,
       isSaving,
       mediumId,

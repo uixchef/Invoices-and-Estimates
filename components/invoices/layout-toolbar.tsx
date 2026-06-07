@@ -7,6 +7,7 @@ import {
   Search,
 } from "lucide-react"
 import { ConfigurableFilterBar } from "@/components/filters/filter-bar"
+import { ContentSwitcher } from "@/components/highrise/content-switcher"
 import { Input } from "@/components/highrise/input-text"
 import {
   DropdownMenu,
@@ -44,14 +45,6 @@ type LayoutToolbarProps = {
   onRemoveFilter: (filterId: LayoutFilterType) => void
 }
 
-function GridViewIcon({ className }: { className?: string }) {
-  return <LayoutGrid className={cn("size-5 shrink-0", className)} aria-hidden />
-}
-
-function ListViewIcon({ className }: { className?: string }) {
-  return <List className={cn("size-5 shrink-0", className)} aria-hidden />
-}
-
 export function LayoutToolbar({
   filterDefinitions = FILTER_DEFINITIONS,
   view,
@@ -70,9 +63,6 @@ export function LayoutToolbar({
   onAddFilter,
   onRemoveFilter,
 }: LayoutToolbarProps) {
-  const iconClass = (active: boolean) =>
-    active ? "text-[#004eeb]" : "text-[#667085]"
-
   return (
     <div className="flex w-full items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-2">
@@ -133,36 +123,24 @@ export function LayoutToolbar({
           />
         </div>
 
-        <div
-          className="flex h-9 shrink-0 overflow-hidden rounded border border-[#d0d5dd]"
-          role="group"
-          aria-label="View mode"
-        >
-          <button
-            type="button"
-            aria-pressed={view === "grid"}
-            aria-label="Grid view"
-            onClick={() => onViewChange("grid")}
-            className={cn(
-              "flex w-9 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#155eef]/40",
-              view === "grid" ? "bg-[#eff4ff]" : "bg-white hover:bg-slate-50"
-            )}
-          >
-            <GridViewIcon className={iconClass(view === "grid")} />
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === "list"}
-            aria-label="List view"
-            onClick={() => onViewChange("list")}
-            className={cn(
-              "flex w-9 items-center justify-center border-l border-[#d0d5dd] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#155eef]/40",
-              view === "list" ? "bg-[#eff4ff]" : "bg-white hover:bg-slate-50"
-            )}
-          >
-            <ListViewIcon className={iconClass(view === "list")} />
-          </button>
-        </div>
+        <ContentSwitcher<LayoutsViewMode>
+          value={view}
+          onChange={onViewChange}
+          ariaLabel="View mode"
+          iconOnly
+          options={[
+            {
+              value: "grid",
+              label: "Grid view",
+              icon: <LayoutGrid aria-hidden />,
+            },
+            {
+              value: "list",
+              label: "List view",
+              icon: <List aria-hidden />,
+            },
+          ]}
+        />
       </div>
     </div>
   )

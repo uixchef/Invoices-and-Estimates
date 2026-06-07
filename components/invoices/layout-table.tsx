@@ -19,12 +19,15 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { FilterDefinition, LayoutFilterType } from "@/lib/layout-filters"
 import { FILTER_DEFINITIONS } from "@/lib/layout-filters"
 import type { LayoutFilterSelections } from "@/lib/filter-layouts"
 import type { LayoutRow } from "@/lib/layouts-data"
+import { useLayoutClone } from "@/lib/layout-clone-context"
+import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { useLayoutPreview } from "@/lib/layout-preview-context"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { cn } from "@/lib/utils"
@@ -172,6 +175,8 @@ function StatusBadge({ status }: { status: LayoutRow["status"] }) {
 function LayoutTableRow({ item }: { item: LayoutRow }) {
   const { getMediumName } = useMediumsStore()
   const { open } = useLayoutPreview()
+  const { cloneLayout } = useLayoutClone()
+  const { requestDelete } = useLayoutDelete()
 
   return (
     <div
@@ -233,11 +238,15 @@ function LayoutTableRow({ item }: { item: LayoutRow }) {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="rounded">
-            <DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => cloneLayout(item)}>
               <Copy className="size-4 text-[#667085]" aria-hidden />
               Clone
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-[#b42318] focus:text-[#b42318]">
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-[#b42318] focus:text-[#b42318]"
+              onSelect={() => requestDelete(item)}
+            >
               <Trash2 className="size-4 text-[#b42318]" aria-hidden />
               Delete
             </DropdownMenuItem>

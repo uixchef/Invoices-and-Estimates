@@ -4,30 +4,202 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
+
+import { useRouter } from "next/navigation"
+
+import { useHubToast } from "@/components/payment-hub/hub-toast"
+import {
+  CREATE_WITH_AI_MEDIUM_REQUIRED_MESSAGE,
+  type CreateWithAiGenerateInput,
+  type CreateWithAiGenerateRequest,
+  type PromptAttachment,
+} from "@/lib/create-with-ai-types"
+import {
+  LAYOUT_BUILDER_ROUTE,
+  type LayoutBuilderSeed,
+} from "@/lib/layout-builder-types"
+
+const IMAGE_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+])
+
+const MAX_ATTACHMENTS = 5
+
+function createAttachment(file: File): PromptAttachment {
+  const usedForGeneration = IMAGE_MIME_TYPES.has(file.type)
+
+  return {
+    id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
+    file,
+    previewUrl: usedForGeneration ? URL.createObjectURL(file) : "",
+    name: file.name,
+    mimeType: file.type,
+    usedForGeneration,
+  }
+}
+
+function revokeAttachmentUrls(attachments: PromptAttachment[]) {
+  for (const attachment of attachments) {
+    if (attachment.previewUrl) {
+      URL.revokeObjectURL(attachment.previewUrl)
+    }
+  }
+}
 
 type CreateWithAiContextValue = {
   isOpen: boolean
   open: () => void
   close: () => void
   toggle: () => void
+  prompt: string
+  setPrompt: (value: string) => void
+  attachments: PromptAttachment[]
+  addAttachments: (files: File[]) => void
+  removeAttachment: (id: string) => void
+  generateLayout: (input: CreateWithAiGenerateRequest) => void
+  /** Reads and clears the generation request queued for the builder route. */
+  consumePendingGeneration: () => LayoutBuilderSeed | null
 }
 
 const CreateWithAiContext = createContext<CreateWithAiContextValue | null>(null)
 
 export function CreateWithAiProvider({ children }: { children: ReactNode }) {
+  const router = useRouter()
+  const { showError } = useHubToast()
+  const attachmentsRef = useRef<PromptAttachment[]>([])
+  const pendingGenerationRef = useRef<LayoutBuilderSeed | null>(null)
+
   const [isOpen, setIsOpen] = useState(false)
+  const [prompt, setPrompt] = useState("")
+  const [attachments, setAttachments] = useState<PromptAttachment[]>([])
+
+  attachmentsRef.current = attachments
 
   const open = useCallback(() => setIsOpen(true), [])
   const close = useCallback(() => setIsOpen(false), [])
   const toggle = useCallback(() => setIsOpen((current) => !current), [])
 
+  const addAttachments = useCallback((files: File[]) => {
+    if (files.length === 0) {
+      return
+    }
+
+    setAttachments((current) => {
+      const remaining = MAX_ATTACHMENTS - current.length
+      if (remaining <= 0) {
+        return current
+      }
+
+      return [...current, ...files.slice(0, remaining).map(createAttachment)]
+    })
+  }, [])
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((current) => {
+      const target = current.find((attachment) => attachment.id === id)
+      if (target?.previewUrl) {
+        URL.revokeObjectURL(target.previewUrl)
+      }
+
+      return current.filter((attachment) => attachment.id !== id)
+    })
+  }, [])
+
+  const generateLayout = useCallback(
+    ({ mediumId, modelId }: CreateWithAiGenerateRequest) => {
+      const trimmedPrompt = prompt.trim()
+      const imageAttachments = attachments.filter(
+        (attachment) => attachment.usedForGeneration
+      )
+
+      if (!trimmedPrompt && imageAttachments.length === 0) {
+        return
+      }
+
+      if (!mediumId) {
+        showError(CREATE_WITH_AI_MEDIUM_REQUIRED_MESSAGE)
+        return
+      }
+
+      const payload: CreateWithAiGenerateInput = {
+        prompt: trimmedPrompt,
+        referenceImages: imageAttachments.map((attachment) => attachment.file),
+        mediumId,
+        modelId,
+      }
+
+      // Generation API will consume prompt + referenceImages as multimodal input.
+      void payload
+
+      // Hand the prompt off to the builder. Preview URLs are transferred to the
+      // builder session, so clear attachments without revoking them here.
+      pendingGenerationRef.current = {
+        prompt: trimmedPrompt,
+        mediumId,
+        modelId,
+        references: imageAttachments.map((attachment) => ({
+          id: attachment.id,
+          name: attachment.name,
+          previewUrl: attachment.previewUrl,
+        })),
+      }
+
+      setAttachments([])
+      setPrompt("")
+      setIsOpen(false)
+
+      router.push(LAYOUT_BUILDER_ROUTE)
+    },
+    [attachments, prompt, router, showError]
+  )
+
+  const consumePendingGeneration = useCallback(() => {
+    const seed = pendingGenerationRef.current
+    pendingGenerationRef.current = null
+    return seed
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      revokeAttachmentUrls(attachmentsRef.current)
+    }
+  }, [])
+
   const value = useMemo(
-    () => ({ isOpen, open, close, toggle }),
-    [isOpen, open, close, toggle]
+    () => ({
+      isOpen,
+      open,
+      close,
+      toggle,
+      prompt,
+      setPrompt,
+      attachments,
+      addAttachments,
+      removeAttachment,
+      generateLayout,
+      consumePendingGeneration,
+    }),
+    [
+      addAttachments,
+      attachments,
+      close,
+      consumePendingGeneration,
+      generateLayout,
+      isOpen,
+      open,
+      prompt,
+      removeAttachment,
+      toggle,
+    ]
   )
 
   return (

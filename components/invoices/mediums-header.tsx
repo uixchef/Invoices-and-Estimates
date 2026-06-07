@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { ArrowLeft, Plus } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/highrise/button"
 
 /**
  * Figma: Invoices — Estimates / Mediums header (3068:169517)
@@ -35,10 +35,7 @@ export function MediumsHeader() {
           role="group"
           aria-label="Medium actions"
         >
-          <Button
-            asChild
-            className="h-9 gap-2 rounded border-[#155eef] bg-[#155eef] px-3.5 text-base font-semibold leading-6 text-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] hover:bg-[#004eeb]"
-          >
+          <Button asChild variant="primary">
             <Link href="/invoices/mediums/new">
               <Plus className="size-5 shrink-0" strokeWidth={2} aria-hidden />
               Create medium

@@ -17,8 +17,12 @@ const LAYOUT_THUMBNAILS = [
   "/layouts/thumbnails/template-08.svg",
 ] as const
 
-export function getLayoutThumbnail(layoutId: string): string {
-  const match = layoutId.match(/layout-(\d+)/)
+export function getLayoutThumbnail(
+  layoutId: string,
+  clonedFromId?: string
+): string {
+  const sourceId = clonedFromId ?? layoutId
+  const match = sourceId.match(/layout-(\d+)/)
   const index = match ? Number.parseInt(match[1], 10) - 1 : 0
 
   if (index === 1) {

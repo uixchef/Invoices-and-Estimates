@@ -141,7 +141,7 @@ export function HubToastProvider({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Viewport-centered below Payments chrome (topbar or medium editor header).
+ * Centered horizontally within the shell `main` column (white content area, excluding sidebar).
  */
 export function HubToastViewport() {
   const ctx = useContext(HubToastContext)
@@ -153,8 +153,7 @@ export function HubToastViewport() {
 
   return (
     <div
-      className="pointer-events-none fixed left-1/2 z-[260] w-max max-w-[min(478px,calc(100vw-2rem))] -translate-x-1/2 px-4 pt-4"
-      style={{ top: MODAL_OVERLAY_TOAST_TOP_PX }}
+      className="pointer-events-none absolute left-1/2 top-4 z-[260] w-max max-w-[min(478px,calc(100%-2rem))] -translate-x-1/2 px-4"
     >
       <HubAlertToast
         variant={toast.variant}

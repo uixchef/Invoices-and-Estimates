@@ -10,6 +10,8 @@ export type LayoutRow = {
   status: "Published" | "Draft"
   updatedOn: string
   updatedAgo: string
+  /** Original layout id when this row is a client-side clone. */
+  clonedFromId?: string
 }
 
 const LAYOUT_COUNT = 212

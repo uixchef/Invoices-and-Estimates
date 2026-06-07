@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { ChevronUp } from "lucide-react"
 
 import { CreateWithAiPromptInput } from "@/components/invoices/create-with-ai-prompt-input"
@@ -27,9 +27,8 @@ function AutoAwesomeIcon({ className }: { className?: string }) {
  * Figma: Create with AI panel (3150:138530) — vibe-hero pattern from Email AI.
  */
 export function CreateWithAiPanel() {
-  const { isOpen, close } = useCreateWithAi()
+  const { isOpen, close, prompt, setPrompt } = useCreateWithAi()
   const promptRef = useRef<HTMLTextAreaElement>(null)
-  const [prompt, setPrompt] = useState("")
 
   useEffect(() => {
     if (!isOpen) {

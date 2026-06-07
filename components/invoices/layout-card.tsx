@@ -1,10 +1,20 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Eye, MoreVertical, Pencil } from "lucide-react"
+import { Copy, Eye, MoreVertical, Pencil, Trash2 } from "lucide-react"
+import { Button } from "@/components/highrise/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import type { LayoutRow } from "@/lib/layouts-data"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { getLayoutThumbnail } from "@/lib/layout-thumbnails"
+import { useLayoutClone } from "@/lib/layout-clone-context"
+import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { useLayoutPreview } from "@/lib/layout-preview-context"
 import { usePreviewReveal } from "@/lib/use-preview-reveal"
 import { cn } from "@/lib/utils"
@@ -66,6 +76,9 @@ function ThumbnailSkeleton() {
 
 function LayoutCardActions({ item }: { item: LayoutRow }) {
   const { open } = useLayoutPreview()
+  const { cloneLayout } = useLayoutClone()
+  const { requestDelete } = useLayoutDelete()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   return (
     <div
@@ -73,7 +86,8 @@ function LayoutCardActions({ item }: { item: LayoutRow }) {
         "absolute inset-0 z-[1] flex items-end justify-center gap-2 bg-gradient-to-b from-transparent to-[rgba(178,204,255,0.7)] p-3",
         "pointer-events-none opacity-0 transition-opacity",
         "group-focus-within:pointer-events-auto group-focus-within:opacity-100",
-        "group-hover:pointer-events-auto group-hover:opacity-100"
+        "group-hover:pointer-events-auto group-hover:opacity-100",
+        menuOpen && "pointer-events-auto opacity-100"
       )}
     >
       <button
@@ -90,31 +104,43 @@ function LayoutCardActions({ item }: { item: LayoutRow }) {
         Edit
       </button>
 
-      <button
+      <Button
         type="button"
+        variant="neutral"
         aria-label={`Preview ${item.name}`}
         onClick={() => open(item)}
-        className={cn(
-          "inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-2 rounded border border-[#d0d5dd] bg-white px-2.5 py-1.5",
-          "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#475467]",
-          "shadow-[0_1px_2px_rgba(16,24,40,0.05)] outline-none",
-          "hover:bg-[#f9fafb] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-        )}
+        className="h-8 min-w-0 flex-1 px-2.5 py-1.5 text-sm leading-5"
       >
         <Eye className="size-4 shrink-0" aria-hidden />
         Preview
-      </button>
+      </Button>
 
-      <button
-        type="button"
-        aria-label={`More actions for ${item.name}`}
-        className={cn(
-          "inline-flex size-8 shrink-0 items-center justify-center rounded border border-[#f9fafb] bg-[#f9fafb] p-2 outline-none",
-          "hover:border-[#d0d5dd] hover:bg-white focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-        )}
-      >
-        <MoreVertical className="size-4 text-[#475467]" aria-hidden />
-      </button>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="neutral-tertiary"
+            aria-label={`More actions for ${item.name}`}
+            className="size-8 shrink-0 p-2"
+          >
+            <MoreVertical className="size-4 shrink-0" aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="rounded">
+          <DropdownMenuItem onSelect={() => cloneLayout(item)}>
+            <Copy className="size-4 text-[#667085]" aria-hidden />
+            Clone
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="text-[#b42318] focus:text-[#b42318]"
+            onSelect={() => requestDelete(item)}
+          >
+            <Trash2 className="size-4 text-[#b42318]" aria-hidden />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
@@ -156,7 +182,7 @@ export function LayoutCard({ item }: { item: LayoutRow }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={imgRef}
-          src={getLayoutThumbnail(item.id)}
+          src={getLayoutThumbnail(item.id, item.clonedFromId)}
           alt=""
           onLoad={() => setImageReady(true)}
           onError={() => setImageReady(true)}

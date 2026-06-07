@@ -17,6 +17,8 @@ import {
 } from "@/lib/layout-filters"
 import { filterRows } from "@/lib/filter-layouts"
 import type { LayoutRow } from "@/lib/layouts-data"
+import { useLayoutClone } from "@/lib/layout-clone-context"
+import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { compareByMostRecent } from "@/lib/sort-by-updated"
 
@@ -25,7 +27,14 @@ type LayoutsListPageProps = {
 }
 
 export function LayoutsListPage({ rows }: LayoutsListPageProps) {
+  const { clonedLayouts } = useLayoutClone()
+  const { isRemoved } = useLayoutDelete()
   const { mediums } = useMediumsStore()
+  const visibleRows = useMemo(
+    () =>
+      [...clonedLayouts, ...rows].filter((row) => !isRemoved(row.id)),
+    [clonedLayouts, isRemoved, rows]
+  )
   const filterDefinitions = useMemo(
     () => buildLayoutFilterDefinitions(mediums),
     [mediums]
@@ -52,14 +61,14 @@ export function LayoutsListPage({ rows }: LayoutsListPageProps) {
   } = useFilterBarState(FILTER_TYPES, EMPTY_SELECTIONS)
 
   const filtered = useMemo(() => {
-    const result = filterRows(rows, selections, searchQuery)
+    const result = filterRows(visibleRows, selections, searchQuery)
     return [...result].sort((a, b) => {
       if (sort === "updated") {
         return compareByMostRecent(a, b)
       }
       return a.name.localeCompare(b.name, undefined, { numeric: true })
     })
-  }, [rows, selections, searchQuery, sort])
+  }, [visibleRows, selections, searchQuery, sort])
 
   useEffect(() => {
     setPage(1)
