@@ -63,6 +63,8 @@ type AiInActionProps = {
   type: AiActionType
   /** Seconds for the "thought" label → "Thought for {durationSec}s". */
   durationSec?: number
+  /** Overrides the default label (e.g. "Waiting for answer..." for asking). */
+  label?: string
   /** Content revealed when an expandable state is open. */
   children?: ReactNode
   defaultExpanded?: boolean
@@ -90,6 +92,7 @@ function ProcessingDots() {
 export function AiInAction({
   type,
   durationSec,
+  label: labelOverride,
   children,
   defaultExpanded = false,
   className,
@@ -103,7 +106,9 @@ export function AiInAction({
   const config = TYPE_CONFIG[type]
   const Icon = config.icon
   const label =
-    config.label ?? `Thought for ${Math.max(0, durationSec ?? 0)}s`
+    labelOverride ??
+    config.label ??
+    `Thought for ${Math.max(0, durationSec ?? 0)}s`
   const hasContent = config.expandable && Boolean(children)
   const isExpanded = hasContent && expanded
 

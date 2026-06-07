@@ -1,29 +1,33 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useRef } from "react"
 import { GripVertical } from "lucide-react"
 
-import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
 import { InvoiceAiPanel } from "@/components/invoices/builder/invoice-ai-panel"
 import { LayoutBuilderCanvas } from "@/components/invoices/builder/layout-builder-canvas"
+import { useLayoutBuilder } from "@/lib/layout-builder-context"
 
-const MIN_PANEL_WIDTH = 360
-const MAX_PANEL_WIDTH = 640
-const DEFAULT_PANEL_WIDTH = 360
 const KEYBOARD_STEP = 16
 
 /**
  * Figma: Layout Builder body (3181:33796 / 3137:145817)
  * Invoice AI sidebar + generation canvas, with a draggable grip handle
- * (drag_indicator, 3187:44827) for resizing the panel width.
+ * (drag_indicator, 3187:44827) for resizing the panel width. Panel width and
+ * open state live in the builder context so the toolbar can stay aligned.
  */
 export function LayoutBuilderBody() {
-  const [isPanelOpen, setIsPanelOpen] = useState(true)
-  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
+  const {
+    panelOpen: isPanelOpen,
+    setPanelOpen: setIsPanelOpen,
+    panelWidth,
+    setPanelWidth,
+    panelMinWidth,
+    panelMaxWidth,
+  } = useLayoutBuilder()
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
 
   const clampWidth = (value: number) =>
-    Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, value))
+    Math.min(panelMaxWidth, Math.max(panelMinWidth, value))
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -93,8 +97,8 @@ export function LayoutBuilderBody() {
             aria-orientation="vertical"
             aria-label="Resize Invoice AI panel"
             aria-valuenow={panelWidth}
-            aria-valuemin={MIN_PANEL_WIDTH}
-            aria-valuemax={MAX_PANEL_WIDTH}
+            aria-valuemin={panelMinWidth}
+            aria-valuemax={panelMaxWidth}
             tabIndex={0}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -109,18 +113,7 @@ export function LayoutBuilderBody() {
             />
           </div>
         </div>
-      ) : (
-        <div className="flex shrink-0 items-start py-4 pl-4">
-          <button
-            type="button"
-            aria-label="Open Invoice AI"
-            onClick={() => setIsPanelOpen(true)}
-            className="inline-flex size-9 items-center justify-center rounded-[8px] border border-[#d0d5dd] bg-white text-[#6938ef] shadow-[0_1px_2px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#f9fafb] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-          >
-            <AutoAwesomeIcon className="size-5" />
-          </button>
-        </div>
-      )}
+      ) : null}
 
       <LayoutBuilderCanvas />
     </div>

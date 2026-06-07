@@ -56,6 +56,43 @@ function ToolbarIconButton({
   )
 }
 
+/**
+ * Code / Preview view toggle. Collapses to an icon-only button when inactive
+ * and expands to an icon + label in the accent treatment when active. The two
+ * toggles are independent, so both can read as active at once (split view).
+ */
+function ViewToggleButton({
+  icon,
+  label,
+  active,
+  ...props
+}: React.ComponentProps<"button"> & {
+  icon: React.ReactNode
+  label: string
+  active: boolean
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      aria-label={label}
+      className={cn(
+        "inline-flex h-7 shrink-0 items-center justify-center rounded-[4px] outline-none transition-colors",
+        "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5",
+        "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-4",
+        "disabled:pointer-events-none disabled:text-[#d0d5dd]",
+        active
+          ? "gap-2 bg-[#eff4ff] px-2.5 py-1.5 text-[#004eeb]"
+          : "size-7 text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]"
+      )}
+      {...props}
+    >
+      {icon}
+      {active ? label : null}
+    </button>
+  )
+}
+
 function ToolbarTag({
   icon,
   children,
@@ -95,8 +132,13 @@ export function LayoutBuilderToolbar() {
     mediumId,
     documentType,
     setDocumentType,
-    viewMode,
-    setViewMode,
+    codeOpen,
+    previewOpen,
+    toggleCode,
+    togglePreview,
+    panelOpen,
+    setPanelOpen,
+    panelWidth,
     status,
   } = useLayoutBuilder()
 
@@ -107,14 +149,24 @@ export function LayoutBuilderToolbar() {
   const canEdit = status === "ready"
 
   return (
-    <div className="flex h-11 w-full shrink-0 items-center gap-4 border-b border-[#d0d5dd] bg-white px-4 py-1">
-      <div className="flex w-[360px] shrink-0 items-center gap-2.5">
+    <div className="relative flex h-11 w-full shrink-0 items-center gap-4 border-b border-[#d0d5dd] bg-white px-4 py-1">
+      {/* Width tracks the Invoice AI panel so this cluster's right edge stays
+          aligned with the panel's right edge as it's resized. */}
+      <div
+        className="flex shrink-0 items-center gap-0.5"
+        style={panelOpen ? { width: panelWidth } : undefined}
+      >
         <div className="flex items-center gap-0.5">
           <ToolbarIconButton aria-label="Add block" disabled={!canEdit}>
             <Plus aria-hidden />
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Invoice AI" active tone="accent">
-            <AutoAwesomeIcon className="size-4" />
+          <ToolbarIconButton
+            aria-label="Invoice AI"
+            tone="accent"
+            active={panelOpen}
+            onClick={() => setPanelOpen((open) => !open)}
+          >
+            <AutoAwesomeIcon className="size-4 text-[#6938ef]" />
           </ToolbarIconButton>
           <ToolbarIconButton aria-label="Insert text" disabled={!canEdit}>
             <Type aria-hidden />
@@ -140,39 +192,35 @@ export function LayoutBuilderToolbar() {
           <ToolbarIconButton aria-label="Version history" disabled={!canEdit}>
             <History aria-hidden />
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Toggle panel" active>
+          <ToolbarIconButton
+            aria-label="Toggle panel"
+            active={panelOpen}
+            onClick={() => setPanelOpen((open) => !open)}
+          >
             <PanelLeft aria-hidden />
           </ToolbarIconButton>
         </div>
       </div>
 
       <div className="flex min-w-px flex-1 items-center gap-1">
-        <ToolbarIconButton
-          aria-label="Code view"
-          active={viewMode === "code"}
-          onClick={() => setViewMode("code")}
-        >
-          <Code2 aria-hidden />
-        </ToolbarIconButton>
-        <button
-          type="button"
-          aria-pressed={viewMode === "preview"}
-          onClick={() => setViewMode("preview")}
-          className={cn(
-            "inline-flex h-7 shrink-0 items-center justify-center gap-2 rounded-[4px] px-2.5 py-1.5 outline-none transition-colors",
-            "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5",
-            "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-4",
-            viewMode === "preview"
-              ? "bg-[#eff4ff] text-[#004eeb]"
-              : "text-[#475467] hover:bg-[#f2f4f7]"
-          )}
-        >
-          <Globe aria-hidden />
-          Preview
-        </button>
+        <ViewToggleButton
+          icon={<Code2 aria-hidden />}
+          label="Code"
+          active={codeOpen}
+          onClick={toggleCode}
+          disabled={!canEdit}
+        />
+        <ViewToggleButton
+          icon={<Globe aria-hidden />}
+          label="Preview"
+          active={previewOpen}
+          onClick={togglePreview}
+        />
       </div>
 
-      <div className="flex w-[360px] shrink-0 items-center justify-center gap-1">
+      {/* Absolutely centred on the toolbar so it lines up with the page-centred
+          "New layout" title above, independent of the asymmetric side zones. */}
+      <div className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1">
         <ToolbarTag icon={<Ruler aria-hidden />} selected>
           {mediumName}
         </ToolbarTag>

@@ -8,24 +8,37 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react"
 
 import type { AiAnswers, AiQuestion } from "@/components/ai/ai-questions"
 import type { AiTodoItem } from "@/components/ai/ai-todo-list"
+import { buildCompletionSummary, buildReasoning } from "@/lib/builder-narrative"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import {
   BUILDER_DOCUMENT_TYPES,
   DEFAULT_LAYOUT_NAME,
   type BuilderDocumentType,
+  type BuilderLayerStyle,
   type BuilderMessage,
   type BuilderReferenceImage,
+  type BuilderReceivedAnswer,
+  type BuilderSelection,
   type BuilderStatus,
-  type BuilderViewMode,
+  type BuilderVisualStyle,
+  type GeneratedLayout,
+  type GeneratedLineItem,
 } from "@/lib/layout-builder-types"
 
 /** Simulated generation latency until the layout-generation API is wired in. */
 const SIMULATED_THINKING_MS = 7000
+
+/** Invoice AI side-panel resize bounds (Figma: 3181:33796). */
+const PANEL_MIN_WIDTH = 360
+const PANEL_MAX_WIDTH = 640
+const PANEL_DEFAULT_WIDTH = 360
 
 /** Short "thinking" pass shown (with streaming reasoning) before questions. */
 const REASONING_MS = 2600
@@ -212,6 +225,178 @@ const BUILDER_TODO_LABELS = [
   "Add notes & footer",
 ] as const
 
+const CURRENCY_BY_ID: Record<string, { code: string; symbol: string }> = {
+  usd: { code: "USD", symbol: "$" },
+  eur: { code: "EUR", symbol: "€" },
+  gbp: { code: "GBP", symbol: "£" },
+  inr: { code: "INR", symbol: "₹" },
+}
+
+const STYLE_ACCENT: Record<BuilderVisualStyle, string> = {
+  minimal: "#101828",
+  modern: "#155eef",
+  classic: "#475467",
+  bold: "#6938ef",
+}
+
+/** Sample catalogue used to populate a believable itemised table. */
+const SAMPLE_LINE_ITEMS: GeneratedLineItem[] = [
+  { description: "Brand & layout design", qty: 1, rate: 1200 },
+  { description: "Implementation & setup", qty: 8, rate: 95 },
+  { description: "Content & copywriting", qty: 4, rate: 120 },
+  { description: "Revisions & QA", qty: 3, rate: 85 },
+  { description: "Support retainer (monthly)", qty: 1, rate: 300 },
+]
+
+/** Best-effort extraction of a business name from the free-text prompt. */
+function deriveBusinessName(prompt: string): string {
+  const patterns = [
+    /(?:venture|business|company|brand|store|shop|studio|agency|firm)[,:]?\s+(?:called|named)?\s*["']?([A-Z][\w&'.-]*(?:\s+[A-Z][\w&'.-]*){0,3})/,
+    /(?:called|named)\s+["']?([A-Z][\w&'.-]*(?:\s+[A-Z][\w&'.-]*){0,3})/,
+    /["“]([^"”]{2,40})["”]/,
+  ]
+  for (const re of patterns) {
+    const match = prompt.match(re)
+    if (match?.[1]) {
+      return match[1].trim().replace(/[.,]$/, "")
+    }
+  }
+  return "Your Business"
+}
+
+function pad(value: number, length: number): string {
+  return String(value).padStart(length, "0")
+}
+
+function formatDate(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  })
+}
+
+const DOC_PREFIX: Record<BuilderDocumentType, string> = {
+  "Standard invoice": "INV",
+  Estimate: "EST",
+  Receipt: "RCT",
+  "Credit note": "CRN",
+}
+
+/**
+ * Resolves the rendered layout from the prompt + clarifying answers. Stands in
+ * for the generation API: deterministic, so the same inputs render the same doc.
+ */
+function deriveLayout(
+  prompt: string,
+  answers: AiAnswers | null,
+  documentType: BuilderDocumentType
+): GeneratedLayout {
+  const styleAnswer =
+    typeof answers?.style === "string" ? answers.style : "modern"
+  const style: BuilderVisualStyle = (
+    ["minimal", "modern", "classic", "bold"] as BuilderVisualStyle[]
+  ).includes(styleAnswer as BuilderVisualStyle)
+    ? (styleAnswer as BuilderVisualStyle)
+    : "modern"
+
+  const currencyId =
+    typeof answers?.currency === "string" ? answers.currency : "usd"
+  const currency = CURRENCY_BY_ID[currencyId] ?? CURRENCY_BY_ID.usd
+
+  const selectedSections = Array.isArray(answers?.sections)
+    ? (answers?.sections as string[])
+    : null
+  const sections = {
+    logo: selectedSections ? selectedSections.includes("logo") : true,
+    // An itemised table is the spine of the document; always present.
+    items: true,
+    taxes: selectedSections ? selectedSections.includes("taxes") : true,
+    notes: selectedSections ? selectedSections.includes("notes") : true,
+    terms: selectedSections ? selectedSections.includes("terms") : true,
+  }
+
+  const countAnswer =
+    typeof answers?.["line-items"] === "string"
+      ? Number.parseInt(answers["line-items"] as string, 10)
+      : 3
+  const itemCount = Number.isFinite(countAnswer)
+    ? Math.min(Math.max(countAnswer, 1), SAMPLE_LINE_ITEMS.length)
+    : 3
+
+  const emphasis =
+    typeof answers?.focus === "string" && answers.focus.trim()
+      ? answers.focus.trim()
+      : null
+
+  const now = new Date()
+  const due = new Date(now)
+  due.setDate(due.getDate() + 14)
+
+  return {
+    documentType,
+    businessName: deriveBusinessName(prompt),
+    clientName: "Acme Co.",
+    emphasis,
+    style,
+    accent: STYLE_ACCENT[style],
+    currencyCode: currency.code,
+    currencySymbol: currency.symbol,
+    sections,
+    lineItems: SAMPLE_LINE_ITEMS.slice(0, itemCount),
+    taxRate: 0.1,
+    documentNumber: `${DOC_PREFIX[documentType]}-${now.getFullYear()}-${pad(
+      142,
+      4
+    )}`,
+    issueDate: formatDate(now),
+    dueDate: formatDate(due),
+  }
+}
+
+/** Mirrors the "Other" sentinel used by the questions card. */
+const OTHER_ANSWER_VALUE = "__other__"
+
+/** Resolves an answer value to its display label (option label or raw text). */
+function answerLabel(question: AiQuestion, value: string): string {
+  if (value === OTHER_ANSWER_VALUE) {
+    return "Other"
+  }
+  if ("options" in question && Array.isArray(question.options)) {
+    const option = question.options.find(
+      (candidate) => typeof candidate !== "string" && candidate.id === value
+    )
+    if (option && typeof option !== "string") {
+      return option.label
+    }
+  }
+  return value
+}
+
+/**
+ * Flattens the user's clarifying answers into prompt + display-value pairs for
+ * the "Received answers" recap.
+ */
+function formatReceivedAnswers(
+  questions: AiQuestion[],
+  answers: AiAnswers
+): BuilderReceivedAnswer[] {
+  const result: BuilderReceivedAnswer[] = []
+  for (const question of questions) {
+    const value = answers[question.id]
+    let values: string[] = []
+    if (Array.isArray(value)) {
+      values = value.map((entry) => answerLabel(question, entry))
+    } else if (typeof value === "string" && value.trim()) {
+      values = [answerLabel(question, value)]
+    }
+    if (values.length > 0) {
+      result.push({ prompt: question.prompt, values })
+    }
+  }
+  return result
+}
+
 type LayoutBuilderContextValue = {
   name: string
   draftName: string
@@ -226,8 +411,74 @@ type LayoutBuilderContextValue = {
   documentType: BuilderDocumentType
   setDocumentType: (value: BuilderDocumentType) => void
 
-  viewMode: BuilderViewMode
-  setViewMode: (value: BuilderViewMode) => void
+  /**
+   * Code editor and live preview are independent toggles. Both can be open at
+   * once (split view); toggling one never changes the other. At least one panel
+   * is always visible, so turning off the last open panel is a no-op.
+   */
+  codeOpen: boolean
+  previewOpen: boolean
+  toggleCode: () => void
+  togglePreview: () => void
+
+  /**
+   * Invoice AI side panel state. Shared so the toolbar's left action cluster can
+   * track the panel's width and open/closed state, keeping the two regions
+   * aligned when the panel is resized or collapsed.
+   */
+  panelOpen: boolean
+  setPanelOpen: Dispatch<SetStateAction<boolean>>
+  panelWidth: number
+  setPanelWidth: Dispatch<SetStateAction<number>>
+  panelMinWidth: number
+  panelMaxWidth: number
+
+  /**
+   * Visual edit mode (Cursor-style). When on, the rendered invoice becomes
+   * directly editable in the preview; edits are merged onto the generated layout
+   * via `updateLayout`.
+   */
+  editMode: boolean
+  toggleEditMode: () => void
+  updateLayout: (patch: Partial<GeneratedLayout>) => void
+
+  /**
+   * Elements selected in visual-edit mode and attached to the next prompt as
+   * context chips (Cursor-style). Adding an existing label is a no-op.
+   */
+  selections: BuilderSelection[]
+  addSelection: (label: string) => void
+  removeSelection: (id: string) => void
+  clearSelections: () => void
+
+  /**
+   * Free-text overrides for layers that aren't backed by a structured layout
+   * field (addresses, section labels, notes/terms copy…), keyed by layer label.
+   * Lets every layer be edited in visual-edit mode without bloating
+   * `GeneratedLayout`.
+   */
+  layerText: Record<string, string>
+  setLayerText: (label: string, value: string) => void
+
+  /** Per-layer style overrides set from the Visual edits inspector. */
+  layerStyles: Record<string, BuilderLayerStyle>
+  setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
+
+  /**
+   * The layer whose Visual edits inspector is open (replaces the chat). Null
+   * shows the normal AI conversation.
+   */
+  inspectingLayer: string | null
+  inspectLayer: (label: string | null) => void
+
+  /** Selects a layer for inspection — opens its Visual edits panel + chip. */
+  selectLayer: (label: string) => void
+
+  /** Seeds a layer's content/style overrides from the DOM on first inspect. */
+  seedLayer: (
+    label: string,
+    seed: { content: string; style: BuilderLayerStyle }
+  ) => void
 
   messages: BuilderMessage[]
   status: BuilderStatus
@@ -235,6 +486,10 @@ type LayoutBuilderContextValue = {
   todos: AiTodoItem[]
   /** Clarifying questions shown while `status === "asking"`. */
   questions: AiQuestion[]
+  /** Answers captured for the active turn (null when none were asked). */
+  receivedAnswers: BuilderReceivedAnswer[] | null
+  /** Resolved layout to render once `status === "ready"`. */
+  generatedLayout: GeneratedLayout
   sendMessage: (text: string, references?: BuilderReferenceImage[]) => void
   /** Records the answers and kicks off generation. */
   submitAnswers: (answers: AiAnswers) => void
@@ -264,11 +519,26 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [documentType, setDocumentType] = useState<BuilderDocumentType>(
     BUILDER_DOCUMENT_TYPES[0]
   )
-  const [viewMode, setViewMode] = useState<BuilderViewMode>("preview")
+  const [codeOpen, setCodeOpen] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(true)
+  const [panelOpen, setPanelOpen] = useState(true)
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH)
+  const [editMode, setEditMode] = useState(false)
+  const [layoutEdits, setLayoutEdits] = useState<Partial<GeneratedLayout>>({})
+  const [selections, setSelections] = useState<BuilderSelection[]>([])
+  const [layerText, setLayerTextState] = useState<Record<string, string>>({})
+  const [layerStyles, setLayerStyles] = useState<
+    Record<string, BuilderLayerStyle>
+  >({})
+  const [inspectingLayer, setInspectingLayer] = useState<string | null>(null)
 
   const [messages, setMessages] = useState<BuilderMessage[]>([])
   const [status, setStatus] = useState<BuilderStatus>("idle")
   const [questions, setQuestions] = useState<AiQuestion[]>(BUILDER_QUESTIONS)
+  const [answers, setAnswers] = useState<AiAnswers | null>(null)
+  const [receivedAnswers, setReceivedAnswers] = useState<
+    BuilderReceivedAnswer[] | null
+  >(null)
   const [thoughtDurationSec, setThoughtDurationSec] = useState<number | null>(
     null
   )
@@ -408,6 +678,96 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Toggle a panel, but never let both close — keep the last panel visible.
+  const toggleCode = useCallback(() => {
+    setCodeOpen((open) => (open ? !previewOpen : true))
+  }, [previewOpen])
+
+  const togglePreview = useCallback(() => {
+    setPreviewOpen((open) => (open ? !codeOpen : true))
+  }, [codeOpen])
+
+  // Visual edit requires the preview, so enabling it ensures the preview is open.
+  // Leaving edit mode also closes any open inspector.
+  const toggleEditMode = useCallback(() => {
+    setEditMode((on) => {
+      const next = !on
+      if (next) {
+        setPreviewOpen(true)
+      } else {
+        setInspectingLayer(null)
+      }
+      return next
+    })
+  }, [])
+
+  const updateLayout = useCallback((patch: Partial<GeneratedLayout>) => {
+    setLayoutEdits((current) => ({ ...current, ...patch }))
+  }, [])
+
+  const addSelection = useCallback((label: string) => {
+    setSelections((current) => {
+      if (current.some((selection) => selection.label === label)) {
+        return current
+      }
+      return [...current, { id: nextMessageId(), label }]
+    })
+  }, [])
+
+  const removeSelection = useCallback((id: string) => {
+    setSelections((current) => {
+      const removed = current.find((selection) => selection.id === id)
+      if (removed) {
+        // Closing the chip for the inspected layer also closes its inspector.
+        setInspectingLayer((open) => (open === removed.label ? null : open))
+      }
+      return current.filter((selection) => selection.id !== id)
+    })
+  }, [])
+
+  const clearSelections = useCallback(() => {
+    setSelections([])
+    setInspectingLayer(null)
+  }, [])
+
+  const setLayerText = useCallback((label: string, value: string) => {
+    setLayerTextState((current) => ({ ...current, [label]: value }))
+  }, [])
+
+  const setLayerStyle = useCallback(
+    (label: string, patch: Partial<BuilderLayerStyle>) => {
+      setLayerStyles((current) => ({
+        ...current,
+        [label]: { ...current[label], ...patch },
+      }))
+    },
+    []
+  )
+
+  const inspectLayer = useCallback((label: string | null) => {
+    setInspectingLayer(label)
+  }, [])
+
+  const selectLayer = useCallback(
+    (label: string) => {
+      addSelection(label)
+      setInspectingLayer(label)
+    },
+    [addSelection]
+  )
+
+  const seedLayer = useCallback(
+    (label: string, seed: { content: string; style: BuilderLayerStyle }) => {
+      setLayerTextState((current) =>
+        label in current ? current : { ...current, [label]: seed.content }
+      )
+      setLayerStyles((current) =>
+        label in current ? current : { ...current, [label]: seed.style }
+      )
+    },
+    []
+  )
+
   const startNameEdit = useCallback(() => {
     setDraftName(name)
     setIsEditingName(true)
@@ -453,14 +813,16 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   }, [status])
 
   const submitAnswers = useCallback(
-    (_answers: AiAnswers) => {
-      // Answers will feed the generation request once the API is wired in.
+    (submitted: AiAnswers) => {
+      setAnswers(submitted)
+      setReceivedAnswers(formatReceivedAnswers(questions, submitted))
       startThinking()
     },
-    [startThinking]
+    [questions, startThinking]
   )
 
   const skipQuestions = useCallback(() => {
+    setReceivedAnswers(null)
     startThinking()
   }, [startThinking])
 
@@ -470,6 +832,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       if (!trimmed && references.length === 0) {
         return
       }
+
+      // New turn — clear any prior answer recap until this turn asks again.
+      setReceivedAnswers(null)
 
       referenceUrlsRef.current = [
         ...referenceUrlsRef.current,
@@ -492,6 +857,55 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     },
     [startReasoning]
   )
+
+  const generatedLayout = useMemo<GeneratedLayout>(() => {
+    const firstUser = messages.find((message) => message.role === "user")
+    const prompt = firstUser?.text ?? ""
+    const base = deriveLayout(prompt, answers, documentType)
+    // Manual visual edits win over the derived layout.
+    return { ...base, ...layoutEdits }
+  }, [messages, answers, documentType, layoutEdits])
+
+  // Once a turn settles, persist it to the transcript: the reasoning, the
+  // completed plan, and the closing recap. Keeps the full context visible the
+  // way Cursor does, instead of clearing it after the to-dos finish.
+  useEffect(() => {
+    if (status !== "ready") {
+      return
+    }
+
+    setMessages((current) => {
+      const last = current[current.length - 1]
+      if (!last || last.role === "assistant") {
+        return current
+      }
+
+      const lastUser = [...current]
+        .reverse()
+        .find((message) => message.role === "user")
+
+      const completedTodos: AiTodoItem[] = BUILDER_TODO_LABELS.map(
+        (label, index) => ({
+          id: `builder-todo-${index}`,
+          label,
+          status: "done",
+        })
+      )
+
+      return [
+        ...current,
+        {
+          id: nextMessageId(),
+          role: "assistant",
+          receivedAnswers,
+          reasoning: buildReasoning(lastUser?.text ?? ""),
+          durationSec: thoughtDurationSec ?? 0,
+          todos: completedTodos,
+          summary: buildCompletionSummary(generatedLayout),
+        },
+      ]
+    })
+  }, [status, thoughtDurationSec, generatedLayout, receivedAnswers])
 
   const todos = useMemo<AiTodoItem[]>(() => {
     if (status !== "thinking" && status !== "ready") {
@@ -523,13 +937,38 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       modelId,
       documentType,
       setDocumentType,
-      viewMode,
-      setViewMode,
+      codeOpen,
+      previewOpen,
+      toggleCode,
+      togglePreview,
+      panelOpen,
+      setPanelOpen,
+      panelWidth,
+      setPanelWidth,
+      panelMinWidth: PANEL_MIN_WIDTH,
+      panelMaxWidth: PANEL_MAX_WIDTH,
+      editMode,
+      toggleEditMode,
+      updateLayout,
+      selections,
+      addSelection,
+      removeSelection,
+      clearSelections,
+      layerText,
+      setLayerText,
+      layerStyles,
+      setLayerStyle,
+      inspectingLayer,
+      inspectLayer,
+      selectLayer,
+      seedLayer,
       messages,
       status,
       thoughtDurationSec,
       todos,
       questions,
+      receivedAnswers,
+      generatedLayout,
       sendMessage,
       submitAnswers,
       skipQuestions,
@@ -545,12 +984,34 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       mediumId,
       modelId,
       documentType,
-      viewMode,
+      codeOpen,
+      previewOpen,
+      toggleCode,
+      togglePreview,
+      panelOpen,
+      panelWidth,
+      editMode,
+      toggleEditMode,
+      updateLayout,
+      selections,
+      addSelection,
+      removeSelection,
+      clearSelections,
+      layerText,
+      setLayerText,
+      layerStyles,
+      setLayerStyle,
+      inspectingLayer,
+      inspectLayer,
+      selectLayer,
+      seedLayer,
       messages,
       status,
       thoughtDurationSec,
       todos,
       questions,
+      receivedAnswers,
+      generatedLayout,
       sendMessage,
       submitAnswers,
       skipQuestions,

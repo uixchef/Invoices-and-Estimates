@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useMemo, useState } from "react"
 import { ChevronDown, ChevronUp, CornerDownLeft } from "lucide-react"
 
 import {
@@ -215,35 +215,41 @@ function StepperControl({
   )
 }
 
+/**
+ * Always-visible free-text field paired with a lettered badge (Figma "Other" /
+ * "Enter more…", 37814:24683). Focusing or typing marks the option selected.
+ */
 function OtherField({
-  active,
+  disabled,
+  selected,
   value,
   onChange,
+  onSelect,
   placeholder,
 }: {
-  active: boolean
+  disabled: boolean
+  selected: boolean
   value: string
   onChange: (value: string) => void
+  onSelect: () => void
   placeholder: string
 }) {
-  if (!active) {
-    return (
-      <div className="flex h-9 items-center rounded-[6px] border border-[#d0d5dd] bg-white px-2 text-sm font-normal leading-5 text-[#667085] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)]">
-        {placeholder}
-      </div>
-    )
-  }
-
   return (
     <input
       type="text"
       value={value}
       placeholder={placeholder}
-      onChange={(event) => onChange(event.target.value)}
+      disabled={disabled}
+      onFocus={onSelect}
+      onChange={(event) => {
+        onChange(event.target.value)
+        onSelect()
+      }}
       className={cn(
-        "h-9 w-full rounded-[6px] border border-[#d0d5dd] bg-white px-2 text-sm font-normal leading-5 text-[#101828] outline-none transition-colors",
+        "h-9 w-full rounded-[6px] border bg-white px-3 text-sm font-normal leading-5 text-[#101828] outline-none transition-colors",
         "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] placeholder:text-[#667085] caret-[#6938ef]",
-        "focus:border-[#bdb4fe] focus:ring-4 focus:ring-[#ebe9fe]"
+        "focus:border-[#bdb4fe] focus:ring-4 focus:ring-[#ebe9fe] disabled:cursor-not-allowed",
+        selected ? "border-[#9b8afb]" : "border-[#d0d5dd]"
       )}
     />
   )
@@ -270,6 +276,10 @@ function QuestionBlock({
 }) {
   const value = answers[question.id]
   const disabled = !active
+  // Lettered option lists align their badges under the question number (no
+  // indent); free-text / dropdown / stepper controls indent under the label.
+  const isOptionList =
+    question.type === "single-select" || question.type === "multi-select"
 
   const renderControl = () => {
     switch (question.type) {
@@ -334,25 +344,19 @@ function QuestionBlock({
             })}
             {question.allowOther ? (
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onAnswer(OTHER_VALUE)}
-                  className="group outline-none disabled:cursor-default"
-                  aria-label="Other"
-                >
-                  <OptionBadge
-                    letter={letterFor(question.options.length)}
-                    selected={otherSelected}
-                    multi={false}
-                    active={active}
-                  />
-                </button>
+                <OptionBadge
+                  letter={letterFor(question.options.length)}
+                  selected={otherSelected}
+                  multi={false}
+                  active={active}
+                />
                 <div className="min-w-0 flex-1">
                   <OtherField
-                    active={active && otherSelected}
+                    disabled={disabled}
+                    selected={otherSelected}
                     value={otherText[question.id] ?? ""}
                     onChange={onOther}
+                    onSelect={() => onAnswer(OTHER_VALUE)}
                     placeholder="Other"
                   />
                 </div>
@@ -394,25 +398,23 @@ function QuestionBlock({
             ))}
             {question.allowOther ? (
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => toggle(OTHER_VALUE)}
-                  className="group outline-none disabled:cursor-default"
-                  aria-label="Other"
-                >
-                  <OptionBadge
-                    letter={letterFor(question.options.length)}
-                    selected={otherSelected}
-                    multi
-                    active={active}
-                  />
-                </button>
+                <OptionBadge
+                  letter={letterFor(question.options.length)}
+                  selected={otherSelected}
+                  multi
+                  active={active}
+                />
                 <div className="min-w-0 flex-1">
                   <OtherField
-                    active={active && otherSelected}
+                    disabled={disabled}
+                    selected={otherSelected}
                     value={otherText[question.id] ?? ""}
                     onChange={onOther}
+                    onSelect={() => {
+                      if (!otherSelected) {
+                        toggle(OTHER_VALUE)
+                      }
+                    }}
                     placeholder="Enter more…"
                   />
                 </div>
@@ -453,7 +455,8 @@ function QuestionBlock({
             }
       }
       className={cn(
-        "flex flex-col gap-2 transition-opacity",
+        "flex flex-col transition-opacity",
+        isOptionList ? "gap-3" : "gap-2",
         active ? "opacity-100" : "cursor-pointer opacity-50 hover:opacity-70"
       )}
     >
@@ -472,7 +475,11 @@ function QuestionBlock({
           ) : null}
         </span>
       </div>
-      <div className="pl-8">{renderControl()}</div>
+      {isOptionList ? (
+        renderControl()
+      ) : (
+        <div className="pl-8">{renderControl()}</div>
+      )}
     </div>
   )
 }
@@ -507,12 +514,9 @@ export function AiQuestions({
 
   const total = questions.length
   const activeQuestion = questions[activeIndex]
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const activeRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" })
-  }, [activeIndex])
+  // A clipped glimpse of the upcoming question peeks below the active one for
+  // context (no scrolling — navigation stays on the header controls).
+  const nextQuestion = questions[activeIndex + 1]
 
   const canContinue = useMemo(() => {
     if (!activeQuestion) {
@@ -579,12 +583,15 @@ export function AiQuestions({
     >
       <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/icons/help-center.png"
+            alt=""
             aria-hidden
-            className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-[#101828] text-[11px] font-bold leading-none text-white"
-          >
-            ?
-          </span>
+            width={20}
+            height={20}
+            className="size-5 shrink-0"
+          />
           <span className="truncate text-base font-semibold leading-6 text-[#475467]">
             {title}
           </span>
@@ -614,37 +621,51 @@ export function AiQuestions({
         </div>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="flex max-h-[260px] flex-col gap-6 overflow-y-auto px-4 pb-4"
-      >
-        {questions.map((question, index) => {
-          const active = index === activeIndex
-          return (
-            <div key={question.id} ref={active ? activeRef : undefined}>
-              <QuestionBlock
-                question={question}
-                index={index}
-                active={active}
-                answers={answers}
-                otherText={otherText}
-                onActivate={() => setActiveIndex(index)}
-                onAnswer={(value) =>
-                  setAnswers((current) => ({
-                    ...current,
-                    [question.id]: value,
-                  }))
-                }
-                onOther={(value) =>
-                  setOtherText((current) => ({
-                    ...current,
-                    [question.id]: value,
-                  }))
-                }
-              />
-            </div>
-          )
-        })}
+      <div className="flex flex-col gap-6 px-4 pb-4 pt-1">
+        {activeQuestion ? (
+          <QuestionBlock
+            key={activeQuestion.id}
+            question={activeQuestion}
+            index={activeIndex}
+            active
+            answers={answers}
+            otherText={otherText}
+            onActivate={() => {}}
+            onAnswer={(value) =>
+              setAnswers((current) => ({
+                ...current,
+                [activeQuestion.id]: value,
+              }))
+            }
+            onOther={(value) =>
+              setOtherText((current) => ({
+                ...current,
+                [activeQuestion.id]: value,
+              }))
+            }
+          />
+        ) : null}
+
+        {nextQuestion ? (
+          <div
+            aria-hidden
+            inert
+            className="pointer-events-none relative max-h-[88px] overflow-hidden"
+          >
+            <QuestionBlock
+              key={nextQuestion.id}
+              question={nextQuestion}
+              index={activeIndex + 1}
+              active={false}
+              answers={answers}
+              otherText={otherText}
+              onActivate={() => {}}
+              onAnswer={() => {}}
+              onOther={() => {}}
+            />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-b from-transparent to-[#fafaff]" />
+          </div>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-end gap-1 bg-[#fafaff] px-4 pb-4 pt-3">

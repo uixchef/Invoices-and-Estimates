@@ -15,8 +15,9 @@ import { cn } from "@/lib/utils"
  *
  * Renders assistant reasoning as lightweight markdown. When `streaming` is set,
  * text reveals progressively (Cursor-style). When `viewportHeight` is set, the
- * text sits in a fixed-height, bottom-anchored window with a fade at the bottom
- * edge so new lines emerge from the gradient as they stream in.
+ * text fills a fixed-height window from the top down; once it overflows, the
+ * window stays pinned to the newest line and the oldest lines scroll off the top
+ * under a fade — matching the Figma "Streaming text" behavior (34:37995).
  */
 type StreamingTextProps = {
   text: string
@@ -136,12 +137,16 @@ export function StreamingText({
   }, [charsPerTick, streaming, text, tickMs])
 
   const visibleText = streaming ? text.slice(0, revealedChars) : text
+  const [topFade, setTopFade] = useState(false)
 
   useEffect(() => {
     const node = scrollRef.current
-    if (node) {
-      node.scrollTop = node.scrollHeight
+    if (!node) {
+      return
     }
+    // Keep the newest line in view; the oldest lines spill off the top.
+    node.scrollTop = node.scrollHeight
+    setTopFade(node.scrollTop > 0)
   }, [visibleText])
 
   const content = renderReasoning(visibleText)
@@ -166,13 +171,16 @@ export function StreamingText({
     >
       <div
         ref={scrollRef}
-        className="flex h-full flex-col justify-end overflow-y-auto text-[12px] leading-[17px] text-[#3e1c96] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="h-full overflow-y-auto text-[12px] leading-[17px] text-[#3e1c96] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {content}
       </div>
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-[64px] bg-gradient-to-b from-transparent to-white"
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 h-[64px] bg-gradient-to-b from-white to-transparent transition-opacity duration-200",
+          topFade ? "opacity-100" : "opacity-0"
+        )}
       />
     </div>
   )

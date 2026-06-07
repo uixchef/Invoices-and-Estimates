@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { AI_MODELS } from "@/lib/ai-models"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import type { PromptAttachment } from "@/lib/create-with-ai-types"
 import { useMediumsStore } from "@/lib/mediums-store"
@@ -37,30 +38,6 @@ const PROMPT_PLACEHOLDER_SUGGESTIONS = [
 ] as const
 
 const PLACEHOLDER_ROTATE_MS = 3800
-
-type AiModel = {
-  id: string
-  name: string
-  description: string
-}
-
-const AI_MODELS: AiModel[] = [
-  {
-    id: "sonnet-4-6",
-    name: "Sonnet 4.6",
-    description: "Most efficient for everyday tasks",
-  },
-  {
-    id: "opus-4-6",
-    name: "Opus 4.6",
-    description: "Most capable for ambitious work",
-  },
-  {
-    id: "gpt-5-4",
-    name: "GPT 5.4",
-    description: "Alternative AI model",
-  },
-]
 
 const MEDIUM_PLACEHOLDER = "Medium"
 
