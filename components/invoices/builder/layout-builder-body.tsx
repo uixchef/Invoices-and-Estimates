@@ -7,7 +7,7 @@ import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
 import { InvoiceAiPanel } from "@/components/invoices/builder/invoice-ai-panel"
 import { LayoutBuilderCanvas } from "@/components/invoices/builder/layout-builder-canvas"
 
-const MIN_PANEL_WIDTH = 320
+const MIN_PANEL_WIDTH = 360
 const MAX_PANEL_WIDTH = 640
 const DEFAULT_PANEL_WIDTH = 360
 const KEYBOARD_STEP = 16
@@ -80,14 +80,14 @@ export function LayoutBuilderBody() {
   return (
     <div className="flex min-h-0 flex-1 items-stretch bg-[#eceef2]">
       {isPanelOpen ? (
-        <>
-          <div className="flex shrink-0 py-4 pl-4">
-            <InvoiceAiPanel
-              width={panelWidth}
-              onClose={() => setIsPanelOpen(false)}
-            />
-          </div>
+        <div className="relative flex shrink-0 py-4 pl-4">
+          <InvoiceAiPanel
+            width={panelWidth}
+            onClose={() => setIsPanelOpen(false)}
+          />
 
+          {/* Figma: drag_indicator grip (3187:44827) sits on the panel/canvas
+              seam, vertically centred, without consuming layout width. */}
           <div
             role="separator"
             aria-orientation="vertical"
@@ -101,13 +101,14 @@ export function LayoutBuilderBody() {
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
             onKeyDown={handleKeyDown}
-            className="group relative flex w-4 shrink-0 cursor-col-resize touch-none items-center justify-center outline-none"
+            className="group absolute top-1/2 right-0 z-20 flex h-12 w-4 -translate-y-1/2 translate-x-full cursor-col-resize touch-none items-center justify-center rounded outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
           >
-            <span className="pointer-events-none flex h-8 w-4 items-center justify-center rounded text-[#98a2b3] transition-colors group-hover:text-[#475467] group-focus-visible:text-[#6938ef]">
-              <GripVertical className="size-5" aria-hidden />
-            </span>
+            <GripVertical
+              className="size-6 text-[#98a2b3] transition-colors group-hover:text-[#475467] group-focus-visible:text-[#6938ef]"
+              aria-hidden
+            />
           </div>
-        </>
+        </div>
       ) : (
         <div className="flex shrink-0 items-start py-4 pl-4">
           <button
