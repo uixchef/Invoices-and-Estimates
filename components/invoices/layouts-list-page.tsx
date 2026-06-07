@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useFilterBarState } from "@/hooks/use-filter-bar-state"
+import { CreateWithAiPanel } from "@/components/invoices/create-with-ai-panel"
 import { LayoutGrid } from "@/components/invoices/layout-grid"
 import { LayoutToolbar, type LayoutsViewMode } from "@/components/invoices/layout-toolbar"
 import {
@@ -73,6 +74,8 @@ export function LayoutsListPage({ rows }: LayoutsListPageProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <CreateWithAiPanel />
+
       <LayoutToolbar
         filterDefinitions={filterDefinitions}
         view={view}

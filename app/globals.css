@@ -210,6 +210,134 @@ nextjs-portal:has([role="dialog"]) > * {
   }
 }
 
+@keyframes prompt-placeholder-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.3em);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.prompt-placeholder {
+  animation: prompt-placeholder-in 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-placeholder {
+    animation: none;
+  }
+}
+
+@keyframes hero-caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+.hero-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  width: 100%;
+  white-space: nowrap;
+  font-family: var(--font-inter), Inter, sans-serif;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 32px;
+  color: #101828;
+}
+
+.hero-title-lead {
+  flex-shrink: 0;
+  font-weight: 400;
+}
+
+.hero-accent {
+  display: inline-grid;
+  flex-shrink: 0;
+  vertical-align: baseline;
+  text-align: left;
+}
+
+.hero-accent__slot {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hero-accent__slot-text {
+  font-family: var(--font-newsreader), "Newsreader", Georgia, serif;
+  font-size: 26px;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 32px;
+  letter-spacing: -0.01em;
+}
+
+.hero-accent__live {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: baseline;
+  justify-self: start;
+  align-self: center;
+  white-space: nowrap;
+}
+
+.hero-accent__caret--measure {
+  opacity: 0;
+}
+
+.hero-accent__text {
+  font-family: var(--font-newsreader), "Newsreader", Georgia, serif;
+  font-size: 26px;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 32px;
+  letter-spacing: -0.01em;
+  background-image: linear-gradient(
+    100deg,
+    #6b81fa 0%,
+    #8b5cf6 42%,
+    #d946ef 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hero-accent__caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 1em;
+  margin-left: 2px;
+  transform: translateY(0.12em);
+  background: #8b5cf6;
+  opacity: 0.55;
+  border-radius: 1px;
+  animation: hero-caret-blink 1.4s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-accent__caret {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

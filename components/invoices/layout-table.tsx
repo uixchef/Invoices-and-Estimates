@@ -232,7 +232,7 @@ function LayoutTableRow({ item }: { item: LayoutRow }) {
           <DropdownMenuContent align="end" className="rounded">
             <DropdownMenuItem>
               <Copy className="size-4 text-[#667085]" aria-hidden />
-              Duplicate
+              Clone
             </DropdownMenuItem>
             <DropdownMenuItem className="text-[#b42318] focus:text-[#b42318]">
               <Trash2 className="size-4 text-[#b42318]" aria-hidden />

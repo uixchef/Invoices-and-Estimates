@@ -1,6 +1,9 @@
-import type { ComponentProps, SVGProps } from "react"
+"use client"
+
+import { useEffect, useState, type ComponentProps, type SVGProps } from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
+import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import { cn } from "@/lib/utils"
 
 function AutoAwesomeIcon(props: SVGProps<SVGSVGElement>) {
@@ -42,17 +45,56 @@ const createWithAiButtonVariants = cva(
 type CreateWithAiButtonProps = ComponentProps<"button"> &
   VariantProps<typeof createWithAiButtonVariants>
 
+const BUTTON_TRANSITION_MS = 300
+
 export function CreateWithAiButton({
   className,
   disabled,
   type = "button",
+  onClick,
   ...props
 }: CreateWithAiButtonProps) {
+  const { isOpen, open } = useCreateWithAi()
+  const [shouldRender, setShouldRender] = useState(!isOpen)
+  const [isVisible, setIsVisible] = useState(!isOpen)
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsVisible(false)
+      const timeout = window.setTimeout(
+        () => setShouldRender(false),
+        BUTTON_TRANSITION_MS
+      )
+      return () => window.clearTimeout(timeout)
+    }
+
+    setShouldRender(true)
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => setIsVisible(true))
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [isOpen])
+
+  if (!shouldRender) {
+    return null
+  }
+
   return (
     <button
       type={type}
       disabled={disabled}
-      className={cn(createWithAiButtonVariants(), className)}
+      tabIndex={isVisible ? 0 : -1}
+      aria-hidden={!isVisible}
+      className={cn(
+        createWithAiButtonVariants(),
+        "transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none",
+        isVisible ? "scale-100 opacity-100" : "scale-95 opacity-0",
+        className
+      )}
+      onClick={(event) => {
+        open()
+        onClick?.(event)
+      }}
       {...props}
     >
       <AutoAwesomeIcon className="size-5 shrink-0" />

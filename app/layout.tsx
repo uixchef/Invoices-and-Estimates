@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { Geist, Geist_Mono, Inter } from "next/font/google"
+import { Geist, Geist_Mono, Inter, Newsreader } from "next/font/google"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -17,6 +17,13 @@ const inter = Inter({
   subsets: ["latin"],
 })
 
+const newsreader = Newsreader({
+  variable: "--font-newsreader",
+  subsets: ["latin"],
+  weight: ["500", "600"],
+  style: ["italic"],
+})
+
 export const metadata: Metadata = {
   title: "Invoice Layouts | Payment Hub",
   description: "Configure invoice templates within the Payments hub",
@@ -30,7 +37,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} min-h-0 antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} ${newsreader.variable} min-h-0 antialiased`}
       >
         <div className="h-full min-h-0">{children}</div>
       </body>
