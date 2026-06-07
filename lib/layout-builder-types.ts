@@ -29,7 +29,12 @@ export type BuilderMessage = {
   references: BuilderReferenceImage[]
 }
 
-export type BuilderStatus = "idle" | "thinking" | "ready"
+export type BuilderStatus =
+  | "idle"
+  | "reasoning"
+  | "asking"
+  | "thinking"
+  | "ready"
 
 export type BuilderViewMode = "preview" | "code"
 

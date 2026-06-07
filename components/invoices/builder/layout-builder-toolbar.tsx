@@ -11,11 +11,11 @@ import {
   Plus,
   Redo2,
   Ruler,
-  Sparkles,
   Type,
   Undo2,
 } from "lucide-react"
 
+import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +45,7 @@ function ToolbarIconButton({
       className={cn(
         "inline-flex size-7 shrink-0 items-center justify-center rounded-[4px] outline-none transition-colors",
         "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-4",
+        "disabled:pointer-events-none disabled:text-[#d0d5dd]",
         active && tone === "accent" && "bg-[#ebe9fe] text-[#6938ef]",
         active && tone === "default" && "bg-[#f2f4f7] text-[#101828]",
         !active && "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]",
@@ -90,25 +91,35 @@ function ToolbarTag({
  */
 export function LayoutBuilderToolbar() {
   const { getMediumName } = useMediumsStore()
-  const { mediumId, documentType, setDocumentType, viewMode, setViewMode } =
-    useLayoutBuilder()
+  const {
+    mediumId,
+    documentType,
+    setDocumentType,
+    viewMode,
+    setViewMode,
+    status,
+  } = useLayoutBuilder()
 
   const mediumName = mediumId ? getMediumName(mediumId) : "Medium"
+
+  // Editing/utility tools only operate on a generated layout, so they stay
+  // disabled until the first generation completes (status === "ready").
+  const canEdit = status === "ready"
 
   return (
     <div className="flex h-11 w-full shrink-0 items-center gap-4 border-b border-[#d0d5dd] bg-white px-4 py-1">
       <div className="flex w-[360px] shrink-0 items-center gap-2.5">
         <div className="flex items-center gap-0.5">
-          <ToolbarIconButton aria-label="Add block">
+          <ToolbarIconButton aria-label="Add block" disabled={!canEdit}>
             <Plus aria-hidden />
           </ToolbarIconButton>
           <ToolbarIconButton aria-label="Invoice AI" active tone="accent">
-            <Sparkles aria-hidden />
+            <AutoAwesomeIcon className="size-4" />
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Insert text">
+          <ToolbarIconButton aria-label="Insert text" disabled={!canEdit}>
             <Type aria-hidden />
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Theme">
+          <ToolbarIconButton aria-label="Theme" disabled={!canEdit}>
             <svg viewBox="0 0 24 24" fill="none" aria-hidden className="size-4">
               <path
                 d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1 .8-1.8 1.8-1.8H16a5 5 0 0 0 5-5c0-3.9-4-7-9-7Z"
@@ -126,7 +137,7 @@ export function LayoutBuilderToolbar() {
         <div className="min-w-px flex-1" />
 
         <div className="flex items-center gap-0.5">
-          <ToolbarIconButton aria-label="Version history">
+          <ToolbarIconButton aria-label="Version history" disabled={!canEdit}>
             <History aria-hidden />
           </ToolbarIconButton>
           <ToolbarIconButton aria-label="Toggle panel" active>
@@ -192,15 +203,15 @@ export function LayoutBuilderToolbar() {
 
       <div className="flex min-w-px flex-1 items-center justify-end gap-1">
         <div className="flex items-center gap-1">
-          <ToolbarIconButton aria-label="Undo">
+          <ToolbarIconButton aria-label="Undo" disabled={!canEdit}>
             <Undo2 aria-hidden />
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Redo">
+          <ToolbarIconButton aria-label="Redo" disabled={!canEdit}>
             <Redo2 aria-hidden />
           </ToolbarIconButton>
         </div>
         <div className="h-4 w-px bg-[#d0d5dd]" />
-        <ToolbarIconButton aria-label="Download">
+        <ToolbarIconButton aria-label="Download" disabled={!canEdit}>
           <Download aria-hidden />
         </ToolbarIconButton>
       </div>

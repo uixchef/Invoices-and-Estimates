@@ -1,28 +1,9 @@
 "use client"
 
-import { Sparkles } from "lucide-react"
-
+import { GeneratingCarousel } from "@/components/invoices/builder/generating-carousel"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { useMediumsStore } from "@/lib/mediums-store"
-
-function GeneratingState() {
-  return (
-    <div className="flex flex-col items-center gap-3 text-center">
-      <span className="inline-flex size-12 items-center justify-center rounded-full bg-[#ebe9fe]">
-        <Sparkles className="size-6 animate-pulse text-[#6938ef]" aria-hidden />
-      </span>
-      <div className="flex flex-col gap-1">
-        <p className="font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">
-          Generating your layout…
-        </p>
-        <p className="max-w-[320px] font-[family-name:var(--font-inter)] text-sm font-normal leading-5 text-[#475467]">
-          Invoice AI is drafting your layout from the prompt. This usually takes
-          a few seconds.
-        </p>
-      </div>
-    </div>
-  )
-}
+import { cn } from "@/lib/utils"
 
 /** Placeholder document surface shown once generation completes. */
 function DocumentSurface() {
@@ -82,10 +63,17 @@ export function LayoutBuilderCanvas() {
   // Resolves medium context for future preview sizing; kept for parity with prompt selection.
   useMediumsStore()
 
+  const isReady = status === "ready"
+
   return (
     <div className="flex min-h-0 flex-1 flex-col p-4">
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-[12px] bg-[#f9fafb] p-6 shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]">
-        {status === "ready" ? <DocumentSurface /> : <GeneratingState />}
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 items-center justify-center rounded-[12px] shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]",
+          isReady ? "overflow-auto bg-[#f9fafb] p-6" : "overflow-hidden bg-white"
+        )}
+      >
+        {isReady ? <DocumentSurface /> : <GeneratingCarousel />}
       </div>
     </div>
   )
