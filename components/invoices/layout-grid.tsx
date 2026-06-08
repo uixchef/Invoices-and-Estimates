@@ -15,7 +15,7 @@ export function LayoutGrid({
 }: LayoutGridProps) {
   if (items.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-[#d0d5dd] bg-white px-4 py-16">
+      <div className="flex min-h-0 flex-1 items-start justify-center rounded-lg bg-white px-4 pb-16 pt-[100px]">
         <LayoutsEmptyState
           showClear={hasActiveFilters}
           onClearFilters={onClearFilters}
