@@ -1,15 +1,25 @@
 import type { LayoutRow } from "@/lib/layouts-data"
 import { LayoutCard } from "@/components/invoices/layout-card"
+import { LayoutsEmptyState } from "@/components/invoices/layouts-empty-state"
 
 type LayoutGridProps = {
   items: LayoutRow[]
+  hasActiveFilters?: boolean
+  onClearFilters?: () => void
 }
 
-export function LayoutGrid({ items }: LayoutGridProps) {
+export function LayoutGrid({
+  items,
+  hasActiveFilters = false,
+  onClearFilters,
+}: LayoutGridProps) {
   if (items.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-[#d0d5dd] bg-white px-4 py-16 font-[family-name:var(--font-inter)] text-base text-[#475467]">
-        No layouts match your filters.
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-[#d0d5dd] bg-white px-4 py-16">
+        <LayoutsEmptyState
+          showClear={hasActiveFilters}
+          onClearFilters={onClearFilters}
+        />
       </div>
     )
   }

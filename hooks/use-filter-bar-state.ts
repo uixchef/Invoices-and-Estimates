@@ -144,6 +144,12 @@ export function useFilterBarState<T extends string>(
     [closeFilter, unpinFilter]
   )
 
+  const clearAllFilters = useCallback(() => {
+    setSelections({ ...emptySelections })
+    setPinnedFilterIds([])
+    closeFilter()
+  }, [closeFilter, emptySelections])
+
   return {
     openFilterId,
     openFilterAnchor,
@@ -156,5 +162,6 @@ export function useFilterBarState<T extends string>(
     handleTableFilterOpenChange,
     handleAddFilter,
     handleRemoveFilter,
+    clearAllFilters,
   }
 }

@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { FilterDropdownPopover } from "@/components/filters/filter-bar"
+import { LayoutsEmptyState } from "@/components/invoices/layouts-empty-state"
 import type { FilterBarAnchor } from "@/components/filters/filter-bar"
 import {
   DropdownMenu,
@@ -53,6 +54,8 @@ type LayoutTableProps = {
   onFilterOpenChange: (filterId: LayoutFilterType, open: boolean) => void
   onFilterDraftIdsChange: (ids: string[]) => void
   onFilterApply: (filterId: LayoutFilterType, ids: string[]) => void
+  hasActiveFilters?: boolean
+  onClearFilters?: () => void
 }
 
 function TableHeaderCell({
@@ -129,8 +132,6 @@ function TableHeaderCell({
               </button>
             }
           />
-        ) : label ? (
-          <ListFilter className="size-3.5 shrink-0 text-[#667085]" aria-hidden />
         ) : null}
       </div>
     </div>
@@ -268,6 +269,8 @@ export function LayoutTable({
   onFilterOpenChange,
   onFilterDraftIdsChange,
   onFilterApply,
+  hasActiveFilters = false,
+  onClearFilters,
 }: LayoutTableProps) {
   const isEmpty = items.length === 0
 
@@ -313,8 +316,11 @@ export function LayoutTable({
       <div className="min-h-0 overflow-auto overscroll-y-contain">
         <div className="min-w-[760px]">
           {isEmpty ? (
-            <div className="flex h-32 items-center justify-center px-4 font-[family-name:var(--font-inter)] text-base text-[#475467]">
-              No layouts match your filters.
+            <div className="flex min-h-[360px] items-center justify-center px-4 py-16">
+              <LayoutsEmptyState
+                showClear={hasActiveFilters}
+                onClearFilters={onClearFilters}
+              />
             </div>
           ) : (
             items.map((item) => <LayoutTableRow key={item.id} item={item} />)

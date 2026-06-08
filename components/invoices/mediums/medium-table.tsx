@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { getMediumEditorHref } from "@/lib/medium-routes"
 import { FilterDropdownPopover } from "@/components/filters/filter-bar"
+import { LayoutsEmptyState } from "@/components/invoices/layouts-empty-state"
 import type { FilterBarAnchor } from "@/components/filters/filter-bar"
 import type { MediumFilterType } from "@/lib/medium-filters"
 import { MEDIUM_FILTER_DEFINITIONS } from "@/lib/medium-filters"
@@ -38,6 +39,8 @@ type MediumTableProps = {
   onFilterOpenChange: (filterId: MediumFilterType, open: boolean) => void
   onFilterDraftIdsChange: (ids: string[]) => void
   onFilterApply: (filterId: MediumFilterType, ids: string[]) => void
+  hasActiveFilters?: boolean
+  onClearFilters?: () => void
 }
 
 function TableHeaderCell({
@@ -112,8 +115,6 @@ function TableHeaderCell({
               </button>
             }
           />
-        ) : label ? (
-          <ListFilter className="size-3.5 shrink-0 text-[#667085]" aria-hidden />
         ) : null}
       </div>
     </div>
@@ -195,6 +196,8 @@ export function MediumTable({
   onFilterOpenChange,
   onFilterDraftIdsChange,
   onFilterApply,
+  hasActiveFilters = false,
+  onClearFilters,
 }: MediumTableProps) {
   const isEmpty = items.length === 0
 
@@ -235,8 +238,12 @@ export function MediumTable({
       <div className="min-h-0 overflow-auto overscroll-y-contain">
         <div className="min-w-[900px]">
           {isEmpty ? (
-            <div className="flex h-32 items-center justify-center px-4 font-[family-name:var(--font-inter)] text-base text-[#475467]">
-              No mediums match your filters.
+            <div className="flex min-h-[360px] items-center justify-center px-4 py-16">
+              <LayoutsEmptyState
+                entityLabel="mediums"
+                showClear={hasActiveFilters}
+                onClearFilters={onClearFilters}
+              />
             </div>
           ) : (
             items.map((item) => <MediumTableRow key={item.id} item={item} />)

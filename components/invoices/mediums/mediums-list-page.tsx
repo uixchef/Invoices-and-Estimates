@@ -38,6 +38,7 @@ export function MediumsListPage() {
     handleTableFilterOpenChange,
     handleAddFilter,
     handleRemoveFilter,
+    clearAllFilters,
   } = useFilterBarState(MEDIUM_FILTER_TYPES, MEDIUM_EMPTY_SELECTIONS)
 
   const filtered = useMemo(() => {
@@ -60,6 +61,15 @@ export function MediumsListPage() {
   }, [filtered, page, pageSize])
 
   const needsPagination = filtered.length >= MEDIUMS_PAGINATION_THRESHOLD
+
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 ||
+    MEDIUM_FILTER_TYPES.some((id) => selections[id].length > 0)
+
+  const handleClearFilters = () => {
+    setSearchQuery("")
+    clearAllFilters()
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -93,6 +103,8 @@ export function MediumsListPage() {
             onFilterOpenChange={handleTableFilterOpenChange}
             onFilterDraftIdsChange={setFilterDraftIds}
             onFilterApply={handleFilterApply}
+            hasActiveFilters={hasActiveFilters}
+            onClearFilters={handleClearFilters}
           />
           {needsPagination ? (
             <LayoutsPagination
@@ -106,7 +118,11 @@ export function MediumsListPage() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          <MediumGrid items={filtered} />
+          <MediumGrid
+            items={filtered}
+            hasActiveFilters={hasActiveFilters}
+            onClearFilters={handleClearFilters}
+          />
         </div>
       )}
     </div>

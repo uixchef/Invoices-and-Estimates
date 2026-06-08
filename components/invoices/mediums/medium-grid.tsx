@@ -1,20 +1,31 @@
 "use client"
 
 import { MediumCard } from "@/components/invoices/mediums/medium-card"
+import { LayoutsEmptyState } from "@/components/invoices/layouts-empty-state"
 import type { MediumRow } from "@/lib/mediums-data"
 
 type MediumGridProps = {
   items: MediumRow[]
+  hasActiveFilters?: boolean
+  onClearFilters?: () => void
 }
 
 /**
  * Figma: Medium Cards grid (3161:161821) — 300px cards, 16px gap.
  */
-export function MediumGrid({ items }: MediumGridProps) {
+export function MediumGrid({
+  items,
+  hasActiveFilters = false,
+  onClearFilters,
+}: MediumGridProps) {
   if (items.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-[#d0d5dd] bg-white px-4 py-16 font-[family-name:var(--font-inter)] text-base text-[#475467]">
-        No mediums match your filters.
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-[#d0d5dd] bg-white px-4 py-16">
+        <LayoutsEmptyState
+          entityLabel="mediums"
+          showClear={hasActiveFilters}
+          onClearFilters={onClearFilters}
+        />
       </div>
     )
   }

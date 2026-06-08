@@ -58,6 +58,7 @@ export function LayoutsListPage({ rows }: LayoutsListPageProps) {
     handleTableFilterOpenChange,
     handleAddFilter,
     handleRemoveFilter,
+    clearAllFilters,
   } = useFilterBarState(FILTER_TYPES, EMPTY_SELECTIONS)
 
   const filtered = useMemo(() => {
@@ -80,6 +81,15 @@ export function LayoutsListPage({ rows }: LayoutsListPageProps) {
   }, [filtered, page, pageSize])
 
   const needsPagination = filtered.length >= LAYOUTS_PAGINATION_THRESHOLD
+
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 ||
+    FILTER_TYPES.some((id) => selections[id].length > 0)
+
+  const handleClearFilters = () => {
+    setSearchQuery("")
+    clearAllFilters()
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -117,6 +127,8 @@ export function LayoutsListPage({ rows }: LayoutsListPageProps) {
             onFilterOpenChange={handleTableFilterOpenChange}
             onFilterDraftIdsChange={setFilterDraftIds}
             onFilterApply={handleFilterApply}
+            hasActiveFilters={hasActiveFilters}
+            onClearFilters={handleClearFilters}
           />
           {needsPagination ? (
             <LayoutsPagination
@@ -130,7 +142,11 @@ export function LayoutsListPage({ rows }: LayoutsListPageProps) {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          <LayoutGrid items={filtered} />
+          <LayoutGrid
+            items={filtered}
+            hasActiveFilters={hasActiveFilters}
+            onClearFilters={handleClearFilters}
+          />
         </div>
       )}
     </div>
