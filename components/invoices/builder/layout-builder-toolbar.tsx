@@ -140,6 +140,9 @@ export function LayoutBuilderToolbar() {
     setPanelOpen,
     panelWidth,
     status,
+    addingElement,
+    openAddElements,
+    closeAddElements,
   } = useLayoutBuilder()
 
   const mediumName = mediumId ? getMediumName(mediumId) : "Medium"
@@ -157,7 +160,12 @@ export function LayoutBuilderToolbar() {
         style={panelOpen ? { width: panelWidth } : undefined}
       >
         <div className="flex items-center gap-0.5">
-          <ToolbarIconButton aria-label="Add block" disabled={!canEdit}>
+          <ToolbarIconButton
+            aria-label="Add elements"
+            active={addingElement}
+            disabled={!canEdit}
+            onClick={addingElement ? closeAddElements : openAddElements}
+          >
             <Plus aria-hidden />
           </ToolbarIconButton>
           <ToolbarIconButton

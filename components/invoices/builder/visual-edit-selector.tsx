@@ -77,7 +77,6 @@ export function VisualEditSelector({
   // Tools + prompt belong to the "hover over the selected layer" state; we keep
   // them while the prompt is focused so typing doesn't dismiss them.
   const showChrome = selected && (hovered || promptFocused)
-  const showLabel = selected || hovered
   // "Filled" drives the active send button (Figma 5625:23865 / 23868).
   const filled = promptValue.trim().length > 0
 
@@ -101,16 +100,23 @@ export function VisualEditSelector({
 
   return (
     <div
+      data-sel
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={() => onSelect?.()}
+      // Deepest element wins: stop the click from bubbling to ancestor
+      // selectors so picking a child doesn't also select its container.
+      onClick={(event) => {
+        event.stopPropagation()
+        onSelect?.()
+      }}
       className={cn(
         "group/sel relative rounded-[4px] ring-1 transition-shadow",
+        // Selected always shows the solid ring. Otherwise hover shows the soft
+        // ring, but it's suppressed whenever a nested selector is hovered so
+        // only the innermost element under the pointer highlights (Cursor model).
         selected
           ? "ring-[#6938ef]"
-          : hovered
-            ? "ring-[#9b8afb]"
-            : "ring-transparent",
+          : "ring-transparent hover:ring-[#9b8afb] has-[[data-sel]:hover]:ring-transparent",
         className
       )}
     >
@@ -132,12 +138,15 @@ export function VisualEditSelector({
         </div>
       ) : null}
 
-      {/* Corner name badge — pinned bottom-right (Figma 3194:71355). */}
+      {/* Corner name badge — pinned bottom-right (Figma 3194:71355). Selected
+          shows it always; otherwise it follows the deepest-only hover. */}
       <div
         className={cn(
           "absolute -bottom-2 right-0 z-20 items-center whitespace-nowrap rounded-bl-[4px] rounded-br-[4px] rounded-tl-[4px] bg-[#6938ef] px-1 py-px",
           "font-[family-name:var(--font-inter)] text-[11px] font-semibold leading-4 text-white",
-          showLabel ? "flex" : "hidden"
+          selected
+            ? "flex"
+            : "hidden group-hover/sel:flex group-has-[[data-sel]:hover]/sel:hidden"
         )}
       >
         {label}

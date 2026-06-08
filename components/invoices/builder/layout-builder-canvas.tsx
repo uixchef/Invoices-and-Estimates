@@ -1,7 +1,25 @@
 "use client"
 
-import { useMemo, useRef, type CSSProperties } from "react"
-import { ArrowDown, ArrowUp, Copy, Plus, Trash2 } from "lucide-react"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react"
+import {
+  ArrowDown,
+  ArrowUp,
+  Code2,
+  Copy,
+  GripVertical,
+  Plus,
+  RotateCcw,
+  Trash2,
+} from "lucide-react"
 
 import { GeneratingCarousel } from "@/components/invoices/builder/generating-carousel"
 import { VisualEditSelector } from "@/components/invoices/builder/visual-edit-selector"
@@ -334,7 +352,107 @@ function DocumentHeader({ layout }: { layout: GeneratedLayout }) {
   )
 }
 
-/** Real, rendered document shown once generation completes. */
+/**
+ * Wraps a whole document section (header, billing, totals, footer…) so it can be
+ * picked in visual-edit mode just like a text leaf. Selecting attaches the
+ * section to the composer and reveals the scoped "Describe your edit" prompt.
+ * Outside edit mode it renders transparently (only adding a wrapper element when
+ * a layout class needs to ride along).
+ */
+function SelectableSection({
+  label,
+  className,
+  children,
+}: {
+  label: string
+  className?: string
+  children: ReactNode
+}) {
+  const { editMode, selections, addSelection, sendMessage } = useLayoutBuilder()
+
+  if (!editMode) {
+    return className ? <div className={className}>{children}</div> : <>{children}</>
+  }
+
+  return (
+    <VisualEditSelector
+      label={label}
+      selected={selections.some((selection) => selection.label === label)}
+      onSelect={() => addSelection(label)}
+      onSubmitPrompt={(text) => sendMessage(`${label}: ${text}`)}
+      className={className}
+    >
+      {children}
+    </VisualEditSelector>
+  )
+}
+
+/** Design width of the invoice paper; the stage scales to fit within this. */
+const DOCUMENT_WIDTH = 595
+
+/**
+ * Fits the fixed-width invoice document to the available pane width by scaling
+ * it down (never up) with a transform, so it stays fully visible with the pane's
+ * gutter preserved on every side — no horizontal overflow or left-edge clipping
+ * on small or zoomed screens. The placeholder box takes the scaled dimensions so
+ * vertical scroll and centering stay correct, and `min-w-0` lets it shrink below
+ * the document's intrinsic width inside the flex pane.
+ */
+function DocumentStage({ children }: { children: ReactNode }) {
+  const outerRef = useRef<HTMLDivElement>(null)
+  const docRef = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(1)
+  const [size, setSize] = useState<{ width: number; height: number } | null>(
+    null
+  )
+
+  useLayoutEffect(() => {
+    const outer = outerRef.current
+    const doc = docRef.current
+    if (!outer || !doc) {
+      return
+    }
+
+    const update = () => {
+      const available = outer.clientWidth
+      const next = Math.min(1, available / DOCUMENT_WIDTH)
+      setScale(next)
+      setSize({ width: DOCUMENT_WIDTH * next, height: doc.offsetHeight * next })
+    }
+
+    const observer = new ResizeObserver(update)
+    observer.observe(outer)
+    observer.observe(doc)
+    update()
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <div ref={outerRef} className="w-full min-w-0">
+      <div
+        className="mx-auto"
+        style={size ? { width: size.width, height: size.height } : undefined}
+      >
+        <div
+          ref={docRef}
+          style={{
+            width: DOCUMENT_WIDTH,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Real, rendered document shown once generation completes. A fixed-width paper
+ * card wrapped in `DocumentStage`, which scales it to fit the canvas on smaller
+ * screens — same in full preview and split view (Figma 3189:58977).
+ */
 function DocumentSurface() {
   const {
     generatedLayout: layout,
@@ -387,14 +505,16 @@ function DocumentSurface() {
   return (
     <div
       className={cn(
-        "mx-auto flex aspect-[1/1.414] w-full max-w-[640px] flex-col overflow-hidden rounded-[4px] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.1),0_1px_2px_rgba(16,24,40,0.06)]",
+        "mx-auto flex w-full max-w-[595px] flex-col overflow-hidden rounded-[4px] bg-white shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]",
         isClassic ? "font-serif" : "font-[family-name:var(--font-inter)]"
       )}
     >
-      <DocumentHeader layout={layout} />
+      <SelectableSection label="Header" className="ring-inset">
+        <DocumentHeader layout={layout} />
+      </SelectableSection>
 
       <div className="flex flex-1 flex-col gap-6 px-10 py-8">
-        <div className="flex justify-between gap-6">
+        <SelectableSection label="Billing details" className="flex justify-between gap-6">
           <div className="flex flex-col gap-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-[#98a2b3]">
               <EditableText value="Bill to" label="Bill to label" />
@@ -454,27 +574,29 @@ function DocumentSurface() {
               </span>
             </div>
           </div>
-        </div>
+        </SelectableSection>
 
         {layout.sections.items ? (
           <div className="flex flex-col">
-            <div
-              className="flex items-center gap-4 border-b-2 py-2 text-xs font-semibold uppercase tracking-wide text-[#98a2b3]"
-              style={{ borderColor: layout.accent }}
-            >
-              <span className="flex-1">
-                <EditableText value="Description" label="Description header" />
-              </span>
-              <span className="w-12 text-right">
-                <EditableText value="Qty" label="Qty header" />
-              </span>
-              <span className="w-24 text-right">
-                <EditableText value="Rate" label="Rate header" />
-              </span>
-              <span className="w-28 text-right">
-                <EditableText value="Amount" label="Amount header" />
-              </span>
-            </div>
+            <SelectableSection label="Table header">
+              <div
+                className="flex items-center gap-4 border-b-2 py-2 text-xs font-semibold uppercase tracking-wide text-[#98a2b3]"
+                style={{ borderColor: layout.accent }}
+              >
+                <span className="flex-1">
+                  <EditableText value="Description" label="Description header" />
+                </span>
+                <span className="w-12 text-right">
+                  <EditableText value="Qty" label="Qty header" />
+                </span>
+                <span className="w-24 text-right">
+                  <EditableText value="Rate" label="Rate header" />
+                </span>
+                <span className="w-28 text-right">
+                  <EditableText value="Amount" label="Amount header" />
+                </span>
+              </div>
+            </SelectableSection>
             {layout.lineItems.map((item, index) => {
               const itemLabel = `Item ${index + 1}`
               const row = (
@@ -562,7 +684,7 @@ function DocumentSurface() {
           </div>
         ) : null}
 
-        <div className="flex justify-end">
+        <SelectableSection label="Totals" className="flex justify-end">
           <div className="flex w-60 flex-col gap-2">
             <div className="flex justify-between text-sm text-[#667085]">
               <span>
@@ -588,10 +710,13 @@ function DocumentSurface() {
               </span>
             </div>
           </div>
-        </div>
+        </SelectableSection>
 
         {layout.sections.notes || layout.sections.terms ? (
-          <div className="mt-auto flex flex-col gap-4 border-t border-[#eaecf0] pt-6">
+          <SelectableSection
+            label="Notes & terms"
+            className="mt-auto flex flex-col gap-4 border-t border-[#eaecf0] pt-6"
+          >
             {layout.sections.notes ? (
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-[#98a2b3]">
@@ -622,54 +747,270 @@ function DocumentSurface() {
                 </p>
               </div>
             ) : null}
-          </div>
+          </SelectableSection>
         ) : null}
       </div>
     </div>
   )
 }
 
-function buildHtml(layout: GeneratedLayout): string {
-  const rows = layout.lineItems
-    .map(
-      (item) =>
-        `      <tr>\n        <td>${item.description}</td>\n        <td class="num">${item.qty}</td>\n        <td class="num">${layout.currencySymbol}${item.rate.toFixed(2)}</td>\n        <td class="num">${layout.currencySymbol}${(item.qty * item.rate).toFixed(2)}</td>\n      </tr>`
-    )
-    .join("\n")
+/**
+ * Generated source for the document, plus a map of each selectable layer label
+ * to the line range it occupies. The labels and `data-el` markers mirror the
+ * preview's `EditableText` / `SelectableSection` labels so a selection in the
+ * preview maps 1:1 to a highlighted (and scrolled-to) region in the editor.
+ */
+type CodeBuild = { code: string; ranges: Record<string, [number, number]> }
 
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>${layout.documentType} · ${layout.businessName}</title>
-    <style>
-      :root { --accent: ${layout.accent}; }
-      body { font-family: ${
-        layout.style === "classic" ? "Georgia, serif" : "Inter, sans-serif"
-      }; color: #101828; }
-      .doc-title { color: var(--accent); font-size: 24px; font-weight: 600; }
-      table { width: 100%; border-collapse: collapse; }
-      th { border-bottom: 2px solid var(--accent); text-align: left; }
-      td, th { padding: 8px 0; }
-      .num { text-align: right; }
-      .total { color: var(--accent); font-weight: 700; }
-    </style>
-  </head>
-  <body>
-    <header>
-      <h1>${layout.businessName}</h1>
-      <p class="doc-title">${layout.documentType} — ${layout.documentNumber}</p>
-    </header>
-    <table>
-      <thead>
-        <tr><th>Description</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr>
-      </thead>
-      <tbody>
-${rows}
-      </tbody>
-    </table>
-  </body>
-</html>`
+function buildCode(
+  layout: GeneratedLayout,
+  overrides: Record<string, string> = {}
+): CodeBuild {
+  const lines: string[] = []
+  const ranges: Record<string, [number, number]> = {}
+  const sym = layout.currencySymbol
+  const money = (value: number) => `${sym}${value.toFixed(2)}`
+  // Edited text wins (same precedence as the preview's EditableText), so the
+  // code and the rendered document always show the same content.
+  const ov = (label: string, fallback: string) => overrides[label] ?? fallback
+  const subtotal = layout.lineItems.reduce(
+    (sum, item) => sum + item.qty * item.rate,
+    0
+  )
+  const tax = layout.sections.taxes ? subtotal * layout.taxRate : 0
+  const total = subtotal + tax
+
+  const add = (text: string) => {
+    lines.push(text)
+  }
+  // Records the range for one or more labels that live on a single line.
+  const tag = (labels: string | string[], text: string) => {
+    const index = lines.length
+    lines.push(text)
+    for (const label of Array.isArray(labels) ? labels : [labels]) {
+      ranges[label] = [index, index]
+    }
+  }
+  // Records the range for a multi-line block (the section labels).
+  const block = (label: string, fn: () => void) => {
+    const start = lines.length
+    fn()
+    ranges[label] = [start, lines.length - 1]
+  }
+
+  add(`<!doctype html>`)
+  add(`<html lang="en">`)
+  add(`  <head>`)
+  add(`    <meta charset="utf-8" />`)
+  add(`    <title>${layout.documentType} · ${layout.businessName}</title>`)
+  add(`    <style>`)
+  add(`      :root { --accent: ${layout.accent}; }`)
+  add(
+    `      body { font-family: ${
+      layout.style === "classic" ? "Georgia, serif" : "Inter, sans-serif"
+    }; color: #101828; margin: 0; }`
+  )
+  add(`      .muted { color: #667085; }`)
+  add(`      .doc-title { color: var(--accent); font-size: 24px; font-weight: 600; }`)
+  add(`      table { width: 100%; border-collapse: collapse; }`)
+  add(`      th { border-bottom: 2px solid var(--accent); text-align: left; }`)
+  add(`      td, th { padding: 8px 0; }`)
+  add(`      .num { text-align: right; }`)
+  add(`      .total { color: var(--accent); font-weight: 700; }`)
+  add(`    </style>`)
+  add(`  </head>`)
+  add(`  <body>`)
+
+  add(`    <!-- Header -->`)
+  block("Header", () => {
+    add(`    <header data-el="Header">`)
+    tag(
+      "Business name",
+      `      <h1 data-el="Business name">${ov("Business name", layout.businessName)}</h1>`
+    )
+    tag(
+      "Business address",
+      `      <p class="muted" data-el="Business address">${ov(
+        "Business address",
+        "123 Market Street · Suite 400"
+      )}</p>`
+    )
+    tag(
+      "Document type",
+      `      <p class="doc-title" data-el="Document type">${ov(
+        "Document type",
+        layout.documentType
+      )}</p>`
+    )
+    tag(
+      "Document number",
+      `      <p class="muted" data-el="Document number">${ov(
+        "Document number",
+        layout.documentNumber
+      )}</p>`
+    )
+    add(`    </header>`)
+  })
+
+  add(`    <!-- Billing details -->`)
+  block("Billing details", () => {
+    add(`    <section data-el="Billing details">`)
+    tag(
+      "Bill to label",
+      `      <p class="muted" data-el="Bill to label">${ov("Bill to label", "Bill to")}</p>`
+    )
+    tag(
+      "Client name",
+      `      <p data-el="Client name">${ov("Client name", layout.clientName)}</p>`
+    )
+    tag(
+      "Client address line 1",
+      `      <p class="muted" data-el="Client address line 1">${ov(
+        "Client address line 1",
+        "456 Client Avenue"
+      )}</p>`
+    )
+    tag(
+      "Client address line 2",
+      `      <p class="muted" data-el="Client address line 2">${ov(
+        "Client address line 2",
+        "San Francisco, CA 94103"
+      )}</p>`
+    )
+    tag(
+      ["Issued label", "Issue date"],
+      `      <p><span data-el="Issued label">${ov(
+        "Issued label",
+        "Issued"
+      )}</span> <span data-el="Issue date">${ov("Issue date", layout.issueDate)}</span></p>`
+    )
+    tag(
+      ["Due label", "Due date"],
+      `      <p><span data-el="Due label">${ov(
+        "Due label",
+        "Due"
+      )}</span> <span data-el="Due date">${ov("Due date", layout.dueDate)}</span></p>`
+    )
+    tag(
+      ["Currency label", "Currency code"],
+      `      <p><span data-el="Currency label">${ov(
+        "Currency label",
+        "Currency"
+      )}</span> <span data-el="Currency code">${ov(
+        "Currency code",
+        layout.currencyCode
+      )}</span></p>`
+    )
+    add(`    </section>`)
+  })
+
+  if (layout.sections.items) {
+    add(`    <!-- Line items -->`)
+    add(`    <table>`)
+    block("Table header", () => {
+      add(`      <thead data-el="Table header">`)
+      add(`        <tr>`)
+      tag(
+        "Description header",
+        `          <th>${ov("Description header", "Description")}</th>`
+      )
+      tag("Qty header", `          <th class="num">${ov("Qty header", "Qty")}</th>`)
+      tag("Rate header", `          <th class="num">${ov("Rate header", "Rate")}</th>`)
+      tag(
+        "Amount header",
+        `          <th class="num">${ov("Amount header", "Amount")}</th>`
+      )
+      add(`        </tr>`)
+      add(`      </thead>`)
+    })
+    add(`      <tbody>`)
+    layout.lineItems.forEach((item, index) => {
+      const label = `Item ${index + 1}`
+      block(label, () => {
+        add(`        <tr data-el="${label}">`)
+        tag(
+          `${label} description`,
+          `          <td data-el="${label} description">${ov(
+            `${label} description`,
+            item.description
+          )}</td>`
+        )
+        add(`          <td class="num">${item.qty}</td>`)
+        add(`          <td class="num">${money(item.rate)}</td>`)
+        add(`          <td class="num">${money(item.qty * item.rate)}</td>`)
+        add(`        </tr>`)
+      })
+    })
+    add(`      </tbody>`)
+    add(`    </table>`)
+  }
+
+  add(`    <!-- Totals -->`)
+  block("Totals", () => {
+    add(`    <section data-el="Totals">`)
+    tag(
+      "Subtotal label",
+      `      <p><span data-el="Subtotal label">${ov(
+        "Subtotal label",
+        "Subtotal"
+      )}</span> <span class="num">${money(subtotal)}</span></p>`
+    )
+    if (layout.sections.taxes) {
+      add(`      <p>Tax (${Math.round(layout.taxRate * 100)}%) <span class="num">${money(tax)}</span></p>`)
+    }
+    tag(
+      "Total label",
+      `      <p class="total"><span data-el="Total label">${ov(
+        "Total label",
+        "Total"
+      )}</span> <span class="num">${money(total)}</span></p>`
+    )
+    add(`    </section>`)
+  })
+
+  if (layout.sections.notes || layout.sections.terms) {
+    add(`    <!-- Notes & terms -->`)
+    block("Notes & terms", () => {
+      add(`    <section data-el="Notes &amp; terms">`)
+      if (layout.sections.notes) {
+        tag(
+          "Notes heading",
+          `      <h3 data-el="Notes heading">${ov("Notes heading", "Notes")}</h3>`
+        )
+        tag(
+          "Notes body",
+          `      <p class="muted" data-el="Notes body">${ov(
+            "Notes body",
+            `Thank you for your business.${
+              layout.emphasis ? ` Designed to emphasise ${layout.emphasis}.` : ""
+            }`
+          )}</p>`
+        )
+      }
+      if (layout.sections.terms) {
+        tag(
+          "Payment terms heading",
+          `      <h3 data-el="Payment terms heading">${ov(
+            "Payment terms heading",
+            "Payment terms"
+          )}</h3>`
+        )
+        tag(
+          "Payment terms body",
+          `      <p class="muted" data-el="Payment terms body">${ov(
+            "Payment terms body",
+            "Payment due within 14 days. Late payments may incur a 1.5% monthly fee."
+          )}</p>`
+        )
+      }
+      add(`    </section>`)
+    })
+  }
+
+  add(`  </body>`)
+  add(`</html>`)
+
+  return { code: lines.join("\n"), ranges }
 }
 
 // Syntax palette from Figma (Email Marketing · Code snippet, 299:76555).
@@ -849,41 +1190,253 @@ function highlightHtml(code: string): CodeToken[][] {
   return lines
 }
 
+// Left offset of the code text: gutter width (w-16 = 64px) + code padding (16px).
+// The editable textarea overlay must start at the same x to align with the
+// highlighted layer beneath it.
+const CODE_TEXT_INDENT = 80
+
 /**
- * Source view of the generated document, shown alongside the preview when the
- * Code editor is open. Mirrors the Email Marketing code snippet (Figma
- * 299:76555): warm-gray gutter, dark editor surface, and syntax highlighting.
+ * Header strip above the code editor. In attached mode it offers an explicit
+ * "eject" to raw-code editing; in detached mode it shows the detached status and
+ * a two-step revert (guards against discarding raw edits on a stray click).
  */
-function LayoutCodeEditor() {
-  const { generatedLayout: layout } = useLayoutBuilder()
-  const lines = useMemo(() => highlightHtml(buildHtml(layout)), [layout])
+function CodeEditorBar() {
+  const {
+    generatedLayout: layout,
+    layerText,
+    isCodeDetached,
+    detachCode,
+    reattachCode,
+  } = useLayoutBuilder()
+  const [confirmingRevert, setConfirmingRevert] = useState(false)
+
+  // Collapse the revert confirmation if the user navigates away from it.
+  useEffect(() => {
+    if (!isCodeDetached && confirmingRevert) {
+      setConfirmingRevert(false)
+    }
+  }, [isCodeDetached, confirmingRevert])
 
   return (
-    <div className="flex min-h-full w-max min-w-full font-mono text-[13px] leading-5">
-      <div className="sticky left-0 shrink-0 select-none bg-[#292524] px-4 py-4 text-right text-[#d0d5dd]">
-        {lines.map((_, index) => (
-          <div key={index}>{index + 1}</div>
-        ))}
-      </div>
-      <div className="flex-1 whitespace-pre px-4 pb-6 pt-4 text-[#f9fafb]">
-        {lines.map((line, index) => (
-          <div key={index}>
-            {line.length === 0
-              ? "\u00A0"
-              : line.map((token, tokenIndex) => (
-                  <span key={tokenIndex} style={{ color: token.color }}>
-                    {token.text}
-                  </span>
-                ))}
+    <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[#292524] bg-[#1c1917] pr-2 pl-4">
+      <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-[#d0d5dd]">
+        <Code2 className="size-3.5 text-[#98a2b3]" aria-hidden />
+        {isCodeDetached ? "Editing code directly" : "Code"}
+      </span>
+
+      {isCodeDetached ? (
+        <span className="rounded-full bg-[#3a2d75] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#d9d6fe]">
+          Detached
+        </span>
+      ) : null}
+
+      <div className="min-w-px flex-1" />
+
+      {isCodeDetached ? (
+        confirmingRevert ? (
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] text-[#fda29b]">Discard code edits?</span>
+            <button
+              type="button"
+              onClick={reattachCode}
+              className="inline-flex h-6 items-center rounded-[4px] bg-[#b42318] px-2 text-[11px] font-semibold text-white outline-none transition-colors hover:bg-[#912018] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+            >
+              Revert
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingRevert(false)}
+              className="inline-flex h-6 items-center rounded-[4px] px-2 text-[11px] font-medium text-[#d0d5dd] outline-none transition-colors hover:bg-[#292524] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+            >
+              Keep editing
+            </button>
           </div>
-        ))}
-      </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirmingRevert(true)}
+            className="inline-flex h-6 items-center gap-1 rounded-[4px] border border-[#3f3a36] px-2 text-[11px] font-medium text-[#d0d5dd] outline-none transition-colors hover:bg-[#292524] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+          >
+            <RotateCcw className="size-3" aria-hidden />
+            Revert to layout
+          </button>
+        )
+      ) : (
+        <button
+          type="button"
+          onClick={() => detachCode(buildCode(layout, layerText).code)}
+          className="inline-flex h-6 items-center gap-1 rounded-[4px] border border-[#3f3a36] px-2 text-[11px] font-medium text-[#d0d5dd] outline-none transition-colors hover:bg-[#292524] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+        >
+          <Code2 className="size-3" aria-hidden />
+          Edit code directly
+        </button>
+      )}
     </div>
   )
 }
 
+/**
+ * Renders the raw-code buffer in a sandboxed iframe (detached mode). Auto-sizes
+ * to its content height so the surrounding preview pane owns the scroll, mirroring
+ * how the structured `DocumentSurface` grows with content.
+ */
+function CodePreviewFrame({ html }: { html: string }) {
+  const frameRef = useRef<HTMLIFrameElement>(null)
+  const [height, setHeight] = useState(0)
+
+  // Each srcDoc change reloads the iframe, so coalesce rapid keystrokes into a
+  // single update — the preview stays responsive without flickering on every key.
+  const [doc, setDoc] = useState(html)
+  useEffect(() => {
+    const id = window.setTimeout(() => setDoc(html), 200)
+    return () => window.clearTimeout(id)
+  }, [html])
+
+  const syncHeight = useCallback(() => {
+    const frameDoc = frameRef.current?.contentDocument
+    if (frameDoc?.body) {
+      setHeight(
+        frameDoc.documentElement.scrollHeight || frameDoc.body.scrollHeight
+      )
+    }
+  }, [])
+
+  return (
+    <div className="mx-auto flex w-full max-w-[595px] flex-col overflow-hidden rounded-[4px] bg-white shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]">
+      <iframe
+        ref={frameRef}
+        title="Invoice code preview"
+        srcDoc={doc}
+        onLoad={syncHeight}
+        // allow-same-origin (without allow-scripts) lets us measure content
+        // height for auto-sizing while still blocking any script the user pastes.
+        sandbox="allow-same-origin"
+        className="w-full border-0"
+        style={{ height: height ? `${height}px` : "60vh" }}
+      />
+    </div>
+  )
+}
+
+/**
+ * Editable source view of the generated document, shown alongside the preview
+ * when the Code editor is open. Mirrors the Email Marketing code snippet (Figma
+ * 299:76555): warm-gray gutter, dark editor surface, and syntax highlighting.
+ *
+ * Behaves like a real editor: until the first edit it shows the generated code
+ * (a live projection of the structured model). Editing — or the bar's "Edit code
+ * directly" — takes the code live as the source of truth, so anything typed
+ * (including new structure like extra line-item rows) renders verbatim in the
+ * preview. "Revert to layout" restores the structured + AI model.
+ */
+function LayoutCodeEditor() {
+  const {
+    generatedLayout: layout,
+    selections,
+    layerText,
+    codeOverride,
+    isCodeDetached,
+    detachCode,
+    updateCodeOverride,
+  } = useLayoutBuilder()
+  const { code, ranges } = useMemo(
+    () => buildCode(layout, layerText),
+    [layout, layerText]
+  )
+
+  // Before any edit the editor shows the generated `code` (a live projection of
+  // the structured model). The first edit makes the code the source of truth:
+  // the buffer is taken over verbatim and the preview renders exactly what's
+  // typed — so structural changes (e.g. pasting another line-item row) appear,
+  // like a real code editor. The structured model is restorable via the bar's
+  // "Revert to layout".
+  const displayText = isCodeDetached ? codeOverride ?? "" : code
+  const lines = useMemo(() => highlightHtml(displayText), [displayText])
+
+  // Single active selection mirrors into the editor. The selected layer's lines
+  // get a highlighted state and the first line is scrolled into view — both on
+  // selection change and when the editor first opens with a layer selected.
+  // Detached raw code has no structured ranges to map, so highlighting is off.
+  const activeLabel = isCodeDetached ? null : selections[0]?.label ?? null
+  const range = activeLabel ? ranges[activeLabel] : undefined
+  const start = range?.[0] ?? -1
+  const end = range?.[1] ?? -1
+
+  const activeLineRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (start >= 0) {
+      activeLineRef.current?.scrollIntoView({ block: "center", behavior: "smooth" })
+    }
+  }, [start, end])
+
+  return (
+    <div className="relative min-h-full w-max min-w-full font-mono text-[13px] leading-5">
+      <div className="py-4">
+        {lines.map((line, index) => {
+          const active = index >= start && index <= end
+          return (
+            <div
+              key={index}
+              ref={index === start ? activeLineRef : undefined}
+              className={cn("flex", active && "bg-[#6938ef]/15")}
+            >
+              <span
+                className={cn(
+                  "sticky left-0 w-16 shrink-0 select-none px-4 text-right tabular-nums",
+                  active ? "bg-[#3a2d75] text-white" : "bg-[#292524] text-[#d0d5dd]"
+                )}
+              >
+                {index + 1}
+              </span>
+              <span
+                className={cn(
+                  "flex-1 whitespace-pre px-4 text-[#f9fafb]",
+                  active && "shadow-[inset_2px_0_0_0_#6938ef]"
+                )}
+              >
+                {line.length === 0
+                  ? "\u00A0"
+                  : line.map((token, tokenIndex) => (
+                      <span key={tokenIndex} style={{ color: token.color }}>
+                        {token.text}
+                      </span>
+                    ))}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <textarea
+        value={displayText}
+        onChange={(event) => {
+          if (isCodeDetached) {
+            updateCodeOverride(event.target.value)
+            return
+          }
+          // First edit: take the code live as the source of truth.
+          detachCode(event.target.value)
+        }}
+        spellCheck={false}
+        wrap="off"
+        aria-label="Edit invoice code"
+        style={{ paddingLeft: CODE_TEXT_INDENT }}
+        className="absolute inset-0 resize-none overflow-hidden whitespace-pre border-0 bg-transparent py-4 pr-4 font-mono text-[13px] leading-5 text-transparent caret-white outline-none [tab-size:2] selection:bg-[#6938ef]/40"
+      />
+    </div>
+  )
+}
+
+// Split view: code editor on the left, invoice preview filling the right
+// (Figma 3189:58977). The code pane width is draggable; these guards keep both
+// panes usable on any canvas width.
+const MIN_CODE_PX = 280
+const MAX_CODE_PX = 520
+const MIN_PREVIEW_PX = 320
+const SPLIT_KEYBOARD_STEP = 0.04
+
 export function LayoutBuilderCanvas() {
-  const { status, codeOpen, previewOpen } = useLayoutBuilder()
+  const { status, codeOpen, previewOpen, codeOverride, isCodeDetached } =
+    useLayoutBuilder()
   // Resolves medium context for future preview sizing; kept for parity with prompt selection.
   useMediumsStore()
 
@@ -892,11 +1445,84 @@ export function LayoutBuilderCanvas() {
   const showPreview = isReady && previewOpen
   const showSplit = showCode && showPreview
 
+  // Fraction of the split given to the code editor (the rest is the preview).
+  const [codeFraction, setCodeFraction] = useState(0.5)
+  const splitRef = useRef<HTMLDivElement>(null)
+  const draggingRef = useRef(false)
+
+  const clampFraction = useCallback((fraction: number) => {
+    const width = splitRef.current?.clientWidth ?? 0
+    if (width <= 0) {
+      return Math.min(0.8, Math.max(0.2, fraction))
+    }
+    const min = Math.max(MIN_CODE_PX / width, 0.2)
+    // Code editor is capped at MAX_CODE_PX so the preview always keeps room.
+    const max = Math.min(1 - MIN_PREVIEW_PX / width, 0.8, MAX_CODE_PX / width)
+    // Guard against inverted bounds on very narrow canvases.
+    if (min > max) {
+      return Math.min(0.5, MAX_CODE_PX / width)
+    }
+    return Math.min(max, Math.max(min, fraction))
+  }, [])
+
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      draggingRef.current = true
+      event.currentTarget.setPointerCapture(event.pointerId)
+      document.body.style.userSelect = "none"
+      document.body.style.cursor = "col-resize"
+    },
+    []
+  )
+
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!draggingRef.current || !splitRef.current) {
+        return
+      }
+      const rect = splitRef.current.getBoundingClientRect()
+      setCodeFraction(clampFraction((event.clientX - rect.left) / rect.width))
+    },
+    [clampFraction]
+  )
+
+  const endDrag = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!draggingRef.current) {
+        return
+      }
+      draggingRef.current = false
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        // pointer may already be released
+      }
+      document.body.style.userSelect = ""
+      document.body.style.cursor = ""
+    },
+    []
+  )
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault()
+        setCodeFraction((fraction) => clampFraction(fraction - SPLIT_KEYBOARD_STEP))
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault()
+        setCodeFraction((fraction) => clampFraction(fraction + SPLIT_KEYBOARD_STEP))
+      }
+    },
+    [clampFraction]
+  )
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col p-4">
+    <div className="flex min-h-0 w-full flex-1 flex-col p-4">
       <div
+        ref={splitRef}
         className={cn(
-          "flex min-h-0 flex-1 overflow-hidden rounded-[12px] shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]",
+          "relative flex min-h-0 flex-1 overflow-hidden rounded-[12px] shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]",
           showCode && !showPreview ? "bg-[#1c1917]" : isReady ? "bg-[#f9fafb]" : "bg-white"
         )}
       >
@@ -906,20 +1532,68 @@ export function LayoutBuilderCanvas() {
           </div>
         ) : showSplit ? (
           <>
-            <div className="h-full w-1/2 min-w-0 overflow-auto bg-[#1c1917]">
-              <LayoutCodeEditor />
+            <div
+              className="flex h-full shrink-0 flex-col overflow-hidden bg-[#1c1917]"
+              style={{ width: `min(${codeFraction * 100}%, ${MAX_CODE_PX}px)` }}
+            >
+              <CodeEditorBar />
+              <div className="min-h-0 flex-1 overflow-auto">
+                <LayoutCodeEditor />
+              </div>
             </div>
-            <div className="flex h-full w-1/2 min-w-0 justify-center overflow-auto border-l border-[#eaecf0] bg-[#f9fafb] p-6">
-              <DocumentSurface />
+            <div className="flex h-full min-w-0 flex-1 items-start justify-center overflow-auto border-l border-[#eaecf0] bg-[#f9fafb] p-4">
+              {isCodeDetached ? (
+                <CodePreviewFrame html={codeOverride ?? ""} />
+              ) : (
+                <DocumentStage>
+                  <DocumentSurface />
+                </DocumentStage>
+              )}
+            </div>
+
+            {/* Drag handle on the code/preview seam (Figma 3189:58977). Pinned to
+                the split fraction and vertically centred without taking layout
+                width, so dragging only resizes the two panes. */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize code editor"
+              aria-valuenow={Math.round(codeFraction * 100)}
+              aria-valuemin={20}
+              aria-valuemax={80}
+              tabIndex={0}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
+              onKeyDown={handleKeyDown}
+              style={{ left: `min(${codeFraction * 100}%, ${MAX_CODE_PX}px)` }}
+              className="group absolute top-1/2 z-20 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 cursor-col-resize touch-none items-center justify-center rounded outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+            >
+              <span className="flex h-12 w-4 items-center justify-center rounded-full border border-[#eaecf0] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.1)] transition-colors group-hover:border-[#d0d5dd]">
+                <GripVertical
+                  className="size-4 text-[#98a2b3] transition-colors group-hover:text-[#475467] group-focus-visible:text-[#6938ef]"
+                  aria-hidden
+                />
+              </span>
             </div>
           </>
         ) : showCode ? (
-          <div className="h-full w-full overflow-auto bg-[#1c1917]">
-            <LayoutCodeEditor />
+          <div className="flex h-full w-full flex-col overflow-hidden bg-[#1c1917]">
+            <CodeEditorBar />
+            <div className="min-h-0 flex-1 overflow-auto">
+              <LayoutCodeEditor />
+            </div>
           </div>
         ) : (
-          <div className="flex flex-1 items-center justify-center overflow-auto bg-[#f9fafb] p-6">
-            <DocumentSurface />
+          <div className="flex min-w-0 flex-1 items-start justify-center overflow-auto bg-[#f9fafb] p-4">
+            {isCodeDetached ? (
+              <CodePreviewFrame html={codeOverride ?? ""} />
+            ) : (
+              <DocumentStage>
+                <DocumentSurface />
+              </DocumentStage>
+            )}
           </div>
         )}
       </div>

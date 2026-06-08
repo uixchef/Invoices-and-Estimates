@@ -42,7 +42,7 @@ export function MediumEditorPage({
           {pageTitle}
         </h2>
 
-        <div className="mx-auto grid min-h-0 w-full max-w-[1360px] flex-1 grid-cols-1 gap-8 min-[1360px]:grid-cols-[minmax(0,704px)_624px] min-[1360px]:items-stretch min-[1360px]:justify-center">
+        <div className="mx-auto grid min-h-0 w-full max-w-[1360px] flex-1 grid-cols-1 gap-8 lg:grid-cols-[minmax(0,704px)_minmax(0,624px)] lg:items-stretch lg:justify-center">
           <div className="min-h-0 w-full max-w-[704px] overflow-y-auto">
             <CreateMediumForm state={formState} onChange={setFormState} />
           </div>

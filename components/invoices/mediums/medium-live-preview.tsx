@@ -21,20 +21,22 @@ export function MediumLivePreview({ state }: { state: MediumFormState }) {
   const metrics = getMediumPreviewMetrics(state)
 
   return (
-    <aside className="mx-auto grid w-full max-w-[624px] grid-rows-[auto_minmax(360px,1fr)_auto] overflow-hidden rounded border border-[#d0d5dd] bg-white min-[1360px]:mx-0 min-[1360px]:h-full min-[1360px]:w-[624px] min-[1360px]:shrink-0">
-      <div className="border-b border-[#d0d5dd] px-4 py-3">
+    <aside className="mx-auto flex w-full max-w-[624px] flex-col overflow-hidden rounded border border-[#d0d5dd] bg-white lg:mx-0 lg:max-h-full lg:self-start">
+      <div className="shrink-0 border-b border-[#d0d5dd] px-4 py-3">
         <h3 className="font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">
           Live preview
         </h3>
       </div>
 
+      {/* Fills available height up to a 486px cap, shrinking to a 360px floor
+          when the viewport is short so the whole section can fit. */}
       <MediumPreviewStage
         state={state}
-        className="min-h-[360px] h-full"
+        className="h-[486px] min-h-[360px]"
         contentClassName="p-6"
       />
 
-      <div className="min-h-0 overflow-y-auto">
+      <div className="min-h-0 shrink-0 overflow-y-auto">
         <div className="flex flex-col items-center gap-2.5 border-t border-[#eaecf0] px-4 py-4 text-center">
           <p className="font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">
             {metrics.title}

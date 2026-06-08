@@ -17,6 +17,7 @@ import { AiInAction } from "@/components/ai/ai-in-action"
 import { AiQuestions } from "@/components/ai/ai-questions"
 import { AiTodoList } from "@/components/ai/ai-todo-list"
 import { StreamingText } from "@/components/ai/streaming-text"
+import { AddElementsPanel } from "@/components/invoices/builder/add-elements-panel"
 import { VisualEditsPanel } from "@/components/invoices/builder/visual-edits-panel"
 import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
 import {
@@ -221,6 +222,7 @@ function AiComposer() {
     messages,
     editMode,
     toggleEditMode,
+    isCodeDetached,
     selections,
     removeSelection,
     clearSelections,
@@ -301,17 +303,17 @@ function AiComposer() {
             {selections.map((selection) => (
               <span
                 key={selection.id}
-                className="inline-flex items-center gap-1 rounded-[4px] border border-[#d0d5dd] bg-white py-0.5 pl-1.5 pr-1 text-xs font-medium leading-[18px] text-[#344054]"
+                className="inline-flex h-[22px] shrink-0 items-center gap-0.5 rounded-[4px] bg-[#f2f4f7] py-0.5 pl-2 pr-1 font-[family-name:var(--font-inter)] text-xs font-medium leading-5 text-[#475467]"
               >
-                <Link2 className="size-3 shrink-0 text-[#667085]" aria-hidden />
+                <Link2 className="size-3.5 shrink-0 text-[#667085]" aria-hidden />
                 {selection.label}
                 <button
                   type="button"
                   aria-label={`Remove ${selection.label}`}
                   onClick={() => removeSelection(selection.id)}
-                  className="inline-flex size-3.5 items-center justify-center rounded-[3px] text-[#98a2b3] outline-none transition-colors hover:bg-[#f2f4f7] hover:text-[#344054] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+                  className="inline-flex size-4 items-center justify-center rounded-[3px] text-[#98a2b3] outline-none transition-colors hover:bg-[#e4e7ec] hover:text-[#344054] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
                 >
-                  <X className="size-3" aria-hidden />
+                  <X className="size-3.5" aria-hidden />
                 </button>
               </span>
             ))}
@@ -364,9 +366,16 @@ function AiComposer() {
                   type="button"
                   aria-pressed={editMode}
                   onClick={toggleEditMode}
+                  disabled={isCodeDetached}
+                  title={
+                    isCodeDetached
+                      ? "Revert to layout to use visual edits"
+                      : undefined
+                  }
                   className={cn(
                     "inline-flex h-6 items-center justify-center gap-1 rounded-[4px] border px-1.5 outline-none transition-colors",
                     "text-xs font-semibold leading-[17px] focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
+                    "disabled:cursor-not-allowed disabled:border-[#f9fafb] disabled:bg-[#f2f4f7] disabled:text-[#d0d5dd]",
                     editMode
                       ? "border-[#f4f3ff] bg-[#ebe9fe] text-[#5925dc]"
                       : "border-[#f9fafb] bg-[#f2f4f7] text-[#475467] hover:bg-[#eaecf0]"
@@ -495,10 +504,19 @@ export function InvoiceAiPanel({
   onClose: () => void
   width?: number
 }) {
-  const { messages, todos, status, receivedAnswers, inspectingLayer, inspectLayer } =
-    useLayoutBuilder()
+  const {
+    messages,
+    todos,
+    status,
+    receivedAnswers,
+    inspectingLayer,
+    inspectLayer,
+    addingElement,
+    closeAddElements,
+  } = useLayoutBuilder()
   const scrollRef = useRef<HTMLDivElement>(null)
   const inspecting = inspectingLayer !== null
+  const adding = addingElement
   const lastTurnRef = useRef<HTMLDivElement>(null)
   // Drives the spacer min-height on the latest turn so its prompt can always be
   // scrolled to the very top of the viewport, the way Cursor pins each turn.
@@ -540,18 +558,30 @@ export function InvoiceAiPanel({
       style={{ width }}
       className="flex h-full shrink-0 flex-col overflow-hidden rounded-[12px] bg-white shadow-[0_12px_8px_rgba(16,24,40,0.08),0_4px_3px_rgba(16,24,40,0.03)]"
     >
-      <div className="flex flex-col gap-3 p-4">
+      <div className="flex flex-col gap-3 px-4 pt-4 pb-0">
         <div className="flex items-center gap-2">
           {!inspecting ? (
             <AutoAwesomeIcon className="size-4 shrink-0 text-[#6938ef]" />
           ) : null}
           <p className="min-w-0 flex-1 font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">
-            {inspecting ? "Visual edits" : "Invoice AI"}
+            {adding ? "Add elements" : inspecting ? "Visual edits" : "Invoice AI"}
           </p>
           <button
             type="button"
-            aria-label={inspecting ? "Close visual edits" : "Close Invoice AI"}
-            onClick={inspecting ? () => inspectLayer(null) : onClose}
+            aria-label={
+              adding
+                ? "Close add elements"
+                : inspecting
+                  ? "Close visual edits"
+                  : "Close Invoice AI"
+            }
+            onClick={
+              adding
+                ? closeAddElements
+                : inspecting
+                  ? () => inspectLayer(null)
+                  : onClose
+            }
             className="inline-flex size-5 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
           >
             <X className="size-5" aria-hidden />
@@ -559,7 +589,9 @@ export function InvoiceAiPanel({
         </div>
       </div>
 
-      {inspecting ? (
+      {adding ? (
+        <AddElementsPanel />
+      ) : inspecting ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-4">
           <VisualEditsPanel />
         </div>
@@ -586,7 +618,7 @@ export function InvoiceAiPanel({
                 // Sticky prompt header — stays at the top of the viewport while
                 // its response streams below (Cursor's per-turn pinning). The
                 // opaque band masks content scrolling underneath.
-                <div className="sticky top-0 z-10 -mx-4 flex flex-col gap-3 bg-white px-4 pb-1 pt-3">
+                <div className="sticky top-0 z-10 -mx-4 flex flex-col gap-3 bg-white px-4 pb-1 pt-4">
                   {user.references.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {user.references.map((reference) => (

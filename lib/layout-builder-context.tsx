@@ -422,6 +422,22 @@ type LayoutBuilderContextValue = {
   togglePreview: () => void
 
   /**
+   * Raw-code ("eject") mode. When `codeOverride` is non-null the code editor is
+   * detached from the structured model: edits are kept verbatim and the preview
+   * renders the raw HTML instead of the generated document. Visual edits and the
+   * structured fields are paused until the user reverts. `null` = attached, the
+   * code view is a live projection of `generatedLayout` + `layerText`.
+   */
+  codeOverride: string | null
+  isCodeDetached: boolean
+  /** Detaches into raw-code mode, seeding the buffer with the current code. */
+  detachCode: (code: string) => void
+  /** Updates the raw-code buffer while editing (no-op when attached). */
+  updateCodeOverride: (code: string) => void
+  /** Re-attaches to the structured model, discarding raw-code edits. */
+  reattachCode: () => void
+
+  /**
    * Invoice AI side panel state. Shared so the toolbar's left action cluster can
    * track the panel's width and open/closed state, keeping the two regions
    * aligned when the panel is resized or collapsed.
@@ -480,6 +496,14 @@ type LayoutBuilderContextValue = {
     seed: { content: string; style: BuilderLayerStyle }
   ) => void
 
+  /**
+   * Add-elements palette open in the panel (replaces the chat), opened from the
+   * toolbar's plus button. Mutually exclusive with the Visual edits inspector.
+   */
+  addingElement: boolean
+  openAddElements: () => void
+  closeAddElements: () => void
+
   messages: BuilderMessage[]
   status: BuilderStatus
   thoughtDurationSec: number | null
@@ -521,6 +545,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   )
   const [codeOpen, setCodeOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(true)
+  const [codeOverride, setCodeOverrideState] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH)
   const [editMode, setEditMode] = useState(false)
@@ -531,6 +556,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     Record<string, BuilderLayerStyle>
   >({})
   const [inspectingLayer, setInspectingLayer] = useState<string | null>(null)
+  const [addingElement, setAddingElement] = useState(false)
 
   const [messages, setMessages] = useState<BuilderMessage[]>([])
   const [status, setStatus] = useState<BuilderStatus>("idle")
@@ -688,8 +714,12 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   }, [codeOpen])
 
   // Visual edit requires the preview, so enabling it ensures the preview is open.
-  // Leaving edit mode also closes any open inspector.
+  // Leaving edit mode also closes any open inspector. Visual edits operate on the
+  // structured model, so they're unavailable while detached into raw-code mode.
   const toggleEditMode = useCallback(() => {
+    if (codeOverride !== null) {
+      return
+    }
     setEditMode((on) => {
       const next = !on
       if (next) {
@@ -699,18 +729,40 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       }
       return next
     })
+  }, [codeOverride])
+
+  // Detaching snapshots the current generated code as the editable buffer and
+  // tears down structured-edit affordances so the two models can't silently
+  // diverge while the user edits raw code.
+  const detachCode = useCallback((code: string) => {
+    setCodeOverrideState(code)
+    setEditMode(false)
+    setInspectingLayer(null)
+    setAddingElement(false)
+    setSelections([])
+    setCodeOpen(true)
+  }, [])
+
+  const updateCodeOverride = useCallback((code: string) => {
+    setCodeOverrideState((current) => (current === null ? current : code))
+  }, [])
+
+  const reattachCode = useCallback(() => {
+    setCodeOverrideState(null)
   }, [])
 
   const updateLayout = useCallback((patch: Partial<GeneratedLayout>) => {
     setLayoutEdits((current) => ({ ...current, ...patch }))
   }, [])
 
+  // Single-selection: picking a layer replaces any existing chip so only one
+  // element is ever attached to the composer at a time.
   const addSelection = useCallback((label: string) => {
     setSelections((current) => {
-      if (current.some((selection) => selection.label === label)) {
+      if (current.length === 1 && current[0].label === label) {
         return current
       }
-      return [...current, { id: nextMessageId(), label }]
+      return [{ id: nextMessageId(), label }]
     })
   }, [])
 
@@ -746,15 +798,31 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const inspectLayer = useCallback((label: string | null) => {
     setInspectingLayer(label)
+    if (label !== null) {
+      setAddingElement(false)
+    }
   }, [])
 
   const selectLayer = useCallback(
     (label: string) => {
       addSelection(label)
       setInspectingLayer(label)
+      setAddingElement(false)
     },
     [addSelection]
   )
+
+  // Opening the add-elements palette takes over the panel, so make sure the
+  // panel is visible and the inspector is dismissed.
+  const openAddElements = useCallback(() => {
+    setPanelOpen(true)
+    setInspectingLayer(null)
+    setAddingElement(true)
+  }, [])
+
+  const closeAddElements = useCallback(() => {
+    setAddingElement(false)
+  }, [])
 
   const seedLayer = useCallback(
     (label: string, seed: { content: string; style: BuilderLayerStyle }) => {
@@ -941,6 +1009,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       previewOpen,
       toggleCode,
       togglePreview,
+      codeOverride,
+      isCodeDetached: codeOverride !== null,
+      detachCode,
+      updateCodeOverride,
+      reattachCode,
       panelOpen,
       setPanelOpen,
       panelWidth,
@@ -962,6 +1035,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       inspectLayer,
       selectLayer,
       seedLayer,
+      addingElement,
+      openAddElements,
+      closeAddElements,
       messages,
       status,
       thoughtDurationSec,
@@ -988,6 +1064,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       previewOpen,
       toggleCode,
       togglePreview,
+      codeOverride,
+      detachCode,
+      updateCodeOverride,
+      reattachCode,
       panelOpen,
       panelWidth,
       editMode,
@@ -1005,6 +1085,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       inspectLayer,
       selectLayer,
       seedLayer,
+      addingElement,
+      openAddElements,
+      closeAddElements,
       messages,
       status,
       thoughtDurationSec,
