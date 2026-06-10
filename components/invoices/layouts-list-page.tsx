@@ -18,6 +18,7 @@ import {
 import { filterRows } from "@/lib/filter-layouts"
 import type { LayoutRow } from "@/lib/layouts-data"
 import { useLayoutClone } from "@/lib/layout-clone-context"
+import { useLayoutCreate } from "@/lib/layout-create-context"
 import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { compareByMostRecent } from "@/lib/sort-by-updated"
@@ -28,12 +29,15 @@ type LayoutsListPageProps = {
 
 export function LayoutsListPage({ rows }: LayoutsListPageProps) {
   const { clonedLayouts } = useLayoutClone()
+  const { createdLayouts } = useLayoutCreate()
   const { isRemoved } = useLayoutDelete()
   const { mediums } = useMediumsStore()
   const visibleRows = useMemo(
     () =>
-      [...clonedLayouts, ...rows].filter((row) => !isRemoved(row.id)),
-    [clonedLayouts, isRemoved, rows]
+      [...createdLayouts, ...clonedLayouts, ...rows].filter(
+        (row) => !isRemoved(row.id)
+      ),
+    [createdLayouts, clonedLayouts, isRemoved, rows]
   )
   const filterDefinitions = useMemo(
     () => buildLayoutFilterDefinitions(mediums),

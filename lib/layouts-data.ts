@@ -12,6 +12,8 @@ export type LayoutRow = {
   updatedAgo: string
   /** Original layout id when this row is a client-side clone. */
   clonedFromId?: string
+  /** Blank canvas with no designed content yet — renders an empty thumbnail. */
+  isBlank?: boolean
 }
 
 const LAYOUT_COUNT = 212
@@ -79,3 +81,30 @@ export const LAYOUT_ROWS: LayoutRow[] = LAYOUT_NAME_ORDER.map((nameIndex, rowInd
     updatedAgo: meta.updatedAgo,
   }
 })
+
+/**
+ * Blank-canvas drafts surfaced on the dashboard with empty (skeleton)
+ * thumbnails — the Layout Card "thumbnail=False" state (Figma 3082:30384
+ * default / 3082:30369 hover). Recent timestamps float these to the top.
+ */
+const BLANK_LAYOUT_COUNT = 8
+const BLANK_LAYOUT_META = buildUpdatedMeta(BLANK_LAYOUT_COUNT)
+
+export const BLANK_LAYOUT_ROWS: LayoutRow[] = Array.from(
+  { length: BLANK_LAYOUT_COUNT },
+  (_, index) => {
+    const number = index + 1
+    const meta = BLANK_LAYOUT_META[index]
+
+    return {
+      id: `layout-blank-${number}`,
+      name: `Layout ${number}`,
+      type: "Invoice",
+      mediumId: pick(MEDIUM_ROWS, index * 5 + 1).id,
+      status: "Draft",
+      updatedOn: meta.updatedOn,
+      updatedAgo: meta.updatedAgo,
+      isBlank: true,
+    }
+  }
+)

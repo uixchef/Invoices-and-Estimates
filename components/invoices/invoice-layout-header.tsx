@@ -1,8 +1,8 @@
 import Link from "next/link"
-import { Plus, Ruler } from "lucide-react"
+import { Ruler } from "lucide-react"
 
-import { Button } from "@/components/highrise/button"
 import { CreateWithAiButton } from "@/components/invoices/create-with-ai-button"
+import { NewLayoutButton } from "@/components/invoices/new-layout-button"
 import { neutralSecondaryButtonVariants } from "@/components/invoices/neutral-secondary-button"
 
 /**
@@ -31,10 +31,7 @@ export function InvoiceLayoutHeader() {
             Mediums
           </Link>
           <CreateWithAiButton />
-          <Button type="button" variant="primary">
-            <Plus className="size-5 shrink-0" strokeWidth={2} aria-hidden />
-            New
-          </Button>
+          <NewLayoutButton />
         </div>
       </div>
     </div>

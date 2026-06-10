@@ -15,6 +15,7 @@ import { CreateWithAiProvider } from "@/lib/create-with-ai-context"
 import { LayoutBuilderProvider } from "@/lib/layout-builder-context"
 import { isLayoutBuilderRoute } from "@/lib/layout-builder-types"
 import { LayoutCloneProvider } from "@/lib/layout-clone-context"
+import { LayoutCreateProvider } from "@/lib/layout-create-context"
 import { LayoutDeleteProvider } from "@/lib/layout-delete-context"
 import { MediumDeleteProvider } from "@/lib/medium-delete-context"
 import { LayoutPreviewProvider } from "@/lib/layout-preview-context"
@@ -41,6 +42,7 @@ export function PaymentHubShell({
         <CreateWithAiProvider>
         <LayoutPreviewProvider>
         <LayoutCloneProvider>
+        <LayoutCreateProvider>
         <LayoutDeleteProvider>
         <MediumDeleteProvider>
         {isMediumEditor ? (
@@ -81,6 +83,7 @@ export function PaymentHubShell({
         <LayoutPreviewPanel />
         </MediumDeleteProvider>
         </LayoutDeleteProvider>
+        </LayoutCreateProvider>
         </LayoutCloneProvider>
         </LayoutPreviewProvider>
         </CreateWithAiProvider>

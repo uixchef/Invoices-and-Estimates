@@ -57,10 +57,20 @@ function TypeBadge({ label }: { label: LayoutRow["type"] }) {
 /** Figma: Layout Cards · thumbnail=False (3082:29975) — exact vector asset */
 const THUMBNAIL_SKELETON_SRC = "/layouts/thumbnail-skeleton.svg"
 
-function ThumbnailSkeleton() {
+/**
+ * `animated` drives the loading treatment (pulsing gradient + shimmer). Blank
+ * layouts pass `animated={false}` for a static, empty thumbnail — animation is
+ * reserved for actual image loading.
+ */
+function ThumbnailSkeleton({ animated = true }: { animated?: boolean }) {
   return (
     <div
-      className="layout-thumbnail-skeleton-gradient absolute inset-0 overflow-hidden bg-[#f2f4f7]"
+      className={cn(
+        "absolute inset-0 overflow-hidden",
+        // Loading: pulsing gray fill. Empty/blank: the #EAECF0 illustration
+        // sits on the card's white surface (Figma 3082:30385).
+        animated ? "layout-thumbnail-skeleton-gradient bg-[#f2f4f7]" : "bg-transparent"
+      )}
       aria-hidden
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -69,7 +79,9 @@ function ThumbnailSkeleton() {
         alt=""
         className="absolute inset-0 block size-full max-w-none opacity-90"
       />
-      <div className="layout-thumbnail-skeleton-shimmer absolute inset-0" />
+      {animated ? (
+        <div className="layout-thumbnail-skeleton-shimmer absolute inset-0" />
+      ) : null}
     </div>
   )
 }
@@ -150,14 +162,15 @@ export function LayoutCard({ item }: { item: LayoutRow }) {
   const [imageReady, setImageReady] = useState(false)
   const delayElapsed = usePreviewReveal(item.id)
   const imgRef = useRef<HTMLImageElement>(null)
-  const loaded = imageReady && delayElapsed
+  const isBlank = Boolean(item.isBlank)
+  const loaded = !isBlank && imageReady && delayElapsed
 
   // Cached/SSR-complete images may never fire onLoad after hydration.
   useEffect(() => {
-    if (imgRef.current?.complete) {
+    if (!isBlank && imgRef.current?.complete) {
       setImageReady(true)
     }
-  }, [])
+  }, [isBlank])
 
   return (
     <article
@@ -169,29 +182,33 @@ export function LayoutCard({ item }: { item: LayoutRow }) {
       )}
     >
       <div
-        aria-busy={!loaded}
+        aria-busy={!isBlank && !loaded}
         className={cn(
           "relative h-[292px] w-full shrink-0 overflow-hidden rounded border transition-colors",
           loaded
             ? "bg-gradient-to-b border-[#f2f4f7] from-[#f2f4f7] to-[#eaecf0] group-hover:border-[#eff4ff] group-hover:from-[#eff4ff] group-hover:to-[#84adff] group-focus-within:border-[#eff4ff] group-focus-within:from-[#eff4ff] group-focus-within:to-[#84adff]"
-            : "border-[#f2f4f7] bg-white"
+            : isBlank
+              ? "border-transparent bg-white"
+              : "border-[#f2f4f7] bg-white"
         )}
       >
-        {!loaded ? <ThumbnailSkeleton /> : null}
+        {!loaded ? <ThumbnailSkeleton animated={!isBlank} /> : null}
 
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          ref={imgRef}
-          src={getLayoutThumbnail(item.id, item.clonedFromId)}
-          alt=""
-          onLoad={() => setImageReady(true)}
-          onError={() => setImageReady(true)}
-          className={cn(
-            "absolute inset-0 size-full object-cover object-top transition-opacity duration-300",
-            loaded ? "opacity-100" : "opacity-0"
-          )}
-          aria-hidden
-        />
+        {!isBlank ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            ref={imgRef}
+            src={getLayoutThumbnail(item.id, item.clonedFromId)}
+            alt=""
+            onLoad={() => setImageReady(true)}
+            onError={() => setImageReady(true)}
+            className={cn(
+              "absolute inset-0 size-full object-cover object-top transition-opacity duration-300",
+              loaded ? "opacity-100" : "opacity-0"
+            )}
+            aria-hidden
+          />
+        ) : null}
 
         <div
           className="absolute right-[7px] top-[7px] z-[2] flex items-center gap-1.5"

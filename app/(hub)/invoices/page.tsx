@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { LayoutsListPage } from "@/components/invoices/layouts-list-page"
-import { LAYOUT_ROWS } from "@/lib/layouts-data"
+import { BLANK_LAYOUT_ROWS, LAYOUT_ROWS } from "@/lib/layouts-data"
 
 export const metadata: Metadata = {
   title: "Invoices & estimates | Invoice Layouts",
@@ -17,7 +17,7 @@ export default function InvoicesPage() {
         <h2 id="invoice-layouts-heading" className="sr-only">
           Layout templates
         </h2>
-        <LayoutsListPage rows={LAYOUT_ROWS} />
+        <LayoutsListPage rows={[...BLANK_LAYOUT_ROWS, ...LAYOUT_ROWS]} />
       </section>
     </div>
   )
