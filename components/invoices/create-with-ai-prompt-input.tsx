@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input"
 import { AI_MODELS } from "@/lib/ai-models"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import type { PromptAttachment } from "@/lib/create-with-ai-types"
+import { getDefaultA4MediumId, MEDIUM_ROWS } from "@/lib/mediums-data"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { cn } from "@/lib/utils"
 
@@ -174,7 +175,9 @@ export function CreateWithAiPromptInput({
   const [isFocused, setIsFocused] = useState(false)
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
   const [modelId, setModelId] = useState(AI_MODELS[0].id)
-  const [selectedMediumId, setSelectedMediumId] = useState<string | null>(null)
+  const [selectedMediumId, setSelectedMediumId] = useState<string | null>(
+    () => getDefaultA4MediumId(MEDIUM_ROWS) ?? null
+  )
   const [mediumQuery, setMediumQuery] = useState("")
 
   const normalizedQuery = mediumQuery.trim().toLowerCase()

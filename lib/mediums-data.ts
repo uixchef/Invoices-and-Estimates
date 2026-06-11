@@ -273,3 +273,10 @@ export function getMediumById(mediumId: string): MediumRow | undefined {
 export function getMediumName(mediumId: string): string {
   return getMediumById(mediumId)?.name ?? mediumId
 }
+
+/** First medium named "A4" — default for blank layouts and Create with AI. */
+export function getDefaultA4MediumId(
+  mediums: readonly Pick<MediumRow, "id" | "name">[] = MEDIUM_ROWS
+): string | undefined {
+  return mediums.find((medium) => medium.name === "A4")?.id ?? mediums[0]?.id
+}

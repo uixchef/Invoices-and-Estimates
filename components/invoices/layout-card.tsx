@@ -58,18 +58,17 @@ function TypeBadge({ label }: { label: LayoutRow["type"] }) {
 const THUMBNAIL_SKELETON_SRC = "/layouts/thumbnail-skeleton.svg"
 
 /**
- * `animated` drives the loading treatment (pulsing gradient + shimmer). Blank
- * layouts pass `animated={false}` for a static, empty thumbnail — animation is
- * reserved for actual image loading.
+ * Shared thumbnail placeholder. `animated` adds the pulsing gradient + shimmer used
+ * during loading; blank layouts settle to the static empty state once ready.
  */
 function ThumbnailSkeleton({ animated = true }: { animated?: boolean }) {
   return (
     <div
       className={cn(
         "absolute inset-0 overflow-hidden",
-        // Loading: pulsing gray fill. Empty/blank: the #EAECF0 illustration
-        // sits on the card's white surface (Figma 3082:30385).
-        animated ? "layout-thumbnail-skeleton-gradient bg-[#f2f4f7]" : "bg-transparent"
+        animated
+          ? "layout-thumbnail-skeleton-gradient bg-[#f2f4f7]"
+          : "bg-transparent"
       )}
       aria-hidden
     >
@@ -163,7 +162,9 @@ export function LayoutCard({ item }: { item: LayoutRow }) {
   const delayElapsed = usePreviewReveal(item.id)
   const imgRef = useRef<HTMLImageElement>(null)
   const isBlank = Boolean(item.isBlank)
-  const loaded = !isBlank && imageReady && delayElapsed
+  const ready = isBlank
+    ? delayElapsed
+    : imageReady && delayElapsed
 
   // Cached/SSR-complete images may never fire onLoad after hydration.
   useEffect(() => {
@@ -182,17 +183,18 @@ export function LayoutCard({ item }: { item: LayoutRow }) {
       )}
     >
       <div
-        aria-busy={!isBlank && !loaded}
+        aria-busy={!ready}
         className={cn(
           "relative h-[292px] w-full shrink-0 overflow-hidden rounded border transition-colors",
-          loaded
+          ready && !isBlank
             ? "bg-gradient-to-b border-[#f2f4f7] from-[#f2f4f7] to-[#eaecf0] group-hover:border-[#eff4ff] group-hover:from-[#eff4ff] group-hover:to-[#84adff] group-focus-within:border-[#eff4ff] group-focus-within:from-[#eff4ff] group-focus-within:to-[#84adff]"
-            : isBlank
+            : ready && isBlank
               ? "border-transparent bg-white"
               : "border-[#f2f4f7] bg-white"
         )}
       >
-        {!loaded ? <ThumbnailSkeleton animated={!isBlank} /> : null}
+        {!ready ? <ThumbnailSkeleton animated /> : null}
+        {ready && isBlank ? <ThumbnailSkeleton animated={false} /> : null}
 
         {!isBlank ? (
           /* eslint-disable-next-line @next/next/no-img-element */
@@ -204,7 +206,7 @@ export function LayoutCard({ item }: { item: LayoutRow }) {
             onError={() => setImageReady(true)}
             className={cn(
               "absolute inset-0 size-full object-cover object-top transition-opacity duration-300",
-              loaded ? "opacity-100" : "opacity-0"
+              ready ? "opacity-100" : "opacity-0"
             )}
             aria-hidden
           />

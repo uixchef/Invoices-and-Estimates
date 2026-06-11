@@ -13,7 +13,7 @@ import {
 import { useHubToast } from "@/components/payment-hub/hub-toast"
 import { formatUpdatedOn } from "@/lib/format-updated-ago"
 import type { LayoutRow } from "@/lib/layouts-data"
-import { MEDIUM_ROWS } from "@/lib/mediums-data"
+import { getDefaultA4MediumId, MEDIUM_ROWS } from "@/lib/mediums-data"
 
 type LayoutCreateContextValue = {
   /** Blank-canvas layouts created this session, newest first. */
@@ -29,7 +29,7 @@ const LayoutCreateContext = createContext<LayoutCreateContextValue | null>(null)
  * (Figma 3082:30384 default / 3082:30369 hover — "Layout 1 · A4").
  */
 const BLANK_LAYOUT_MEDIUM_ID =
-  MEDIUM_ROWS.find((medium) => medium.name === "A4")?.id ?? MEDIUM_ROWS[0].id
+  getDefaultA4MediumId(MEDIUM_ROWS) ?? MEDIUM_ROWS[0].id
 
 function createBlankLayoutRow(sequence: number): LayoutRow {
   return {
