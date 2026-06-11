@@ -1,4 +1,4 @@
-import type { GeneratedLayout } from "@/lib/layout-builder-types"
+import type { GeneratedLayout, BuilderReceivedAnswer } from "@/lib/layout-builder-types"
 
 /**
  * Lightweight markdown narrative the assistant "thinks" before generating. Kept
@@ -19,6 +19,32 @@ export function buildReasoning(prompt: string): string {
     "- Keep the sections clear: header, line items, totals, and notes",
     "",
     "I'll map this to the canvas using brand-safe defaults, then keep everything print-ready and editable.",
+  ].join("\n")
+}
+
+/**
+ * Reasoning shown after the user answers clarifying questions — the "next
+ * thought" that follows the Received answers recap.
+ */
+export function buildPostReasoning(
+  prompt: string,
+  receivedAnswers: BuilderReceivedAnswer[]
+): string {
+  const focus = prompt.trim().replace(/\s+/g, " ")
+
+  const answerLines = receivedAnswers.flatMap((item) =>
+    item.values.map((value) => `- ${item.prompt}: ${value}`)
+  )
+
+  return [
+    focus
+      ? `Now that I have the user's clarifications, I'll finalize ${focus.charAt(0).toLowerCase()}${focus.slice(1)}.`
+      : "Now that I have the user's clarifications, I'll finalize the invoice layout.",
+    "",
+    "Confirmed preferences:",
+    ...answerLines,
+    "",
+    "Next I'll apply these to the canvas — structure sections, set typography and spacing for the medium, and keep totals and notes aligned with what they asked for.",
   ].join("\n")
 }
 

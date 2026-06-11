@@ -14,7 +14,7 @@ import {
   mediumFormToRowFields,
   type MediumFormState,
 } from "@/lib/medium-form"
-import { MEDIUM_ROWS, type MediumRow } from "@/lib/mediums-data"
+import { MEDIUM_BY_ID, MEDIUM_ROWS, type MediumRow } from "@/lib/mediums-data"
 
 type MediumSaveInput = {
   name: string
@@ -37,7 +37,10 @@ export function MediumsStoreProvider({ children }: { children: ReactNode }) {
   const [mediums, setMediums] = useState<MediumRow[]>(() => [...MEDIUM_ROWS])
 
   const getMediumById = useCallback(
-    (mediumId: string) => mediums.find((medium) => medium.id === mediumId),
+    // Falls back to the canonical lookup so builder paper presets (which aren't
+    // seeded into the editable store) still resolve by id.
+    (mediumId: string) =>
+      mediums.find((medium) => medium.id === mediumId) ?? MEDIUM_BY_ID[mediumId],
     [mediums]
   )
 

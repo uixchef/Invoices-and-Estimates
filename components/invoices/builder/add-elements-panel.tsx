@@ -16,7 +16,7 @@ import {
 } from "lucide-react"
 
 import { Input } from "@/components/highrise/input-text"
-import { useLayoutBuilder } from "@/lib/layout-builder-context"
+import { ELEMENT_DRAG_MIME } from "@/lib/layout-builder-types"
 import { cn } from "@/lib/utils"
 
 /** Mini column-layout glyph used by the 1–4 column tiles (Figma 3147:21863). */
@@ -82,72 +82,72 @@ const SECTIONS: AddSection[] = [
 ]
 
 /**
- * Quick-Add tile (Figma 118:20190). States map to design tokens:
+ * Quick-Add tile (Figma 118:20190). Drag-only — drops onto the invoice canvas;
+ * no click action. States map to design tokens:
  * - Default: gray/300 border, white, 4px radius, no shadow
  * - Hover: blue/300 border, white, 8px radius, Shadow/md
- * - Active (pressed / dragging): blue/700 border, gray/25, 8px radius, Shadow/md
+ * - Active (dragging): blue/700 border, gray/25, 8px radius, Shadow/md
  * - Disabled: gray/200 border, gray/25, 4px radius, gray/400 text
- * Active doubles as the drag state; while no drop target is wired the same
- * visual is applied during a native drag via `data-dragging`.
  */
 function ElementTile({
   item,
-  onSelect,
   disabled = false,
 }: {
   item: AddElement
-  onSelect: () => void
   disabled?: boolean
 }) {
   const [dragging, setDragging] = useState(false)
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      disabled={disabled}
+    <div
+      role="listitem"
+      aria-label={`Drag ${item.label} onto the layout`}
+      aria-grabbed={dragging}
       draggable={!disabled}
       data-dragging={dragging ? "true" : undefined}
       onDragStart={(event) => {
+        if (disabled) {
+          event.preventDefault()
+          return
+        }
+        event.dataTransfer.setData(
+          ELEMENT_DRAG_MIME,
+          JSON.stringify({ kind: item.id, label: item.label })
+        )
         event.dataTransfer.setData("text/plain", item.id)
         event.dataTransfer.effectAllowed = "copy"
         setDragging(true)
       }}
       onDragEnd={() => setDragging(false)}
       className={cn(
-        "flex flex-col items-center justify-center gap-1 border bg-white px-3 py-4 text-[#101828] outline-none",
+        "flex select-none flex-col items-center justify-center gap-1 border bg-white px-3 py-4 text-[#101828] outline-none",
         "transition-[color,background-color,border-color,box-shadow,border-radius]",
         // Default
         "rounded-[4px] border-[#d0d5dd]",
-        // Hover (guarded so it never applies to a disabled tile)
-        "enabled:hover:cursor-pointer enabled:hover:rounded-[8px] enabled:hover:border-[#84adff] enabled:hover:shadow-[0_4px_8px_-2px_rgba(16,24,40,0.1),0_2px_4px_-2px_rgba(16,24,40,0.06)]",
-        // Pressed (Figma "Active")
-        "enabled:active:rounded-[8px] enabled:active:border-[#004eeb] enabled:active:bg-[#fcfcfd] enabled:active:shadow-[0_4px_8px_-2px_rgba(16,24,40,0.1),0_2px_4px_-2px_rgba(16,24,40,0.06)]",
+        !disabled &&
+          "cursor-grab active:cursor-grabbing hover:rounded-[8px] hover:border-[#84adff] hover:shadow-[0_4px_8px_-2px_rgba(16,24,40,0.1),0_2px_4px_-2px_rgba(16,24,40,0.06)]",
         // Dragging — same visual as Active
         "data-[dragging=true]:rounded-[8px] data-[dragging=true]:border-[#004eeb] data-[dragging=true]:bg-[#fcfcfd] data-[dragging=true]:shadow-[0_4px_8px_-2px_rgba(16,24,40,0.1),0_2px_4px_-2px_rgba(16,24,40,0.06)]",
-        // Focus (accessibility — not shown in Figma but required for keyboard use)
-        "focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
-        // Disabled
-        "disabled:cursor-not-allowed disabled:rounded-[4px] disabled:border-[#eaecf0] disabled:bg-[#fcfcfd] disabled:text-[#98a2b3] disabled:shadow-none"
+        disabled &&
+          "cursor-not-allowed rounded-[4px] border-[#eaecf0] bg-[#fcfcfd] text-[#98a2b3] shadow-none"
       )}
     >
       <span className="flex size-10 items-center justify-center [&_svg]:size-7 [&_svg]:stroke-[1.5]">
         {item.icon}
       </span>
-      <span className="w-full truncate font-[family-name:var(--font-inter)] text-sm leading-5">
+      <span className="w-full truncate text-center font-[family-name:var(--font-inter)] text-sm leading-5">
         {item.label}
       </span>
-    </button>
+    </div>
   )
 }
 
 /**
  * Figma: Add elements panel (3147:23660 / Quick Add 3147:21863). Replaces the AI
- * conversation in the panel while the composer stays docked below. Picking a
- * tile asks the AI to insert that element, then dismisses the palette.
+ * conversation in the panel while the composer stays docked below. Tiles are
+ * drag-only — drop onto the invoice canvas to insert.
  */
 export function AddElementsPanel() {
-  const { sendMessage, closeAddElements } = useLayoutBuilder()
   const [query, setQuery] = useState("")
 
   const sections = useMemo(() => {
@@ -162,11 +162,6 @@ export function AddElementsPanel() {
       ),
     })).filter((section) => section.items.length > 0)
   }, [query])
-
-  const handleSelect = (item: AddElement) => {
-    sendMessage(`Add a ${item.label.toLowerCase()} element to the layout`)
-    closeAddElements()
-  }
 
   return (
     <>
@@ -201,13 +196,12 @@ export function AddElementsPanel() {
               <p className="font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#475467]">
                 {section.label}
               </p>
-              <div className="grid grid-cols-3 gap-3">
+              <div
+                role="list"
+                className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,100px),1fr))] gap-3"
+              >
                 {section.items.map((item) => (
-                  <ElementTile
-                    key={item.id}
-                    item={item}
-                    onSelect={() => handleSelect(item)}
-                  />
+                  <ElementTile key={item.id} item={item} />
                 ))}
               </div>
             </div>

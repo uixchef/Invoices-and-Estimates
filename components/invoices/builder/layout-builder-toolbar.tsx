@@ -143,7 +143,18 @@ export function LayoutBuilderToolbar() {
     addingElement,
     openAddElements,
     closeAddElements,
+    inspectingLayer,
+    inspectLayer,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
   } = useLayoutBuilder()
+
+  // The Invoice AI button represents the AI conversation view. The panel can
+  // also host the Add Elements palette or the Visual edits inspector, so it's
+  // only "active" when the conversation itself is what's showing.
+  const aiPanelActive = panelOpen && !addingElement && !inspectingLayer
 
   const mediumName = mediumId ? getMediumName(mediumId) : "Medium"
 
@@ -171,8 +182,17 @@ export function LayoutBuilderToolbar() {
           <ToolbarIconButton
             aria-label="Invoice AI"
             tone="accent"
-            active={panelOpen}
-            onClick={() => setPanelOpen((open) => !open)}
+            active={aiPanelActive}
+            onClick={() => {
+              if (aiPanelActive) {
+                setPanelOpen(false)
+                return
+              }
+              // Bring the AI conversation forward, replacing any other panel view.
+              setPanelOpen(true)
+              closeAddElements()
+              inspectLayer(null)
+            }}
           >
             <AutoAwesomeIcon className="size-4 text-[#6938ef]" />
           </ToolbarIconButton>
@@ -259,10 +279,18 @@ export function LayoutBuilderToolbar() {
 
       <div className="flex min-w-px flex-1 items-center justify-end gap-1">
         <div className="flex items-center gap-1">
-          <ToolbarIconButton aria-label="Undo" disabled={!canEdit}>
+          <ToolbarIconButton
+            aria-label="Undo"
+            disabled={!canEdit || !canUndo}
+            onClick={undo}
+          >
             <Undo2 aria-hidden />
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Redo" disabled={!canEdit}>
+          <ToolbarIconButton
+            aria-label="Redo"
+            disabled={!canEdit || !canRedo}
+            onClick={redo}
+          >
             <Redo2 aria-hidden />
           </ToolbarIconButton>
         </div>

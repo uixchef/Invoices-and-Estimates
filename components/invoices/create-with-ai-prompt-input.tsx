@@ -9,7 +9,6 @@ import {
   ImageIcon,
   Paperclip,
   Ruler,
-  Search,
   Upload,
   X,
 } from "lucide-react"
@@ -20,12 +19,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
 import { AI_MODELS } from "@/lib/ai-models"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import type { PromptAttachment } from "@/lib/create-with-ai-types"
-import { getDefaultA4MediumId, MEDIUM_ROWS } from "@/lib/mediums-data"
-import { useMediumsStore } from "@/lib/mediums-store"
+import {
+  getBuilderMediumPresets,
+  getDefaultBuilderMediumId,
+} from "@/lib/mediums-data"
 import { cn } from "@/lib/utils"
 
 const PROMPT_MAX_LENGTH = 500
@@ -41,6 +41,8 @@ const PROMPT_PLACEHOLDER_SUGGESTIONS = [
 const PLACEHOLDER_ROTATE_MS = 3800
 
 const MEDIUM_PLACEHOLDER = "Medium"
+
+const MEDIUM_PRESETS = getBuilderMediumPresets()
 
 function PromptAttachmentChip({
   attachment,
@@ -137,7 +139,6 @@ export function CreateWithAiPromptInput({
   value,
   onChange,
 }: CreateWithAiPromptInputProps) {
-  const { mediums } = useMediumsStore()
   const {
     attachments,
     addAttachments,
@@ -175,19 +176,9 @@ export function CreateWithAiPromptInput({
   const [isFocused, setIsFocused] = useState(false)
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
   const [modelId, setModelId] = useState(AI_MODELS[0].id)
-  const [selectedMediumId, setSelectedMediumId] = useState<string | null>(
-    () => getDefaultA4MediumId(MEDIUM_ROWS) ?? null
+  const [selectedMediumId, setSelectedMediumId] = useState<string>(
+    () => getDefaultBuilderMediumId()
   )
-  const [mediumQuery, setMediumQuery] = useState("")
-
-  const normalizedQuery = mediumQuery.trim().toLowerCase()
-  const filteredMediums = normalizedQuery
-    ? mediums.filter(
-        (medium) =>
-          medium.name.toLowerCase().includes(normalizedQuery) ||
-          medium.paper.toLowerCase().includes(normalizedQuery)
-      )
-    : mediums
 
   const hasReferenceImages = attachments.some(
     (attachment) => attachment.usedForGeneration
@@ -215,9 +206,9 @@ export function CreateWithAiPromptInput({
 
   const activeModel =
     AI_MODELS.find((model) => model.id === modelId) ?? AI_MODELS[0]
-  const selectedMedium = selectedMediumId
-    ? mediums.find((medium) => medium.id === selectedMediumId)
-    : undefined
+  const selectedMedium = MEDIUM_PRESETS.find(
+    (medium) => medium.id === selectedMediumId
+  )
 
   useEffect(() => {
     if (!showPlaceholder) {
@@ -374,13 +365,7 @@ export function CreateWithAiPromptInput({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <DropdownMenu
-              onOpenChange={(open) => {
-                if (!open) {
-                  setMediumQuery("")
-                }
-              }}
-            >
+            <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <PillButton aria-label="Select medium">
                   <Ruler className="size-5 shrink-0 text-[#667085]" aria-hidden />
@@ -392,59 +377,33 @@ export function CreateWithAiPromptInput({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="start"
-                className="max-h-[360px] w-[280px] overflow-y-auto rounded-lg p-0"
+                className="w-[240px] rounded-lg p-1.5"
               >
-                <div className="sticky top-0 z-10 border-b border-[#eaecf0] bg-white p-2">
-                  <div className="relative">
-                    <Search
-                      className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-[#667085]"
-                      aria-hidden
-                    />
-                    <Input
-                      type="search"
-                      value={mediumQuery}
-                      onChange={(event) => setMediumQuery(event.target.value)}
-                      onKeyDown={(event) => event.stopPropagation()}
-                      placeholder="Search mediums"
-                      aria-label="Search mediums"
-                      className="h-9 pl-8 font-[family-name:var(--font-inter)] text-sm leading-5"
-                    />
-                  </div>
-                </div>
-
-                <div className="p-1.5">
-                  {filteredMediums.length > 0 ? (
-                    filteredMediums.map((medium) => {
-                      const isActive = medium.id === selectedMediumId
-                      return (
-                        <DropdownMenuItem
-                          key={medium.id}
-                          onSelect={() => setSelectedMediumId(medium.id)}
-                          className={cn(
-                            "items-center gap-2 rounded-md px-3 py-2",
-                            isActive && "bg-[#f4f3ff] focus:bg-[#f4f3ff]"
-                          )}
-                        >
-                          <div className="flex min-w-0 flex-1 flex-col">
-                            <span className="truncate font-[family-name:var(--font-inter)] text-sm font-semibold text-[#101828]">
-                              {medium.name}
-                            </span>
-                            <span className="truncate font-[family-name:var(--font-inter)] text-[13px] leading-[18px] text-[#667085]">
-                              {medium.paper} · {medium.orientation} · {medium.resolution}
-                            </span>
-                          </div>
-                          {isActive ? (
-                            <Check className="size-4 shrink-0 text-[#6938ef]" aria-hidden />
-                          ) : null}
-                        </DropdownMenuItem>
-                      )
-                    })
-                  ) : (
-                    <p className="px-3 py-6 text-center font-[family-name:var(--font-inter)] text-sm text-[#667085]">
-                      No mediums found
-                    </p>
-                  )}
-                </div>
+                {MEDIUM_PRESETS.map((medium) => {
+                  const isActive = medium.id === selectedMediumId
+                  return (
+                    <DropdownMenuItem
+                      key={medium.id}
+                      onSelect={() => setSelectedMediumId(medium.id)}
+                      className={cn(
+                        "items-center gap-2 rounded-md px-3 py-2",
+                        isActive && "bg-[#f4f3ff] focus:bg-[#f4f3ff]"
+                      )}
+                    >
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate font-[family-name:var(--font-inter)] text-sm font-semibold text-[#101828]">
+                          {medium.name}
+                        </span>
+                        <span className="truncate font-[family-name:var(--font-inter)] text-[13px] leading-[18px] text-[#667085]">
+                          {medium.dimensions}
+                        </span>
+                      </div>
+                      {isActive ? (
+                        <Check className="size-4 shrink-0 text-[#6938ef]" aria-hidden />
+                      ) : null}
+                    </DropdownMenuItem>
+                  )
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

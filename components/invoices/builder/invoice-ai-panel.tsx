@@ -27,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { AI_MODELS } from "@/lib/ai-models"
-import { buildReasoning } from "@/lib/builder-narrative"
+import { buildPostReasoning, buildReasoning } from "@/lib/builder-narrative"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import type {
   BuilderAssistantMessage,
@@ -123,19 +123,30 @@ function AskingIndicator() {
  * `AssistantTurn`, so this only handles the active reasoning/thinking phases.
  */
 function AiStatusIndicator() {
-  const { status, thoughtDurationSec, messages } = useLayoutBuilder()
+  const {
+    status,
+    preThoughtDurationSec,
+    preReasoning,
+    receivedAnswers,
+    messages,
+  } = useLayoutBuilder()
 
   const lastUser = [...messages]
     .reverse()
     .find((message) => message.role === "user")
-  const reasoning = buildReasoning(lastUser?.text ?? "")
+  const prompt = lastUser?.text ?? ""
+  const preThoughtText = preReasoning ?? buildReasoning(prompt)
+  const postThoughtText =
+    receivedAnswers && receivedAnswers.length > 0
+      ? buildPostReasoning(prompt, receivedAnswers)
+      : buildReasoning(prompt)
 
   // Stream while actively reasoning/thinking; once it pauses to ask questions,
   // collapse to the "Thought for Xs" summary above the docked questions.
-  if (status === "reasoning" || status === "thinking") {
+  if (status === "reasoning") {
     return (
       <AiInAction type="thinking" defaultExpanded>
-        <StreamingText text={reasoning} streaming viewportHeight={150} />
+        <StreamingText text={preThoughtText} streaming viewportHeight={150} />
       </AiInAction>
     )
   }
@@ -143,11 +154,19 @@ function AiStatusIndicator() {
   if (status === "asking") {
     return (
       <>
-        <AiInAction type="thought" durationSec={thoughtDurationSec ?? 0}>
-          <StreamingText text={reasoning} />
+        <AiInAction type="thought" durationSec={preThoughtDurationSec ?? 0}>
+          <StreamingText text={preThoughtText} />
         </AiInAction>
         <AskingIndicator />
       </>
+    )
+  }
+
+  if (status === "thinking") {
+    return (
+      <AiInAction type="thinking" defaultExpanded>
+        <StreamingText text={postThoughtText} streaming viewportHeight={150} />
+      </AiInAction>
     )
   }
 
@@ -197,10 +216,18 @@ function ReceivedAnswers({ items }: { items: BuilderReceivedAnswer[] }) {
  * the to-dos finish.
  */
 function AssistantTurn({ message }: { message: BuilderAssistantMessage }) {
+  const hasAnswers =
+    message.receivedAnswers && message.receivedAnswers.length > 0
+
   return (
     <div className="flex flex-col gap-3">
-      {message.receivedAnswers && message.receivedAnswers.length > 0 ? (
-        <ReceivedAnswers items={message.receivedAnswers} />
+      {hasAnswers && message.preReasoning ? (
+        <AiInAction type="thought" durationSec={message.preDurationSec ?? 0}>
+          <StreamingText text={message.preReasoning} />
+        </AiInAction>
+      ) : null}
+      {hasAnswers ? (
+        <ReceivedAnswers items={message.receivedAnswers!} />
       ) : null}
       <AiInAction type="thought" durationSec={message.durationSec}>
         <StreamingText text={message.reasoning} />
@@ -459,7 +486,7 @@ function AiComposer() {
         </div>
         </div>
 
-        <p className="font-[family-name:var(--font-inter)] text-[10px] font-normal leading-[15px] text-[#475467]">
+        <p className="text-center font-[family-name:var(--font-inter)] text-xs font-normal leading-4 text-[#475467]">
           Invoice AI can make mistakes. Please double-check responses.
         </p>
       </div>
@@ -508,6 +535,8 @@ export function InvoiceAiPanel({
     messages,
     todos,
     status,
+    preThoughtDurationSec,
+    preReasoning,
     receivedAnswers,
     inspectingLayer,
     inspectLayer,
@@ -644,6 +673,17 @@ export function InvoiceAiPanel({
 
               {isActiveTurn ? (
                 <>
+                  {status === "thinking" &&
+                  receivedAnswers &&
+                  receivedAnswers.length > 0 &&
+                  preReasoning ? (
+                    <AiInAction
+                      type="thought"
+                      durationSec={preThoughtDurationSec ?? 0}
+                    >
+                      <StreamingText text={preReasoning} />
+                    </AiInAction>
+                  ) : null}
                   {receivedAnswers && receivedAnswers.length > 0 ? (
                     <ReceivedAnswers items={receivedAnswers} />
                   ) : null}

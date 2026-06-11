@@ -16,6 +16,7 @@ import {
   Code2,
   Copy,
   GripVertical,
+  ImageIcon,
   Plus,
   RotateCcw,
   Trash2,
@@ -24,12 +25,17 @@ import {
 import { GeneratingCarousel } from "@/components/invoices/builder/generating-carousel"
 import { VisualEditSelector } from "@/components/invoices/builder/visual-edit-selector"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
+import { getDocumentPageProfile } from "@/lib/mediums-data"
 import { useMediumsStore } from "@/lib/mediums-store"
 import type {
   BuilderLayerStyle,
   GeneratedLayout,
   GeneratedLineItem,
+  PlacedElement,
+  PlacedElementZone,
 } from "@/lib/layout-builder-types"
+import { ELEMENT_DRAG_MIME } from "@/lib/layout-builder-types"
+import { isMultilinePlacedKind } from "@/lib/placed-element-defaults"
 import { cn } from "@/lib/utils"
 
 /** Maps a layer's style overrides to an inline style object. */
@@ -241,15 +247,27 @@ function EditableText({
   )
 }
 
-function DocumentHeader({ layout }: { layout: GeneratedLayout }) {
+type SafePadding = { top: number; right: number; bottom: number; left: number }
+
+function DocumentHeader({
+  layout,
+  safePadding,
+}: {
+  layout: GeneratedLayout
+  safePadding: SafePadding
+}) {
   const { updateLayout } = useLayoutBuilder()
   const addressLine = "123 Market Street · Suite 400"
 
   if (layout.style === "bold") {
     return (
       <div
-        className="flex items-start justify-between gap-4 p-10 text-white"
-        style={{ backgroundColor: layout.accent }}
+        className="flex items-start justify-between gap-4 py-9 text-white"
+        style={{
+          backgroundColor: layout.accent,
+          paddingRight: safePadding.right,
+          paddingLeft: safePadding.left,
+        }}
       >
         <div className="flex items-center gap-3">
           <Monogram layout={layout} onAccent />
@@ -284,7 +302,13 @@ function DocumentHeader({ layout }: { layout: GeneratedLayout }) {
 
   if (layout.style === "classic") {
     return (
-      <div className="flex flex-col items-center gap-2 px-10 pt-10 text-center">
+      <div
+        className="flex flex-col items-center gap-2 text-center"
+        style={{
+          paddingLeft: safePadding.left,
+          paddingRight: safePadding.right,
+        }}
+      >
         <Monogram layout={layout} />
         <p className="text-2xl font-semibold text-[#101828]">
           <EditableText
@@ -314,7 +338,13 @@ function DocumentHeader({ layout }: { layout: GeneratedLayout }) {
       {layout.style === "modern" ? (
         <div className="h-1.5 w-full" style={{ backgroundColor: layout.accent }} />
       ) : null}
-      <div className="flex items-start justify-between gap-4 px-10 pt-10">
+      <div
+        className="flex items-start justify-between gap-4"
+        style={{
+          paddingLeft: safePadding.left,
+          paddingRight: safePadding.right,
+        }}
+      >
         <div className="flex items-center gap-3">
           <Monogram layout={layout} />
           <div>
@@ -387,18 +417,414 @@ function SelectableSection({
   )
 }
 
-/** Design width of the invoice paper; the stage scales to fit within this. */
+/**
+ * Fallback design width of the invoice paper, used until a medium resolves. The
+ * live width comes from the selected medium's `DocumentPageProfile`.
+ */
 const DOCUMENT_WIDTH = 595
+const DOCUMENT_PAGE_GAP = 24
+
+const DOCUMENT_PAPER_SHELL =
+  "mx-auto flex w-full flex-col overflow-hidden rounded-[4px] bg-white shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]"
 
 /**
- * Fits the fixed-width invoice document to the available pane width by scaling
- * it down (never up) with a transform, so it stays fully visible with the pane's
- * gutter preserved on every side — no horizontal overflow or left-edge clipping
- * on small or zoomed screens. The placeholder box takes the scaled dimensions so
- * vertical scroll and centering stay correct, and `min-w-0` lets it shrink below
- * the document's intrinsic width inside the flex pane.
+ * Stacks fixed-height page shells and clips one continuous document flow across
+ * them — same mental model as Google Docs page breaks in the builder preview.
  */
+function PaginatedDocument({
+  pageWidth,
+  pageHeight,
+  padTop,
+  padBottom,
+  paperClassName,
+  children,
+}: {
+  pageWidth: number
+  pageHeight: number
+  padTop: number
+  padBottom: number
+  paperClassName: string
+  children: ReactNode
+}) {
+  const measureRef = useRef<HTMLDivElement>(null)
+  const [pageCount, setPageCount] = useState(1)
+
+  // The medium's top/bottom safe area is reserved as empty margin bands on every
+  // page, so content only ever flows through the usable area between them.
+  const usableHeight = Math.max(pageHeight - padTop - padBottom, 1)
+
+  useLayoutEffect(() => {
+    const measure = measureRef.current
+    if (!measure) {
+      return
+    }
+
+    const update = () => {
+      const contentHeight = measure.getBoundingClientRect().height
+      setPageCount(Math.max(1, Math.ceil(contentHeight / usableHeight)))
+    }
+
+    const observer = new ResizeObserver(update)
+    observer.observe(measure)
+    update()
+    return () => observer.disconnect()
+  }, [usableHeight, pageWidth, children])
+
+  return (
+    <div className="relative flex flex-col" style={{ gap: DOCUMENT_PAGE_GAP }}>
+      <div
+        ref={measureRef}
+        className="pointer-events-none absolute left-0 top-0 opacity-0"
+        style={{ width: pageWidth }}
+        aria-hidden
+      >
+        {children}
+      </div>
+
+      {Array.from({ length: pageCount }, (_, pageIndex) => (
+        <div
+          key={pageIndex}
+          className={cn(DOCUMENT_PAPER_SHELL, paperClassName)}
+          style={{ width: pageWidth, height: pageHeight }}
+        >
+          <div
+            className="w-full"
+            style={{ height: pageHeight, paddingTop: padTop, paddingBottom: padBottom }}
+          >
+            <div className="relative h-full overflow-hidden">
+              <div
+                className="absolute left-0 right-0 top-0"
+                style={{
+                  transform: `translateY(-${pageIndex * usableHeight}px)`,
+                }}
+              >
+                {children}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function parseElementDrag(
+  dataTransfer: DataTransfer
+): { kind: string; label: string } | null {
+  const raw = dataTransfer.getData(ELEMENT_DRAG_MIME)
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw) as { kind?: string; label?: string }
+    if (!parsed.kind || !parsed.label) {
+      return null
+    }
+    return { kind: parsed.kind, label: parsed.label }
+  } catch {
+    return null
+  }
+}
+
+function PlacedEditableText({
+  value,
+  onChange,
+  editMode,
+  className,
+  multiline = false,
+}: {
+  value: string
+  onChange: (next: string) => void
+  editMode: boolean
+  className?: string
+  multiline?: boolean
+}) {
+  if (!editMode) {
+    if (multiline) {
+      return (
+        <div className={className}>
+          {value.split("\n").map((line, index) => (
+            <p key={index} className={index > 0 ? "mt-1" : undefined}>
+              {line}
+            </p>
+          ))}
+        </div>
+      )
+    }
+    return <span className={className}>{value}</span>
+  }
+
+  return (
+    <span
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
+      spellCheck={false}
+      onBlur={(event) => {
+        const next = multiline
+          ? (event.currentTarget.innerText ?? "").trimEnd()
+          : (event.currentTarget.textContent ?? "").trim()
+        if (next !== value) {
+          onChange(next)
+        }
+      }}
+      onKeyDown={(event) => {
+        if (!multiline && event.key === "Enter") {
+          event.preventDefault()
+          event.currentTarget.blur()
+        }
+      }}
+      className={cn(
+        "block rounded-[2px] outline-none transition-shadow",
+        "ring-1 ring-transparent hover:ring-[#9b8afb] focus:ring-2 focus:ring-[#6938ef]",
+        multiline && "min-h-[1.25rem] whitespace-pre-wrap",
+        className
+      )}
+    >
+      {value}
+    </span>
+  )
+}
+
+function PlacedElementView({
+  element,
+  editMode,
+  onContentChange,
+}: {
+  element: PlacedElement
+  editMode: boolean
+  onContentChange: (content: string) => void
+}) {
+  const { kind, content } = element
+  const multiline = isMultilinePlacedKind(kind)
+
+  const editable = (className: string) => (
+    <PlacedEditableText
+      value={content}
+      onChange={onContentChange}
+      editMode={editMode}
+      multiline={multiline}
+      className={className}
+    />
+  )
+
+  if (kind === "divider") {
+    return <div className="h-px w-full bg-[#eaecf0]" aria-hidden />
+  }
+
+  if (kind === "spacer") {
+    return <div className="h-6 w-full" aria-hidden />
+  }
+
+  if (kind === "image") {
+    return (
+      <div
+        className={cn(
+          "flex h-32 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[#d0d5dd] bg-[#f9fafb]",
+          editMode && "hover:border-[#84adff] hover:bg-[#f5f8ff]"
+        )}
+      >
+        <ImageIcon className="size-8 text-[#98a2b3]" aria-hidden />
+        <span className="font-[family-name:var(--font-inter)] text-sm text-[#667085]">
+          {editMode ? "Replace image" : "Image placeholder"}
+        </span>
+      </div>
+    )
+  }
+
+  if (kind === "button") {
+    return (
+      <span className="inline-flex h-9 items-center rounded border border-[#d0d5dd] bg-white px-4 font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054] shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+        {editable("inline")}
+      </span>
+    )
+  }
+
+  if (kind.startsWith("columns-")) {
+    const count = Number.parseInt(kind.split("-")[1] ?? "1", 10)
+    return (
+      <div className="flex w-full gap-4">
+        {Array.from({ length: count }).map((_, index) => (
+          <div key={index} className="min-w-0 flex-1">
+            {editable(
+              "font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]"
+            )}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (kind === "table") {
+    return (
+      <div className="w-full overflow-hidden rounded border border-[#eaecf0]">
+        <div className="grid grid-cols-[1fr_56px_80px] gap-3 border-b border-[#eaecf0] bg-[#fcfcfd] px-3 py-2 font-[family-name:var(--font-inter)] text-xs font-semibold uppercase tracking-wide text-[#98a2b3]">
+          <span>Description</span>
+          <span className="text-right">Qty</span>
+          <span className="text-right">Amount</span>
+        </div>
+        <div className="grid grid-cols-[1fr_56px_80px] gap-3 px-3 py-2.5 font-[family-name:var(--font-inter)] text-sm text-[#101828]">
+          <span className="text-[#667085]">Item name</span>
+          <span className="text-right text-[#667085]">1</span>
+          <span className="text-right font-medium">$0.00</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (kind === "heading") {
+    return editable(
+      "font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]"
+    )
+  }
+
+  if (kind === "list") {
+    const items = content.split("\n").filter(Boolean)
+    return (
+      <ul className="list-disc space-y-1 pl-5 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]">
+        {items.map((item, index) => (
+          <li key={index}>
+            {editMode ? (
+              <PlacedEditableText
+                value={item}
+                onChange={(line) => {
+                  const next = [...items]
+                  next[index] = line
+                  onContentChange(next.join("\n"))
+                }}
+                editMode
+                className="inline"
+              />
+            ) : (
+              item
+            )}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
+  if (kind === "quote") {
+    return (
+      <blockquote className="border-l-2 border-[#84adff] pl-3 font-[family-name:var(--font-inter)] text-sm italic leading-5 text-[#667085]">
+        {editable("block")}
+      </blockquote>
+    )
+  }
+
+  if (kind === "container") {
+    return (
+      <div className="rounded border border-[#eaecf0] bg-[#fcfcfd] p-4">
+        {editable(
+          "font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]"
+        )}
+      </div>
+    )
+  }
+
+  // paragraph and fallback
+  return editable(
+    "font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]"
+  )
+}
+
+/**
+ * Drop target between document sections. Invisible until an element is dragged
+ * over — then shows a 1.5px insertion line. Renders placed element placeholders
+ * after drop.
+ */
+function ElementDropZone({ zone }: { zone: PlacedElementZone }) {
+  const {
+    placedElements,
+    addPlacedElement,
+    updatePlacedElementContent,
+    removePlacedElement,
+    editMode,
+  } = useLayoutBuilder()
+  const [dragOver, setDragOver] = useState(false)
+  const zoneElements = placedElements.filter((element) => element.zone === zone)
+
+  const acceptDrag = (event: React.DragEvent) => {
+    if (!event.dataTransfer.types.includes(ELEMENT_DRAG_MIME)) {
+      return
+    }
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "copy"
+    setDragOver(true)
+  }
+
+  const handleDragLeave = (event: React.DragEvent) => {
+    const related = event.relatedTarget as Node | null
+    if (related && event.currentTarget.contains(related)) {
+      return
+    }
+    setDragOver(false)
+  }
+
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault()
+    setDragOver(false)
+    const payload = parseElementDrag(event.dataTransfer)
+    if (!payload) {
+      return
+    }
+    addPlacedElement({ kind: payload.kind, label: payload.label, zone })
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {zoneElements.map((element) => (
+        <div
+          key={element.id}
+          className={cn(
+            "group/placed relative",
+            editMode &&
+              "rounded-sm ring-1 ring-transparent hover:ring-[#9b8afb]/40"
+          )}
+        >
+          {editMode ? (
+            <button
+              type="button"
+              aria-label={`Remove ${element.label}`}
+              onClick={() => removePlacedElement(element.id)}
+              className="absolute -right-1 -top-1 z-10 inline-flex size-6 items-center justify-center rounded-full border border-[#eaecf0] bg-white text-[#667085] opacity-0 shadow-sm outline-none transition-opacity hover:border-[#fda29b] hover:text-[#b42318] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[#155eef]/40 group-hover/placed:opacity-100"
+            >
+              <Trash2 className="size-3.5" aria-hidden />
+            </button>
+          ) : null}
+          <PlacedElementView
+            element={element}
+            editMode={editMode}
+            onContentChange={(content) =>
+              updatePlacedElementContent(element.id, content)
+            }
+          />
+        </div>
+      ))}
+
+      {/* Transparent hit target; only the 1.5px line shows while dragging over. */}
+      <div
+        onDragOver={acceptDrag}
+        onDragEnter={acceptDrag}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className="relative -my-1 flex h-2 items-center"
+        aria-hidden
+      >
+        <div
+          className={cn(
+            "w-full rounded-full bg-[#6938ef] transition-opacity duration-150",
+            dragOver ? "h-[1.5px] opacity-100" : "h-0 opacity-0"
+          )}
+        />
+      </div>
+    </div>
+  )
+}
+
 function DocumentStage({ children }: { children: ReactNode }) {
+  const { mediumId } = useLayoutBuilder()
+  const documentWidth = getDocumentPageProfile(mediumId).widthPx || DOCUMENT_WIDTH
   const outerRef = useRef<HTMLDivElement>(null)
   const docRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
@@ -415,9 +841,9 @@ function DocumentStage({ children }: { children: ReactNode }) {
 
     const update = () => {
       const available = outer.clientWidth
-      const next = Math.min(1, available / DOCUMENT_WIDTH)
+      const next = Math.min(1, available / documentWidth)
       setScale(next)
-      setSize({ width: DOCUMENT_WIDTH * next, height: doc.offsetHeight * next })
+      setSize({ width: documentWidth * next, height: doc.offsetHeight * next })
     }
 
     const observer = new ResizeObserver(update)
@@ -425,7 +851,7 @@ function DocumentStage({ children }: { children: ReactNode }) {
     observer.observe(doc)
     update()
     return () => observer.disconnect()
-  }, [])
+  }, [documentWidth])
 
   return (
     <div ref={outerRef} className="w-full min-w-0">
@@ -436,7 +862,7 @@ function DocumentStage({ children }: { children: ReactNode }) {
         <div
           ref={docRef}
           style={{
-            width: DOCUMENT_WIDTH,
+            width: documentWidth,
             transform: `scale(${scale})`,
             transformOrigin: "top left",
           }}
@@ -461,7 +887,11 @@ function DocumentSurface() {
     selections,
     addSelection,
     sendMessage,
+    mediumId,
   } = useLayoutBuilder()
+
+  const pageProfile = getDocumentPageProfile(mediumId)
+  const { padding: safePadding } = pageProfile
 
   const subtotal = layout.lineItems.reduce(
     (sum, item) => sum + item.qty * item.rate,
@@ -502,18 +932,30 @@ function DocumentSurface() {
     setItems(items)
   }
 
-  return (
-    <div
-      className={cn(
-        "mx-auto flex w-full max-w-[595px] flex-col overflow-hidden rounded-[4px] bg-white shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]",
-        isClassic ? "font-serif" : "font-[family-name:var(--font-inter)]"
-      )}
-    >
-      <SelectableSection label="Header" className="ring-inset">
-        <DocumentHeader layout={layout} />
-      </SelectableSection>
+  const paperClassName = isClassic
+    ? "font-serif"
+    : "font-[family-name:var(--font-inter)]"
 
-      <div className="flex flex-1 flex-col gap-6 px-10 py-8">
+  return (
+    <PaginatedDocument
+      pageWidth={pageProfile.widthPx}
+      pageHeight={pageProfile.heightPx}
+      padTop={safePadding.top}
+      padBottom={safePadding.bottom}
+      paperClassName={paperClassName}
+    >
+      <div className="flex flex-col">
+        <SelectableSection label="Header" className="ring-inset">
+          <DocumentHeader layout={layout} safePadding={safePadding} />
+        </SelectableSection>
+
+        <div
+          className="flex flex-1 flex-col gap-6 pt-8"
+          style={{
+            paddingLeft: safePadding.left,
+            paddingRight: safePadding.right,
+          }}
+        >
         <SelectableSection label="Billing details" className="flex justify-between gap-6">
           <div className="flex flex-col gap-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-[#98a2b3]">
@@ -575,6 +1017,8 @@ function DocumentSurface() {
             </div>
           </div>
         </SelectableSection>
+
+        <ElementDropZone zone="after-billing" />
 
         {layout.sections.items ? (
           <div className="flex flex-col">
@@ -684,6 +1128,8 @@ function DocumentSurface() {
           </div>
         ) : null}
 
+        <ElementDropZone zone="after-items" />
+
         <SelectableSection label="Totals" className="flex justify-end">
           <div className="flex w-60 flex-col gap-2">
             <div className="flex justify-between text-sm text-[#667085]">
@@ -711,6 +1157,8 @@ function DocumentSurface() {
             </div>
           </div>
         </SelectableSection>
+
+        <ElementDropZone zone="after-totals" />
 
         {layout.sections.notes || layout.sections.terms ? (
           <SelectableSection
@@ -749,8 +1197,12 @@ function DocumentSurface() {
             ) : null}
           </SelectableSection>
         ) : null}
+
+        <ElementDropZone zone="after-notes" />
+        <ElementDropZone zone="end" />
+        </div>
       </div>
-    </div>
+    </PaginatedDocument>
   )
 }
 
@@ -1281,6 +1733,8 @@ function CodeEditorBar() {
  * how the structured `DocumentSurface` grows with content.
  */
 function CodePreviewFrame({ html }: { html: string }) {
+  const { mediumId } = useLayoutBuilder()
+  const pageWidth = getDocumentPageProfile(mediumId).widthPx || DOCUMENT_WIDTH
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(0)
 
@@ -1302,7 +1756,10 @@ function CodePreviewFrame({ html }: { html: string }) {
   }, [])
 
   return (
-    <div className="mx-auto flex w-full max-w-[595px] flex-col overflow-hidden rounded-[4px] bg-white shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]">
+    <div
+      className="mx-auto flex w-full flex-col overflow-hidden rounded-[4px] bg-white shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]"
+      style={{ maxWidth: pageWidth }}
+    >
       <iframe
         ref={frameRef}
         title="Invoice code preview"

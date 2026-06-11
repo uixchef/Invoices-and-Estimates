@@ -6,6 +6,12 @@ import { NewLayoutButton } from "@/components/invoices/new-layout-button"
 import { neutralSecondaryButtonVariants } from "@/components/invoices/neutral-secondary-button"
 
 /**
+ * Mediums management is paused — the nav entry is kept behind this flag so it can
+ * be brought back without re-implementing it. Flip to `true` to restore it.
+ */
+const SHOW_MEDIUMS_NAV = false
+
+/**
  * Figma: Invoices — Estimates / Invoice Header (3068:159601)
  */
 export function InvoiceLayoutHeader() {
@@ -26,10 +32,12 @@ export function InvoiceLayoutHeader() {
           role="group"
           aria-label="Layout actions"
         >
-          <Link href="/invoices/mediums" className={neutralSecondaryButtonVariants()}>
-            <Ruler className="size-5 shrink-0" strokeWidth={2} aria-hidden />
-            Mediums
-          </Link>
+          {SHOW_MEDIUMS_NAV ? (
+            <Link href="/invoices/mediums" className={neutralSecondaryButtonVariants()}>
+              <Ruler className="size-5 shrink-0" strokeWidth={2} aria-hidden />
+              Mediums
+            </Link>
+          ) : null}
           <CreateWithAiButton />
           <NewLayoutButton />
         </div>

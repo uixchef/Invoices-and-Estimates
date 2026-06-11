@@ -15,7 +15,12 @@ import {
 
 import type { AiAnswers, AiQuestion } from "@/components/ai/ai-questions"
 import type { AiTodoItem } from "@/components/ai/ai-todo-list"
-import { buildCompletionSummary, buildReasoning } from "@/lib/builder-narrative"
+import {
+  buildCompletionSummary,
+  buildPostReasoning,
+  buildReasoning,
+} from "@/lib/builder-narrative"
+import { getDefaultPlacedContent } from "@/lib/placed-element-defaults"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import {
   BUILDER_DOCUMENT_TYPES,
@@ -30,6 +35,8 @@ import {
   type BuilderVisualStyle,
   type GeneratedLayout,
   type GeneratedLineItem,
+  type PlacedElement,
+  type PlacedElementZone,
 } from "@/lib/layout-builder-types"
 
 /** Simulated generation latency until the layout-generation API is wired in. */
@@ -39,6 +46,24 @@ const SIMULATED_THINKING_MS = 7000
 const PANEL_MIN_WIDTH = 360
 const PANEL_MAX_WIDTH = 640
 const PANEL_DEFAULT_WIDTH = 360
+
+const HISTORY_LIMIT = 50
+const CODE_HISTORY_DEBOUNCE_MS = 500
+
+/** Undo/redo captures document-editing state only (not panel chrome or chat). */
+type BuilderHistorySnapshot = {
+  layoutEdits: Partial<GeneratedLayout>
+  layerText: Record<string, string>
+  layerStyles: Record<string, BuilderLayerStyle>
+  placedElements: PlacedElement[]
+  codeOverride: string | null
+}
+
+function cloneHistorySnapshot(
+  snapshot: BuilderHistorySnapshot
+): BuilderHistorySnapshot {
+  return structuredClone(snapshot)
+}
 
 /** Short "thinking" pass shown (with streaming reasoning) before questions. */
 const REASONING_MS = 2600
@@ -504,8 +529,23 @@ type LayoutBuilderContextValue = {
   openAddElements: () => void
   closeAddElements: () => void
 
+  /** Placeholder entities dropped onto the invoice from the Add elements palette. */
+  placedElements: PlacedElement[]
+  addPlacedElement: (input: {
+    kind: string
+    label: string
+    zone: PlacedElementZone
+  }) => void
+  updatePlacedElementContent: (id: string, content: string) => void
+  removePlacedElement: (id: string) => void
+
   messages: BuilderMessage[]
   status: BuilderStatus
+  /** Duration of the pre-question reasoning pass. */
+  preThoughtDurationSec: number | null
+  /** Collapsed recap text from before clarifying questions. */
+  preReasoning: string | null
+  /** Duration of the post-answer generation pass. */
   thoughtDurationSec: number | null
   todos: AiTodoItem[]
   /** Clarifying questions shown while `status === "asking"`. */
@@ -521,6 +561,12 @@ type LayoutBuilderContextValue = {
   skipQuestions: () => void
   /** Halts the in-progress generation and settles the session. */
   stopGeneration: () => void
+
+  /** Undo / redo for layout edits, layer overrides, placed elements, and code. */
+  canUndo: boolean
+  canRedo: boolean
+  undo: () => void
+  redo: () => void
 }
 
 const LayoutBuilderContext = createContext<LayoutBuilderContextValue | null>(null)
@@ -557,7 +603,23 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   >({})
   const [inspectingLayer, setInspectingLayer] = useState<string | null>(null)
   const [addingElement, setAddingElement] = useState(false)
+  const [placedElements, setPlacedElements] = useState<PlacedElement[]>([])
 
+  const placedElementCounterRef = useRef(0)
+  const historyPastRef = useRef<BuilderHistorySnapshot[]>([])
+  const historyFutureRef = useRef<BuilderHistorySnapshot[]>([])
+  const applyingHistoryRef = useRef(false)
+  const codeEditSessionRef = useRef(false)
+  const codeEditDebounceRef = useRef<number | null>(null)
+  const documentStateRef = useRef<BuilderHistorySnapshot>({
+    layoutEdits: {},
+    layerText: {},
+    layerStyles: {},
+    placedElements: [],
+    codeOverride: null,
+  })
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
   const [messages, setMessages] = useState<BuilderMessage[]>([])
   const [status, setStatus] = useState<BuilderStatus>("idle")
   const [questions, setQuestions] = useState<AiQuestion[]>(BUILDER_QUESTIONS)
@@ -565,6 +627,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [receivedAnswers, setReceivedAnswers] = useState<
     BuilderReceivedAnswer[] | null
   >(null)
+  const [preThoughtDurationSec, setPreThoughtDurationSec] = useState<
+    number | null
+  >(null)
+  const [preReasoning, setPreReasoning] = useState<string | null>(null)
   const [thoughtDurationSec, setThoughtDurationSec] = useState<number | null>(
     null
   )
@@ -575,6 +641,121 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const pendingQuestionsRef = useRef<AiQuestion[] | null>(null)
   const referenceUrlsRef = useRef<string[]>([])
   const initializedRef = useRef(false)
+
+  useEffect(() => {
+    documentStateRef.current = {
+      layoutEdits,
+      layerText,
+      layerStyles,
+      placedElements,
+      codeOverride,
+    }
+  }, [layoutEdits, layerText, layerStyles, placedElements, codeOverride])
+
+  const syncHistoryFlags = useCallback(() => {
+    setCanUndo(historyPastRef.current.length > 0)
+    setCanRedo(historyFutureRef.current.length > 0)
+  }, [])
+
+  const clearHistory = useCallback(() => {
+    historyPastRef.current = []
+    historyFutureRef.current = []
+    codeEditSessionRef.current = false
+    if (codeEditDebounceRef.current) {
+      window.clearTimeout(codeEditDebounceRef.current)
+      codeEditDebounceRef.current = null
+    }
+    syncHistoryFlags()
+  }, [syncHistoryFlags])
+
+  const applyHistorySnapshot = useCallback(
+    (snapshot: BuilderHistorySnapshot) => {
+      applyingHistoryRef.current = true
+      setLayoutEdits(snapshot.layoutEdits)
+      setLayerTextState(snapshot.layerText)
+      setLayerStyles(snapshot.layerStyles)
+      setPlacedElements(snapshot.placedElements)
+      setCodeOverrideState(snapshot.codeOverride)
+      applyingHistoryRef.current = false
+    },
+    []
+  )
+
+  const pushHistory = useCallback(() => {
+    if (applyingHistoryRef.current) {
+      return
+    }
+
+    historyPastRef.current.push(
+      cloneHistorySnapshot(documentStateRef.current)
+    )
+    if (historyPastRef.current.length > HISTORY_LIMIT) {
+      historyPastRef.current.shift()
+    }
+    historyFutureRef.current = []
+    syncHistoryFlags()
+  }, [syncHistoryFlags])
+
+  const undo = useCallback(() => {
+    const previous = historyPastRef.current.pop()
+    if (!previous) {
+      return
+    }
+
+    historyFutureRef.current.push(
+      cloneHistorySnapshot(documentStateRef.current)
+    )
+    applyHistorySnapshot(previous)
+    syncHistoryFlags()
+  }, [applyHistorySnapshot, syncHistoryFlags])
+
+  const redo = useCallback(() => {
+    const next = historyFutureRef.current.pop()
+    if (!next) {
+      return
+    }
+
+    historyPastRef.current.push(
+      cloneHistorySnapshot(documentStateRef.current)
+    )
+    applyHistorySnapshot(next)
+    syncHistoryFlags()
+  }, [applyHistorySnapshot, syncHistoryFlags])
+
+  // New generation invalidates edit history — the prior layout is no longer the base.
+  useEffect(() => {
+    if (status === "reasoning" || status === "thinking") {
+      clearHistory()
+    }
+  }, [status, clearHistory])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (status !== "ready") {
+        return
+      }
+
+      const mod = event.metaKey || event.ctrlKey
+      if (!mod) {
+        return
+      }
+
+      const key = event.key.toLowerCase()
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault()
+        undo()
+      } else if (key === "z" && event.shiftKey) {
+        event.preventDefault()
+        redo()
+      } else if (key === "y") {
+        event.preventDefault()
+        redo()
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [status, undo, redo])
 
   const startThinking = useCallback(() => {
     thinkingStartedAtRef.current = Date.now()
@@ -587,6 +768,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const startReasoning = useCallback((pending: AiQuestion[] | null) => {
     pendingQuestionsRef.current = pending && pending.length > 0 ? pending : null
     reasoningStartedAtRef.current = Date.now()
+    setPreThoughtDurationSec(null)
+    setPreReasoning(null)
     setThoughtDurationSec(null)
     setStatus("reasoning")
   }, [])
@@ -600,12 +783,20 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
     const timer = window.setTimeout(() => {
       const startedAt = reasoningStartedAtRef.current ?? Date.now()
-      setThoughtDurationSec(
-        Math.max(1, Math.round((Date.now() - startedAt) / 1000))
+      const durationSec = Math.max(
+        1,
+        Math.round((Date.now() - startedAt) / 1000)
       )
+
+      const lastUser = [...messages]
+        .reverse()
+        .find((message) => message.role === "user")
+      const prompt = lastUser?.text ?? ""
 
       const pending = pendingQuestionsRef.current
       if (pending) {
+        setPreThoughtDurationSec(durationSec)
+        setPreReasoning(buildReasoning(prompt))
         setQuestions(pending)
         setStatus("asking")
       } else {
@@ -614,7 +805,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     }, REASONING_MS)
 
     return () => window.clearTimeout(timer)
-  }, [status, startThinking])
+  }, [status, startThinking, messages])
 
   // Drives the simulated generation latency. Owning the timer in an effect keyed
   // on `status` keeps it resilient to Strict Mode's mount/cleanup/mount cycle.
@@ -735,25 +926,43 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   // tears down structured-edit affordances so the two models can't silently
   // diverge while the user edits raw code.
   const detachCode = useCallback((code: string) => {
+    pushHistory()
     setCodeOverrideState(code)
     setEditMode(false)
     setInspectingLayer(null)
     setAddingElement(false)
     setSelections([])
     setCodeOpen(true)
-  }, [])
+  }, [pushHistory])
 
   const updateCodeOverride = useCallback((code: string) => {
+    if (!applyingHistoryRef.current) {
+      if (!codeEditSessionRef.current) {
+        pushHistory()
+        codeEditSessionRef.current = true
+      }
+
+      if (codeEditDebounceRef.current) {
+        window.clearTimeout(codeEditDebounceRef.current)
+      }
+      codeEditDebounceRef.current = window.setTimeout(() => {
+        codeEditSessionRef.current = false
+        codeEditDebounceRef.current = null
+      }, CODE_HISTORY_DEBOUNCE_MS)
+    }
+
     setCodeOverrideState((current) => (current === null ? current : code))
-  }, [])
+  }, [pushHistory])
 
   const reattachCode = useCallback(() => {
+    pushHistory()
     setCodeOverrideState(null)
-  }, [])
+  }, [pushHistory])
 
   const updateLayout = useCallback((patch: Partial<GeneratedLayout>) => {
+    pushHistory()
     setLayoutEdits((current) => ({ ...current, ...patch }))
-  }, [])
+  }, [pushHistory])
 
   // Single-selection: picking a layer replaces any existing chip so only one
   // element is ever attached to the composer at a time.
@@ -783,17 +992,19 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setLayerText = useCallback((label: string, value: string) => {
+    pushHistory()
     setLayerTextState((current) => ({ ...current, [label]: value }))
-  }, [])
+  }, [pushHistory])
 
   const setLayerStyle = useCallback(
     (label: string, patch: Partial<BuilderLayerStyle>) => {
+      pushHistory()
       setLayerStyles((current) => ({
         ...current,
         [label]: { ...current[label], ...patch },
       }))
     },
-    []
+    [pushHistory]
   )
 
   const inspectLayer = useCallback((label: string | null) => {
@@ -823,6 +1034,62 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const closeAddElements = useCallback(() => {
     setAddingElement(false)
   }, [])
+
+  const addPlacedElement = useCallback(
+    ({
+      kind,
+      label,
+      zone,
+    }: {
+      kind: string
+      label: string
+      zone: PlacedElementZone
+    }) => {
+      pushHistory()
+      placedElementCounterRef.current += 1
+      const id = `placed-${placedElementCounterRef.current}`
+
+      setPlacedElements((current) => {
+        const sameKind = current.filter((element) => element.kind === kind)
+        const displayLabel =
+          sameKind.length > 0 ? `${label} ${sameKind.length + 1}` : label
+
+        return [
+          ...current,
+          {
+            id,
+            kind,
+            label: displayLabel,
+            zone,
+            content: getDefaultPlacedContent(kind),
+          },
+        ]
+      })
+    },
+    [pushHistory]
+  )
+
+  const updatePlacedElementContent = useCallback(
+    (id: string, content: string) => {
+      pushHistory()
+      setPlacedElements((current) =>
+        current.map((element) =>
+          element.id === id ? { ...element, content } : element
+        )
+      )
+    },
+    [pushHistory]
+  )
+
+  const removePlacedElement = useCallback(
+    (id: string) => {
+      pushHistory()
+      setPlacedElements((current) =>
+        current.filter((element) => element.id !== id)
+      )
+    },
+    [pushHistory]
+  )
 
   const seedLayer = useCallback(
     (label: string, seed: { content: string; style: BuilderLayerStyle }) => {
@@ -857,11 +1124,17 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     // there are none); stopping mid-generation settles the layout.
     if (status === "reasoning") {
       const startedAt = reasoningStartedAtRef.current ?? Date.now()
-      setThoughtDurationSec(
-        Math.max(1, Math.round((Date.now() - startedAt) / 1000))
+      const durationSec = Math.max(
+        1,
+        Math.round((Date.now() - startedAt) / 1000)
       )
       const pending = pendingQuestionsRef.current
       if (pending) {
+        const lastUser = [...messages]
+          .reverse()
+          .find((message) => message.role === "user")
+        setPreThoughtDurationSec(durationSec)
+        setPreReasoning(buildReasoning(lastUser?.text ?? ""))
         setQuestions(pending)
         setStatus("asking")
       } else {
@@ -878,7 +1151,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       Math.max(1, Math.round((Date.now() - startedAt) / 1000))
     )
     setStatus("ready")
-  }, [status])
+  }, [status, messages])
 
   const submitAnswers = useCallback(
     (submitted: AiAnswers) => {
@@ -903,6 +1176,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
       // New turn — clear any prior answer recap until this turn asks again.
       setReceivedAnswers(null)
+      setPreThoughtDurationSec(null)
+      setPreReasoning(null)
 
       referenceUrlsRef.current = [
         ...referenceUrlsRef.current,
@@ -951,6 +1226,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       const lastUser = [...current]
         .reverse()
         .find((message) => message.role === "user")
+      const prompt = lastUser?.text ?? ""
 
       const completedTodos: AiTodoItem[] = BUILDER_TODO_LABELS.map(
         (label, index) => ({
@@ -960,20 +1236,33 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         })
       )
 
+      const hasAnswers = receivedAnswers && receivedAnswers.length > 0
+
       return [
         ...current,
         {
           id: nextMessageId(),
           role: "assistant",
           receivedAnswers,
-          reasoning: buildReasoning(lastUser?.text ?? ""),
+          preReasoning: hasAnswers ? preReasoning : null,
+          preDurationSec: hasAnswers ? (preThoughtDurationSec ?? 0) : null,
+          reasoning: hasAnswers
+            ? buildPostReasoning(prompt, receivedAnswers)
+            : buildReasoning(prompt),
           durationSec: thoughtDurationSec ?? 0,
           todos: completedTodos,
           summary: buildCompletionSummary(generatedLayout),
         },
       ]
     })
-  }, [status, thoughtDurationSec, generatedLayout, receivedAnswers])
+  }, [
+    status,
+    thoughtDurationSec,
+    preThoughtDurationSec,
+    preReasoning,
+    generatedLayout,
+    receivedAnswers,
+  ])
 
   const todos = useMemo<AiTodoItem[]>(() => {
     if (status !== "thinking" && status !== "ready") {
@@ -1038,8 +1327,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       addingElement,
       openAddElements,
       closeAddElements,
+      placedElements,
+      addPlacedElement,
+      updatePlacedElementContent,
+      removePlacedElement,
       messages,
       status,
+      preThoughtDurationSec,
+      preReasoning,
       thoughtDurationSec,
       todos,
       questions,
@@ -1049,6 +1344,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       submitAnswers,
       skipQuestions,
       stopGeneration,
+      canUndo,
+      canRedo,
+      undo,
+      redo,
     }),
     [
       name,
@@ -1088,8 +1387,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       addingElement,
       openAddElements,
       closeAddElements,
+      placedElements,
+      addPlacedElement,
+      updatePlacedElementContent,
+      removePlacedElement,
       messages,
       status,
+      preThoughtDurationSec,
+      preReasoning,
       thoughtDurationSec,
       todos,
       questions,
@@ -1099,6 +1404,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       submitAnswers,
       skipQuestions,
       stopGeneration,
+      canUndo,
+      canRedo,
+      undo,
+      redo,
     ]
   )
 

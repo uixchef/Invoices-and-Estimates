@@ -256,14 +256,85 @@ function buildMediumSeedProfiles(count: number): MediumSeedProfile[] {
 const MEDIUM_NAME_ORDER = deterministicOrder(MEDIUM_NAMES.length, 53)
 const MEDIUM_SEED_PROFILES = buildMediumSeedProfiles(MEDIUM_NAMES.length)
 
-export const MEDIUM_ROWS: MediumRow[] = MEDIUM_NAME_ORDER.map((nameIndex, rowIndex) => ({
-  id: `medium-${rowIndex + 1}`,
-  name: MEDIUM_NAMES[nameIndex],
-  ...MEDIUM_SEED_PROFILES[rowIndex],
-}))
+/**
+ * The synthetic seed assigns names, papers, dimensions, and orientation
+ * independently, so a row *named* "A4" can carry a landscape, custom-sized
+ * profile. The builder renders the page directly from the medium, so a
+ * preset-named medium must actually match its paper. Normalise the rows whose
+ * name is a known preset to that paper's canonical portrait geometry.
+ */
+function normalizePresetGeometry(
+  name: string,
+  profile: MediumSeedProfile
+): MediumSeedProfile {
+  const preset = PRESET_PAPERS.find((paper) => paper === name)
+  if (!preset) {
+    return profile
+  }
+
+  const { width, height } = PAPER_MM[preset]
+  return {
+    ...profile,
+    paper: preset,
+    orientation: "Portrait",
+    dimensions: orientedDimensions(width, height, "Portrait"),
+  }
+}
+
+export const MEDIUM_ROWS: MediumRow[] = MEDIUM_NAME_ORDER.map((nameIndex, rowIndex) => {
+  const name = MEDIUM_NAMES[nameIndex]
+  return {
+    id: `medium-${rowIndex + 1}`,
+    name,
+    ...normalizePresetGeometry(name, MEDIUM_SEED_PROFILES[rowIndex]),
+  }
+})
+
+/**
+ * Fixed paper presets offered in the builder's medium picker. The broader
+ * mediums library is paused, so layout creation is intentionally scoped to these
+ * three canonical sizes (true ISO/US dimensions, portrait, 12 mm safe area).
+ */
+function buildPaperPreset(
+  id: string,
+  name: string,
+  paper: MediumRow["paper"],
+  width: number,
+  height: number
+): MediumRow {
+  return {
+    id,
+    name,
+    paper,
+    orientation: "Portrait",
+    dimensions: orientedDimensions(width, height, "Portrait"),
+    resolution: "300 DPI",
+    safeArea: { top: 12, right: 12, bottom: 12, left: 12 },
+    updatedOn: "",
+    updatedAgo: "Just now",
+  }
+}
+
+export const BUILDER_PAPER_PRESETS: MediumRow[] = [
+  buildPaperPreset("paper-a4", "A4", "A4", 210, 297),
+  buildPaperPreset("paper-us-letter", "US letter", "US letter", 216, 279),
+  buildPaperPreset("paper-legal", "Legal", "Custom", 216, 356),
+]
+
+export const DEFAULT_BUILDER_MEDIUM_ID = BUILDER_PAPER_PRESETS[0].id
+
+/** The three paper presets surfaced in the builder/prompt medium picker. */
+export function getBuilderMediumPresets(): MediumRow[] {
+  return BUILDER_PAPER_PRESETS
+}
+
+/** Default builder medium — A4. */
+export function getDefaultBuilderMediumId(): string {
+  return DEFAULT_BUILDER_MEDIUM_ID
+}
 
 export const MEDIUM_BY_ID = Object.fromEntries(
-  MEDIUM_ROWS.map((medium) => [medium.id, medium])
+  [...MEDIUM_ROWS, ...BUILDER_PAPER_PRESETS].map((medium) => [medium.id, medium])
 ) as Record<string, MediumRow>
 
 export function getMediumById(mediumId: string): MediumRow | undefined {
@@ -279,4 +350,74 @@ export function getDefaultA4MediumId(
   mediums: readonly Pick<MediumRow, "id" | "name">[] = MEDIUM_ROWS
 ): string | undefined {
   return mediums.find((medium) => medium.name === "A4")?.id ?? mediums[0]?.id
+}
+
+/** Portrait-oriented page size in mm from a medium's `dimensions` label. */
+export function getMediumPageDimensionsMm(
+  mediumId: string | null
+): { width: number; height: number } {
+  const medium = mediumId ? getMediumById(mediumId) : undefined
+
+  if (!medium) {
+    return PAPER_MM.A4
+  }
+
+  return parseDimensionPair(medium.dimensions)
+}
+
+/**
+ * Render scale for the builder preview: CSS px per millimetre. Calibrated so a
+ * portrait A4 (210 mm wide) renders at 595 px — the document's original design
+ * width — keeping existing layouts pixel-identical while every other medium
+ * (US letter, custom, landscape) derives its own proportions from the same scale.
+ */
+export const DOCUMENT_PX_PER_MM = 595 / 210
+
+/** Content never sits closer than this to the paper edge, even at tiny safe areas. */
+const MIN_SAFE_AREA_PX = 12
+
+export type DocumentPageProfile = {
+  orientation: MediumRow["orientation"]
+  /** Oriented page size in mm (width > height in Landscape). */
+  widthMm: number
+  heightMm: number
+  safeAreaMm: MediumSafeArea
+  /** Oriented page size in CSS px at the builder's render scale. */
+  widthPx: number
+  heightPx: number
+  /** Safe-area inset in CSS px (floored so content never collides with the edge). */
+  padding: { top: number; right: number; bottom: number; left: number }
+}
+
+/**
+ * Resolves every layout-affecting property of the selected medium — oriented
+ * dimensions, the px render size, and the safe-area insets — into one object so
+ * the builder canvas can render the page exactly as the medium is configured.
+ * Falls back to portrait A4 defaults when no medium is selected.
+ */
+export function getDocumentPageProfile(
+  mediumId: string | null
+): DocumentPageProfile {
+  const medium = mediumId ? getMediumById(mediumId) : undefined
+  const { width, height } = getMediumPageDimensionsMm(mediumId)
+  const orientation = medium?.orientation ?? "Portrait"
+  const safeAreaMm = medium?.safeArea ?? { top: 3, right: 3, bottom: 3, left: 3 }
+
+  const toPx = (mm: number) =>
+    Math.max(Math.round(mm * DOCUMENT_PX_PER_MM), MIN_SAFE_AREA_PX)
+
+  return {
+    orientation,
+    widthMm: width,
+    heightMm: height,
+    safeAreaMm,
+    widthPx: Math.round(width * DOCUMENT_PX_PER_MM),
+    heightPx: Math.round(height * DOCUMENT_PX_PER_MM),
+    padding: {
+      top: toPx(safeAreaMm.top),
+      right: toPx(safeAreaMm.right),
+      bottom: toPx(safeAreaMm.bottom),
+      left: toPx(safeAreaMm.left),
+    },
+  }
 }

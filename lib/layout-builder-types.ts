@@ -39,6 +39,27 @@ export type BuilderLayerStyle = {
   lineHeight?: number
 }
 
+/** MIME type for drag-and-drop from the Add elements palette. */
+export const ELEMENT_DRAG_MIME = "application/x-invoice-element"
+
+/** Drop anchor within the invoice document body. */
+export type PlacedElementZone =
+  | "after-billing"
+  | "after-items"
+  | "after-totals"
+  | "after-notes"
+  | "end"
+
+/** User-placed element on the invoice canvas. */
+export type PlacedElement = {
+  id: string
+  kind: string
+  label: string
+  zone: PlacedElementZone
+  /** Editable placeholder copy — seeded on drop, updated in visual edit mode. */
+  content: string
+}
+
 /**
  * Generation request handed off from the Create-with-AI prompt to the builder.
  * Carries the user's prompt, the chosen medium/model, and any reference images.
@@ -74,6 +95,10 @@ export type BuilderAssistantMessage = {
   id: string
   role: "assistant"
   receivedAnswers: BuilderReceivedAnswer[] | null
+  /** Reasoning recap from before clarifying questions were asked. */
+  preReasoning: string | null
+  preDurationSec: number | null
+  /** Reasoning recap after answers were received (generation phase). */
   reasoning: string
   durationSec: number
   todos: AiTodoItem[]
