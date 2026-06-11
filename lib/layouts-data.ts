@@ -1,11 +1,14 @@
 import { buildUpdatedMeta } from "@/lib/format-updated-ago"
-import { deterministicOrder, MEDIUM_ROWS } from "@/lib/mediums-data"
+import {
+  BUILDER_PAPER_PRESETS,
+  deterministicOrder,
+} from "@/lib/mediums-data"
 
 export type LayoutRow = {
   id: string
   name: string
   type: "Invoice" | "Estimate" | "Receipt"
-  /** References a created medium from MEDIUM_ROWS — chosen when the layout is created. */
+  /** References a builder paper preset (A4, US letter, Legal). */
   mediumId: string
   status: "Published" | "Draft"
   updatedOn: string
@@ -68,7 +71,7 @@ const LAYOUT_NAME_ORDER = deterministicOrder(LAYOUT_COUNT, 61)
 export const LAYOUT_ROWS: LayoutRow[] = LAYOUT_NAME_ORDER.map((nameIndex, rowIndex) => {
   const number = rowIndex + 1
   const isFeatured = rowIndex < FEATURED_TYPE_ORDER.length
-  const medium = pick(MEDIUM_ROWS, rowIndex * 13 + 5)
+  const medium = pick(BUILDER_PAPER_PRESETS, rowIndex * 13 + 5)
   const meta = LAYOUT_UPDATED_META[rowIndex]
 
   return {
@@ -100,7 +103,7 @@ export const BLANK_LAYOUT_ROWS: LayoutRow[] = Array.from(
       id: `layout-blank-${number}`,
       name: `Layout ${number}`,
       type: "Invoice",
-      mediumId: pick(MEDIUM_ROWS, index * 5 + 1).id,
+      mediumId: pick(BUILDER_PAPER_PRESETS, index * 5 + 1).id,
       status: "Draft",
       updatedOn: meta.updatedOn,
       updatedAgo: meta.updatedAgo,

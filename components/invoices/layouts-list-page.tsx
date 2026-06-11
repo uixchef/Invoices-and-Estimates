@@ -20,7 +20,7 @@ import type { LayoutRow } from "@/lib/layouts-data"
 import { useLayoutClone } from "@/lib/layout-clone-context"
 import { useLayoutCreate } from "@/lib/layout-create-context"
 import { useLayoutDelete } from "@/lib/layout-delete-context"
-import { useMediumsStore } from "@/lib/mediums-store"
+import { getBuilderMediumPresets } from "@/lib/mediums-data"
 import { compareByMostRecent } from "@/lib/sort-by-updated"
 
 type LayoutsListPageProps = {
@@ -31,7 +31,6 @@ export function LayoutsListPage({ rows }: LayoutsListPageProps) {
   const { clonedLayouts } = useLayoutClone()
   const { createdLayouts } = useLayoutCreate()
   const { isRemoved } = useLayoutDelete()
-  const { mediums } = useMediumsStore()
   const visibleRows = useMemo(
     () =>
       [...createdLayouts, ...clonedLayouts, ...rows].filter(
@@ -40,8 +39,8 @@ export function LayoutsListPage({ rows }: LayoutsListPageProps) {
     [createdLayouts, clonedLayouts, isRemoved, rows]
   )
   const filterDefinitions = useMemo(
-    () => buildLayoutFilterDefinitions(mediums),
-    [mediums]
+    () => buildLayoutFilterDefinitions(getBuilderMediumPresets()),
+    []
   )
 
   const [searchQuery, setSearchQuery] = useState("")
