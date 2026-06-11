@@ -39,6 +39,28 @@ import {
   type PlacedElementZone,
 } from "@/lib/layout-builder-types"
 
+/**
+ * Counts how many style fields currently differ from a baseline snapshot.
+ * Used to surface the net "N pending changes" for the inspected layer: a field
+ * edited away from its original increments the count, and reverting it back to
+ * the original value decrements it.
+ */
+function countStyleDiff(
+  baseline: BuilderLayerStyle | undefined,
+  current: BuilderLayerStyle | undefined
+): number {
+  const base = (baseline ?? {}) as Record<string, unknown>
+  const next = (current ?? {}) as Record<string, unknown>
+  const keys = new Set([...Object.keys(base), ...Object.keys(next)])
+  let count = 0
+  for (const key of keys) {
+    if (base[key] !== next[key]) {
+      count += 1
+    }
+  }
+  return count
+}
+
 /** Simulated generation latency until the layout-generation API is wired in. */
 const SIMULATED_THINKING_MS = 7000
 
@@ -512,6 +534,17 @@ type LayoutBuilderContextValue = {
   inspectingLayer: string | null
   inspectLayer: (label: string | null) => void
 
+  /** Which Edits sub-tab the inspector shows. */
+  editsTab: "style" | "advanced"
+  setEditsTab: (tab: "style" | "advanced") => void
+
+  /** Number of unsaved edits made to the inspected layer this session. */
+  pendingLayerChanges: number
+  /** Revert every override on the inspected layer back to the original. */
+  discardLayerEdits: () => void
+  /** Mark the inspected layer's edits as saved (resets the pending count). */
+  saveLayerEdits: () => void
+
   /** Selects a layer for inspection — opens its Visual edits panel + chip. */
   selectLayer: (label: string) => void
 
@@ -541,6 +574,12 @@ type LayoutBuilderContextValue = {
 
   messages: BuilderMessage[]
   status: BuilderStatus
+  /**
+   * True once the builder has produced a layout at least once. Follow-up prompts
+   * keep this set so the canvas can keep the existing layout on screen instead of
+   * replacing it with the full-screen generating animation.
+   */
+  hasGeneratedOnce: boolean
   /** Duration of the pre-question reasoning pass. */
   preThoughtDurationSec: number | null
   /** Collapsed recap text from before clarifying questions. */
@@ -602,6 +641,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     Record<string, BuilderLayerStyle>
   >({})
   const [inspectingLayer, setInspectingLayer] = useState<string | null>(null)
+  const [editsTab, setEditsTab] = useState<"style" | "advanced">("style")
+  // Original overrides captured per layer on first inspect. The inspector
+  // footer counts how many fields currently *differ* from this baseline, so the
+  // "N pending changes" tally rises and falls as edits are made and reverted.
+  const layerBaselineRef = useRef<
+    Record<string, { text: string; style: BuilderLayerStyle }>
+  >({})
+  const [baselineVersion, setBaselineVersion] = useState(0)
   const [addingElement, setAddingElement] = useState(false)
   const [placedElements, setPlacedElements] = useState<PlacedElement[]>([])
 
@@ -622,6 +669,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [canRedo, setCanRedo] = useState(false)
   const [messages, setMessages] = useState<BuilderMessage[]>([])
   const [status, setStatus] = useState<BuilderStatus>("idle")
+  const [hasGeneratedOnce, setHasGeneratedOnce] = useState(false)
   const [questions, setQuestions] = useState<AiQuestion[]>(BUILDER_QUESTIONS)
   const [answers, setAnswers] = useState<AiAnswers | null>(null)
   const [receivedAnswers, setReceivedAnswers] = useState<
@@ -991,10 +1039,13 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     setInspectingLayer(null)
   }, [])
 
-  const setLayerText = useCallback((label: string, value: string) => {
-    pushHistory()
-    setLayerTextState((current) => ({ ...current, [label]: value }))
-  }, [pushHistory])
+  const setLayerText = useCallback(
+    (label: string, value: string) => {
+      pushHistory()
+      setLayerTextState((current) => ({ ...current, [label]: value }))
+    },
+    [pushHistory]
+  )
 
   const setLayerStyle = useCallback(
     (label: string, patch: Partial<BuilderLayerStyle>) => {
@@ -1010,14 +1061,79 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const inspectLayer = useCallback((label: string | null) => {
     setInspectingLayer(label)
     if (label !== null) {
+      // Fresh inspect session always opens on the Style tab.
+      setEditsTab("style")
       setAddingElement(false)
     }
   }, [])
+
+  // Net pending count = the number of fields whose current value differs from
+  // the layer's captured original (the baseline). Reverting a field back to its
+  // original value therefore drops the count, and re-changing it raises it
+  // again — it always reflects the real, current deviation from the original.
+  const pendingLayerChanges = useMemo(() => {
+    void baselineVersion
+    if (!inspectingLayer) {
+      return 0
+    }
+    const baseline = layerBaselineRef.current[inspectingLayer]
+    if (!baseline) {
+      return 0
+    }
+    let count = countStyleDiff(baseline.style, layerStyles[inspectingLayer])
+    const currentText = layerText[inspectingLayer]
+    if (currentText != null && currentText !== baseline.text) {
+      count += 1
+    }
+    return count
+  }, [inspectingLayer, layerStyles, layerText, baselineVersion])
+
+  const discardLayerEdits = useCallback(() => {
+    const label = inspectingLayer
+    if (!label) {
+      return
+    }
+    const baseline = layerBaselineRef.current[label]
+    pushHistory()
+    setLayerTextState((current) => {
+      const next = { ...current }
+      if (baseline) {
+        next[label] = baseline.text
+      } else {
+        delete next[label]
+      }
+      return next
+    })
+    setLayerStyles((current) => {
+      const next = { ...current }
+      if (baseline) {
+        next[label] = { ...baseline.style }
+      } else {
+        delete next[label]
+      }
+      return next
+    })
+  }, [inspectingLayer, pushHistory])
+
+  const saveLayerEdits = useCallback(() => {
+    const label = inspectingLayer
+    if (!label) {
+      return
+    }
+    // Saving promotes the current values to the new baseline, so the count
+    // resets to zero until the next deviation.
+    layerBaselineRef.current[label] = {
+      text: layerText[label] ?? layerBaselineRef.current[label]?.text ?? "",
+      style: { ...(layerStyles[label] ?? {}) },
+    }
+    setBaselineVersion((version) => version + 1)
+  }, [inspectingLayer, layerText, layerStyles])
 
   const selectLayer = useCallback(
     (label: string) => {
       addSelection(label)
       setInspectingLayer(label)
+      setEditsTab("style")
       setAddingElement(false)
     },
     [addSelection]
@@ -1099,6 +1215,15 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerStyles((current) =>
         label in current ? current : { ...current, [label]: seed.style }
       )
+      // Capture the original values once, so the pending-changes count can be
+      // measured as the live deviation from this baseline.
+      if (!(label in layerBaselineRef.current)) {
+        layerBaselineRef.current[label] = {
+          text: seed.content,
+          style: { ...seed.style },
+        }
+        setBaselineVersion((version) => version + 1)
+      }
     },
     []
   )
@@ -1208,6 +1333,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     // Manual visual edits win over the derived layout.
     return { ...base, ...layoutEdits }
   }, [messages, answers, documentType, layoutEdits])
+
+  // Latch once the first generation settles; follow-up prompts then keep the
+  // existing layout visible instead of re-showing the generating animation.
+  useEffect(() => {
+    if (status === "ready") {
+      setHasGeneratedOnce(true)
+    }
+  }, [status])
 
   // Once a turn settles, persist it to the transcript: the reasoning, the
   // completed plan, and the closing recap. Keeps the full context visible the
@@ -1322,6 +1455,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerStyle,
       inspectingLayer,
       inspectLayer,
+      editsTab,
+      setEditsTab,
+      pendingLayerChanges,
+      discardLayerEdits,
+      saveLayerEdits,
       selectLayer,
       seedLayer,
       addingElement,
@@ -1333,6 +1471,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       removePlacedElement,
       messages,
       status,
+      hasGeneratedOnce,
       preThoughtDurationSec,
       preReasoning,
       thoughtDurationSec,
@@ -1382,6 +1521,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerStyle,
       inspectingLayer,
       inspectLayer,
+      editsTab,
+      setEditsTab,
+      pendingLayerChanges,
+      discardLayerEdits,
+      saveLayerEdits,
       selectLayer,
       seedLayer,
       addingElement,
@@ -1393,6 +1537,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       removePlacedElement,
       messages,
       status,
+      hasGeneratedOnce,
       preThoughtDurationSec,
       preReasoning,
       thoughtDurationSec,

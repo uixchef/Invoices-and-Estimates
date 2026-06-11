@@ -32,11 +32,36 @@ export type BuilderLayerStyle = {
   fontSize?: number
   fontStyle?: "normal" | "italic"
   fontWeight?: number
+  /** Independent B/U toggles (italic is tracked via fontStyle). */
+  bold?: boolean
+  underline?: boolean
   textAlign?: "left" | "center" | "right" | "justify"
   color?: string
   backgroundColor?: string
   letterSpacing?: number
   lineHeight?: number
+  /** Box model — per-side padding (px). */
+  paddingTop?: number
+  paddingRight?: number
+  paddingBottom?: number
+  paddingLeft?: number
+  /** Box model — per-side margin (px). */
+  marginTop?: number
+  marginRight?: number
+  marginBottom?: number
+  marginLeft?: number
+  /** Explicit sizing (px). */
+  width?: number
+  height?: number
+  /** Per-corner border radius (px). */
+  radiusTopLeft?: number
+  radiusTopRight?: number
+  radiusBottomRight?: number
+  radiusBottomLeft?: number
+  /** Border. */
+  borderWidth?: number
+  borderStyle?: "none" | "solid" | "dashed" | "dotted"
+  borderColor?: string
 }
 
 /** MIME type for drag-and-drop from the Add elements palette. */

@@ -138,13 +138,13 @@ export function AiAnswer({
       <StreamingText
         text={headline}
         streaming={streaming}
-        className="text-base font-semibold leading-6 text-[#5925dc]"
+        className="text-sm font-semibold leading-5 text-[#5925dc]"
       />
       {body ? (
         <StreamingText
           text={body}
           streaming={streaming}
-          className="text-base leading-6 text-[#101828]"
+          className="text-sm leading-5 text-[#101828]"
         />
       ) : null}
 

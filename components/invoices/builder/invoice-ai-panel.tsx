@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
+  AlertCircle,
   AtSign,
   ChevronDown,
   Link2,
   MousePointerClick,
+  Palette,
   Paperclip,
   Send,
+  Settings2,
   Square,
   X,
 } from "lucide-react"
@@ -365,7 +368,7 @@ function AiComposer() {
             placeholder="Plan, build, modify anything..."
             className={cn(
               "w-full resize-none border-0 bg-transparent p-0 outline-none",
-              "font-[family-name:var(--font-inter)] text-base font-normal leading-5 text-[#101828]",
+              "font-[family-name:var(--font-inter)] text-sm font-normal leading-5 text-[#101828]",
               "placeholder:text-[#98a2b3] caret-[#6938ef]",
               isBusy && "cursor-not-allowed"
             )}
@@ -540,12 +543,19 @@ export function InvoiceAiPanel({
     receivedAnswers,
     inspectingLayer,
     inspectLayer,
+    editsTab,
+    setEditsTab,
     addingElement,
     closeAddElements,
+    editMode,
+    toggleEditMode,
   } = useLayoutBuilder()
   const scrollRef = useRef<HTMLDivElement>(null)
   const inspecting = inspectingLayer !== null
   const adding = addingElement
+  // Edit mode is on but nothing is selected yet — show the educational empty
+  // state prompting the user to pick an element on the canvas (Figma 3249:58583).
+  const editsEmpty = editMode && !inspecting && !adding
   const lastTurnRef = useRef<HTMLDivElement>(null)
   // Drives the spacer min-height on the latest turn so its prompt can always be
   // scrolled to the very top of the viewport, the way Cursor pins each turn.
@@ -587,21 +597,21 @@ export function InvoiceAiPanel({
       style={{ width }}
       className="flex h-full shrink-0 flex-col overflow-hidden rounded-[12px] bg-white shadow-[0_12px_8px_rgba(16,24,40,0.08),0_4px_3px_rgba(16,24,40,0.03)]"
     >
-      <div className="flex flex-col gap-3 px-4 pt-4 pb-0">
+      <div className={cn("flex flex-col gap-3 px-4 pt-4", inspecting ? "pb-4" : "pb-0")}>
         <div className="flex items-center gap-2">
-          {!inspecting ? (
+          {!inspecting && !adding && !editsEmpty ? (
             <AutoAwesomeIcon className="size-4 shrink-0 text-[#6938ef]" />
           ) : null}
           <p className="min-w-0 flex-1 font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">
-            {adding ? "Add elements" : inspecting ? "Visual edits" : "Invoice AI"}
+            {adding ? "Add elements" : inspecting || editsEmpty ? "Edits" : "Invoice AI"}
           </p>
           <button
             type="button"
             aria-label={
               adding
                 ? "Close add elements"
-                : inspecting
-                  ? "Close visual edits"
+                : inspecting || editsEmpty
+                  ? "Close edits"
                   : "Close Invoice AI"
             }
             onClick={
@@ -609,13 +619,37 @@ export function InvoiceAiPanel({
                 ? closeAddElements
                 : inspecting
                   ? () => inspectLayer(null)
-                  : onClose
+                  : editsEmpty
+                    ? toggleEditMode
+                    : onClose
             }
             className="inline-flex size-5 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
           >
             <X className="size-5" aria-hidden />
           </button>
         </div>
+
+        {/* Edits sub-tabs (Figma 3246:55799): Style ⇄ Advanced segmented control. */}
+        {inspecting ? (
+          <div
+            role="tablist"
+            aria-label="Edit mode"
+            className="flex items-center gap-1 rounded-[4px] bg-[#f2f4f7] p-1"
+          >
+            <EditsTab
+              active={editsTab === "style"}
+              icon={<Palette className="size-3.5" aria-hidden />}
+              label="Style"
+              onClick={() => setEditsTab("style")}
+            />
+            <EditsTab
+              active={editsTab === "advanced"}
+              icon={<Settings2 className="size-3.5" aria-hidden />}
+              label="Advance"
+              onClick={() => setEditsTab("advanced")}
+            />
+          </div>
+        ) : null}
       </div>
 
       {adding ? (
@@ -624,6 +658,8 @@ export function InvoiceAiPanel({
         <div className="min-h-0 flex-1 overflow-y-auto px-4">
           <VisualEditsPanel />
         </div>
+      ) : editsEmpty ? (
+        <EditsEmptyState />
       ) : (
       <div
         ref={scrollRef}
@@ -697,7 +733,103 @@ export function InvoiceAiPanel({
       </div>
       )}
 
+      {inspecting ? <PendingChangesBar /> : null}
       <AiComposer />
     </aside>
+  )
+}
+
+/**
+ * Edits empty state (Figma 3249:58583). Shown when visual-edit mode is active
+ * but no element is selected yet — an educational nudge telling the user to pick
+ * an element on the canvas.
+ */
+function EditsEmptyState() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-12">
+      <div className="flex w-full flex-col items-center gap-4 text-center">
+        <MousePointerClick className="size-8 text-[#344054]" aria-hidden />
+        <div className="flex flex-col gap-1">
+          <p className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#101828]">
+            Select elements to edit and style visually
+          </p>
+          <p className="font-[family-name:var(--font-inter)] text-xs font-normal leading-[17px] text-[#475467]">
+            Hold cmd to select multiple elements
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** A single segmented tab in the Edits header (Style / Advanced). */
+function EditsTab({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-6 flex-1 items-center justify-center gap-1 rounded-[4px] px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
+        "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5",
+        active
+          ? "bg-white text-[#004eeb] shadow-[0px_1px_3px_0px_rgba(16,24,40,0.1),0px_1px_2px_0px_rgba(16,24,40,0.06)]"
+          : "text-[#475467] hover:text-[#101828]"
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
+/**
+ * Footer chip surfacing unsaved layer edits (Figma 3246:59049). Appears above
+ * the composer while editing a layer; lets the user discard (revert to the
+ * original) or save (acknowledge) the pending overrides.
+ */
+function PendingChangesBar() {
+  const { pendingLayerChanges, discardLayerEdits, saveLayerEdits } =
+    useLayoutBuilder()
+
+  if (pendingLayerChanges <= 0) {
+    return null
+  }
+
+  return (
+    <div className="px-4 pt-2">
+      <div className="flex items-center gap-1 rounded-lg border border-[#9b8afb] bg-white p-2">
+        <AlertCircle className="size-3.5 shrink-0 text-[#475467]" aria-hidden />
+        <p className="min-w-0 flex-1 truncate font-[family-name:var(--font-inter)] text-xs font-medium leading-[18px] text-[#475467]">
+          {pendingLayerChanges} pending{" "}
+          {pendingLayerChanges === 1 ? "change" : "changes"}
+        </p>
+        <button
+          type="button"
+          onClick={discardLayerEdits}
+          className="inline-flex h-6 items-center justify-center rounded-[4px] px-1.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-[18px] text-[#475467] outline-none transition-colors hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+        >
+          Discard
+        </button>
+        <button
+          type="button"
+          onClick={saveLayerEdits}
+          className="inline-flex h-6 items-center justify-center rounded-[4px] bg-[#6938ef] px-1.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-[18px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#5925dc] focus-visible:ring-2 focus-visible:ring-[#6938ef]/40"
+        >
+          Save
+        </button>
+      </div>
+    </div>
   )
 }

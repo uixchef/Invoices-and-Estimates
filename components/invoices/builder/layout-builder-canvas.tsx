@@ -47,7 +47,12 @@ function styleFromLayer(style?: BuilderLayerStyle): CSSProperties | undefined {
   if (style.fontFamily) result.fontFamily = style.fontFamily
   if (style.fontSize) result.fontSize = style.fontSize
   if (style.fontStyle) result.fontStyle = style.fontStyle
-  if (style.fontWeight) result.fontWeight = style.fontWeight
+  if (style.bold) {
+    result.fontWeight = 700
+  } else if (style.fontWeight) {
+    result.fontWeight = style.fontWeight
+  }
+  if (style.underline) result.textDecoration = "underline"
   if (style.textAlign) result.textAlign = style.textAlign
   if (style.color) result.color = style.color
   if (style.backgroundColor) result.backgroundColor = style.backgroundColor
@@ -55,6 +60,52 @@ function styleFromLayer(style?: BuilderLayerStyle): CSSProperties | undefined {
     result.letterSpacing = `${style.letterSpacing}px`
   }
   if (style.lineHeight != null) result.lineHeight = style.lineHeight
+
+  // Box-model overrides. Text layers render as inline spans, so promote to
+  // inline-block whenever any sizing / spacing / border property is set so the
+  // values can actually take effect in the preview.
+  const boxKeys = [
+    style.paddingTop,
+    style.paddingRight,
+    style.paddingBottom,
+    style.paddingLeft,
+    style.marginTop,
+    style.marginRight,
+    style.marginBottom,
+    style.marginLeft,
+    style.width,
+    style.height,
+    style.borderWidth,
+  ]
+  const hasBox = boxKeys.some((value) => value != null)
+  if (hasBox) result.display = "inline-block"
+  if (style.paddingTop != null) result.paddingTop = style.paddingTop
+  if (style.paddingRight != null) result.paddingRight = style.paddingRight
+  if (style.paddingBottom != null) result.paddingBottom = style.paddingBottom
+  if (style.paddingLeft != null) result.paddingLeft = style.paddingLeft
+  if (style.marginTop != null) result.marginTop = style.marginTop
+  if (style.marginRight != null) result.marginRight = style.marginRight
+  if (style.marginBottom != null) result.marginBottom = style.marginBottom
+  if (style.marginLeft != null) result.marginLeft = style.marginLeft
+  if (style.width != null) result.width = style.width
+  if (style.height != null) result.height = style.height
+
+  if (
+    style.radiusTopLeft != null ||
+    style.radiusTopRight != null ||
+    style.radiusBottomRight != null ||
+    style.radiusBottomLeft != null
+  ) {
+    result.borderRadius = `${style.radiusTopLeft ?? 0}px ${
+      style.radiusTopRight ?? 0
+    }px ${style.radiusBottomRight ?? 0}px ${style.radiusBottomLeft ?? 0}px`
+  }
+
+  if (style.borderWidth != null && style.borderStyle !== "none") {
+    result.borderWidth = style.borderWidth
+    result.borderStyle = style.borderStyle ?? "solid"
+    result.borderColor = style.borderColor ?? "#101828"
+  }
   return result
 }
 
@@ -840,8 +891,10 @@ function DocumentStage({ children }: { children: ReactNode }) {
     }
 
     const update = () => {
+      // clientWidth excludes the pane's vertical scrollbar, so the scaled
+      // document always fits the usable width and keeps the pane's padding.
       const available = outer.clientWidth
-      const next = Math.min(1, available / documentWidth)
+      const next = available > 0 ? Math.min(1, available / documentWidth) : 1
       setScale(next)
       setSize({ width: documentWidth * next, height: doc.offsetHeight * next })
     }
@@ -850,11 +903,21 @@ function DocumentStage({ children }: { children: ReactNode }) {
     observer.observe(outer)
     observer.observe(doc)
     update()
-    return () => observer.disconnect()
+    // Re-measure once layout settles (e.g. when the code pane opens and the
+    // preview pane reflows in the same commit) so the fit never lags a frame.
+    const raf = requestAnimationFrame(update)
+    window.addEventListener("resize", update)
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(raf)
+      window.removeEventListener("resize", update)
+    }
   }, [documentWidth])
 
   return (
-    <div ref={outerRef} className="w-full min-w-0">
+    // overflow-hidden guarantees the scaled document can never spill past the
+    // pane's padding and break the rounded canvas frame, even mid-reflow.
+    <div ref={outerRef} className="w-full min-w-0 overflow-hidden">
       <div
         className="mx-auto"
         style={size ? { width: size.width, height: size.height } : undefined}
@@ -1648,18 +1711,14 @@ function highlightHtml(code: string): CodeToken[][] {
 const CODE_TEXT_INDENT = 80
 
 /**
- * Header strip above the code editor. In attached mode it offers an explicit
- * "eject" to raw-code editing; in detached mode it shows the detached status and
- * a two-step revert (guards against discarding raw edits on a stray click).
+ * Header strip above the code editor. To match the reference (Email Marketing
+ * 299:76555), the editor is bare in its default attached state — editing a line
+ * auto-detaches, so no explicit "eject" affordance is needed. The bar only
+ * surfaces once detached, carrying the detached status and a two-step revert
+ * (guards against discarding raw edits on a stray click).
  */
 function CodeEditorBar() {
-  const {
-    generatedLayout: layout,
-    layerText,
-    isCodeDetached,
-    detachCode,
-    reattachCode,
-  } = useLayoutBuilder()
+  const { isCodeDetached, reattachCode } = useLayoutBuilder()
   const [confirmingRevert, setConfirmingRevert] = useState(false)
 
   // Collapse the revert confirmation if the user navigates away from it.
@@ -1669,58 +1728,50 @@ function CodeEditorBar() {
     }
   }, [isCodeDetached, confirmingRevert])
 
+  // Attached state mirrors the reference: a clean editor with no chrome.
+  if (!isCodeDetached) {
+    return null
+  }
+
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[#292524] bg-[#1c1917] pr-2 pl-4">
       <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-[#d0d5dd]">
         <Code2 className="size-3.5 text-[#98a2b3]" aria-hidden />
-        {isCodeDetached ? "Editing code directly" : "Code"}
+        Editing code directly
       </span>
 
-      {isCodeDetached ? (
-        <span className="rounded-full bg-[#3a2d75] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#d9d6fe]">
-          Detached
-        </span>
-      ) : null}
+      <span className="rounded-full bg-[#3a2d75] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#d9d6fe]">
+        Detached
+      </span>
 
       <div className="min-w-px flex-1" />
 
-      {isCodeDetached ? (
-        confirmingRevert ? (
-          <div className="flex items-center gap-1">
-            <span className="text-[11px] text-[#fda29b]">Discard code edits?</span>
-            <button
-              type="button"
-              onClick={reattachCode}
-              className="inline-flex h-6 items-center rounded-[4px] bg-[#b42318] px-2 text-[11px] font-semibold text-white outline-none transition-colors hover:bg-[#912018] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-            >
-              Revert
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmingRevert(false)}
-              className="inline-flex h-6 items-center rounded-[4px] px-2 text-[11px] font-medium text-[#d0d5dd] outline-none transition-colors hover:bg-[#292524] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-            >
-              Keep editing
-            </button>
-          </div>
-        ) : (
+      {confirmingRevert ? (
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] text-[#fda29b]">Discard code edits?</span>
           <button
             type="button"
-            onClick={() => setConfirmingRevert(true)}
-            className="inline-flex h-6 items-center gap-1 rounded-[4px] border border-[#3f3a36] px-2 text-[11px] font-medium text-[#d0d5dd] outline-none transition-colors hover:bg-[#292524] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+            onClick={reattachCode}
+            className="inline-flex h-6 items-center rounded-[4px] bg-[#b42318] px-2 text-[11px] font-semibold text-white outline-none transition-colors hover:bg-[#912018] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
           >
-            <RotateCcw className="size-3" aria-hidden />
-            Revert to layout
+            Revert
           </button>
-        )
+          <button
+            type="button"
+            onClick={() => setConfirmingRevert(false)}
+            className="inline-flex h-6 items-center rounded-[4px] px-2 text-[11px] font-medium text-[#d0d5dd] outline-none transition-colors hover:bg-[#292524] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+          >
+            Keep editing
+          </button>
+        </div>
       ) : (
         <button
           type="button"
-          onClick={() => detachCode(buildCode(layout, layerText).code)}
+          onClick={() => setConfirmingRevert(true)}
           className="inline-flex h-6 items-center gap-1 rounded-[4px] border border-[#3f3a36] px-2 text-[11px] font-medium text-[#d0d5dd] outline-none transition-colors hover:bg-[#292524] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
         >
-          <Code2 className="size-3" aria-hidden />
-          Edit code directly
+          <RotateCcw className="size-3" aria-hidden />
+          Revert to layout
         </button>
       )}
     </div>
@@ -1840,7 +1891,9 @@ function LayoutCodeEditor() {
               <span
                 className={cn(
                   "sticky left-0 w-16 shrink-0 select-none px-4 text-right tabular-nums",
-                  active ? "bg-[#3a2d75] text-white" : "bg-[#292524] text-[#d0d5dd]"
+                  // Gutter blends into the editor surface (Email Marketing
+                  // 299:76555) — dim numbers on the same dark background.
+                  active ? "bg-[#3a2d75] text-white" : "bg-[#1c1917] text-[#79716b]"
                 )}
               >
                 {index + 1}
@@ -1884,20 +1937,29 @@ function LayoutCodeEditor() {
 }
 
 // Split view: code editor on the left, invoice preview filling the right
-// (Figma 3189:58977). The code pane width is draggable; these guards keep both
-// panes usable on any canvas width.
+// (Figma 3189:58977 / Email Marketing 299:76555). The code pane honors the drag
+// fraction (50% by default) so it fills its share of wide viewports rather than
+// being pinned to a fixed width; these guards just keep both panes usable.
 const MIN_CODE_PX = 280
-const MAX_CODE_PX = 520
 const MIN_PREVIEW_PX = 320
 const SPLIT_KEYBOARD_STEP = 0.04
 
 export function LayoutBuilderCanvas() {
-  const { status, codeOpen, previewOpen, codeOverride, isCodeDetached } =
-    useLayoutBuilder()
+  const {
+    status,
+    hasGeneratedOnce,
+    codeOpen,
+    previewOpen,
+    codeOverride,
+    isCodeDetached,
+  } = useLayoutBuilder()
   // Resolves medium context for future preview sizing; kept for parity with prompt selection.
   useMediumsStore()
 
   const isReady = status === "ready"
+  // The full-screen generating animation is only for the very first build. Once
+  // a layout exists, follow-up prompts keep it on screen while the AI works.
+  const showCarousel = !isReady && !hasGeneratedOnce
   const showCode = isReady && codeOpen
   const showPreview = isReady && previewOpen
   const showSplit = showCode && showPreview
@@ -1913,11 +1975,11 @@ export function LayoutBuilderCanvas() {
       return Math.min(0.8, Math.max(0.2, fraction))
     }
     const min = Math.max(MIN_CODE_PX / width, 0.2)
-    // Code editor is capped at MAX_CODE_PX so the preview always keeps room.
-    const max = Math.min(1 - MIN_PREVIEW_PX / width, 0.8, MAX_CODE_PX / width)
+    // Reserve room for the preview; the code pane otherwise fills its fraction.
+    const max = Math.min(1 - MIN_PREVIEW_PX / width, 0.8)
     // Guard against inverted bounds on very narrow canvases.
     if (min > max) {
-      return Math.min(0.5, MAX_CODE_PX / width)
+      return 0.5
     }
     return Math.min(max, Math.max(min, fraction))
   }, [])
@@ -1980,10 +2042,14 @@ export function LayoutBuilderCanvas() {
         ref={splitRef}
         className={cn(
           "relative flex min-h-0 flex-1 overflow-hidden rounded-[12px] shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]",
-          showCode && !showPreview ? "bg-[#1c1917]" : isReady ? "bg-[#f9fafb]" : "bg-white"
+          showCode && !showPreview
+            ? "bg-[#1c1917]"
+            : showCarousel
+              ? "bg-white"
+              : "bg-[#f9fafb]"
         )}
       >
-        {!isReady ? (
+        {showCarousel ? (
           <div className="flex flex-1 items-center justify-center overflow-hidden">
             <GeneratingCarousel />
           </div>
@@ -1991,7 +2057,7 @@ export function LayoutBuilderCanvas() {
           <>
             <div
               className="flex h-full shrink-0 flex-col overflow-hidden bg-[#1c1917]"
-              style={{ width: `min(${codeFraction * 100}%, ${MAX_CODE_PX}px)` }}
+              style={{ width: `${codeFraction * 100}%` }}
             >
               <CodeEditorBar />
               <div className="min-h-0 flex-1 overflow-auto">
@@ -2024,7 +2090,7 @@ export function LayoutBuilderCanvas() {
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
               onKeyDown={handleKeyDown}
-              style={{ left: `min(${codeFraction * 100}%, ${MAX_CODE_PX}px)` }}
+              style={{ left: `${codeFraction * 100}%` }}
               className="group absolute top-1/2 z-20 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 cursor-col-resize touch-none items-center justify-center rounded outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
             >
               <span className="flex h-12 w-4 items-center justify-center rounded-full border border-[#eaecf0] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.1)] transition-colors group-hover:border-[#d0d5dd]">

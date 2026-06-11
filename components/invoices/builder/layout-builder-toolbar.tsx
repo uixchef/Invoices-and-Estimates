@@ -22,37 +22,77 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { BUILDER_DOCUMENT_TYPES } from "@/lib/layout-builder-types"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { cn } from "@/lib/utils"
 
+/**
+ * Wraps a control in a hover/focus tooltip when a label is supplied. Disabled
+ * triggers don't emit pointer events, so the button is wrapped in a span to keep
+ * the tooltip working even while the action is unavailable.
+ */
+function WithTooltip({
+  label,
+  disabled,
+  children,
+}: {
+  label?: string
+  disabled?: boolean
+  children: React.ReactElement
+}) {
+  if (!label) {
+    return children
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {disabled ? (
+          <span className="inline-flex">{children}</span>
+        ) : (
+          children
+        )}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 type ToolbarIconButtonProps = React.ComponentProps<"button"> & {
   active?: boolean
   tone?: "default" | "accent"
+  tooltip?: string
 }
 
 function ToolbarIconButton({
   className,
   active = false,
   tone = "default",
+  tooltip,
   ...props
 }: ToolbarIconButtonProps) {
   return (
-    <button
-      type="button"
-      aria-pressed={active}
-      className={cn(
-        "inline-flex size-7 shrink-0 items-center justify-center rounded-[4px] outline-none transition-colors",
-        "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-4",
-        "disabled:pointer-events-none disabled:text-[#d0d5dd]",
-        active && tone === "accent" && "bg-[#ebe9fe] text-[#6938ef]",
-        active && tone === "default" && "bg-[#f2f4f7] text-[#101828]",
-        !active && "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]",
-        className
-      )}
-      {...props}
-    />
+    <WithTooltip label={tooltip ?? props["aria-label"]} disabled={props.disabled}>
+      <button
+        type="button"
+        aria-pressed={active}
+        className={cn(
+          "inline-flex size-7 shrink-0 items-center justify-center rounded-[4px] outline-none transition-colors",
+          "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-4",
+          "disabled:pointer-events-none disabled:text-[#d0d5dd]",
+          active && tone === "accent" && "bg-[#ebe9fe] text-[#6938ef]",
+          active && tone === "default" && "bg-[#f2f4f7] text-[#101828]",
+          !active && "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]",
+          className
+        )}
+        {...props}
+      />
+    </WithTooltip>
   )
 }
 
@@ -72,24 +112,26 @@ function ViewToggleButton({
   active: boolean
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={active}
-      aria-label={label}
-      className={cn(
-        "inline-flex h-7 shrink-0 items-center justify-center rounded-[4px] outline-none transition-colors",
-        "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5",
-        "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-4",
-        "disabled:pointer-events-none disabled:text-[#d0d5dd]",
-        active
-          ? "gap-2 bg-[#eff4ff] px-2.5 py-1.5 text-[#004eeb]"
-          : "size-7 text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]"
-      )}
-      {...props}
-    >
-      {icon}
-      {active ? label : null}
-    </button>
+    <WithTooltip label={label} disabled={props.disabled}>
+      <button
+        type="button"
+        aria-pressed={active}
+        aria-label={label}
+        className={cn(
+          "inline-flex h-7 shrink-0 items-center justify-center rounded-[4px] outline-none transition-colors",
+          "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5",
+          "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-4",
+          "disabled:pointer-events-none disabled:text-[#d0d5dd]",
+          active
+            ? "gap-2 bg-[#eff4ff] px-2.5 py-1.5 text-[#004eeb]"
+            : "size-7 text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]"
+        )}
+        {...props}
+      >
+        {icon}
+        {active ? label : null}
+      </button>
+    </WithTooltip>
   )
 }
 
@@ -97,29 +139,33 @@ function ToolbarTag({
   icon,
   children,
   selected = false,
+  tooltip,
   className,
   ...props
 }: React.ComponentProps<"button"> & {
   icon: React.ReactNode
   selected?: boolean
+  tooltip?: string
 }) {
   return (
-    <button
-      type="button"
-      className={cn(
-        "inline-flex h-7 shrink-0 items-center gap-0.5 rounded-[4px] px-2 outline-none transition-colors",
-        "font-[family-name:var(--font-inter)] text-sm font-medium leading-5",
-        "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-[18px]",
-        selected
-          ? "bg-[#f2f4f7] text-[#475467]"
-          : "border border-[#d0d5dd] bg-white text-[#475467] hover:bg-[#f9fafb]",
-        className
-      )}
-      {...props}
-    >
-      {icon}
-      {children}
-    </button>
+    <WithTooltip label={tooltip} disabled={props.disabled}>
+      <button
+        type="button"
+        className={cn(
+          "inline-flex h-7 shrink-0 items-center gap-0.5 rounded-[4px] px-2 outline-none transition-colors",
+          "font-[family-name:var(--font-inter)] text-sm font-medium leading-5",
+          "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-[18px]",
+          selected
+            ? "bg-[#f2f4f7] text-[#475467]"
+            : "border border-[#d0d5dd] bg-white text-[#475467] hover:bg-[#f9fafb]",
+          className
+        )}
+        {...props}
+      >
+        {icon}
+        {children}
+      </button>
+    </WithTooltip>
   )
 }
 
@@ -249,7 +295,7 @@ export function LayoutBuilderToolbar() {
       {/* Absolutely centred on the toolbar so it lines up with the page-centred
           "New layout" title above, independent of the asymmetric side zones. */}
       <div className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1">
-        <ToolbarTag icon={<Ruler aria-hidden />} selected>
+        <ToolbarTag icon={<Ruler aria-hidden />} selected tooltip="Page size">
           {mediumName}
         </ToolbarTag>
 

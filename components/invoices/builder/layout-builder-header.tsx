@@ -6,6 +6,11 @@ import { ArrowLeft, Eye, Pencil, Save } from "lucide-react"
 
 import { Button } from "@/components/highrise/button"
 import { useHubToast } from "@/components/payment-hub/hub-toast"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { cn } from "@/lib/utils"
 
@@ -15,7 +20,7 @@ function HeaderIconButton({
   className,
   ...props
 }: React.ComponentProps<"button">) {
-  return (
+  const button = (
     <button
       type="button"
       className={cn(
@@ -26,6 +31,18 @@ function HeaderIconButton({
       )}
       {...props}
     />
+  )
+
+  const label = props["aria-label"]
+  if (!label) {
+    return button
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -121,7 +138,7 @@ export function LayoutBuilderHeader() {
         )}
       </div>
 
-      <div className="flex w-[200px] shrink-0 items-center justify-end gap-1">
+      <div className="flex w-[200px] shrink-0 items-center justify-end gap-2">
         <HeaderIconButton aria-label="Preview layout">
           <Eye className="size-5" strokeWidth={2} aria-hidden />
         </HeaderIconButton>
