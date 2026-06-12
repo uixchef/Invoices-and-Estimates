@@ -103,6 +103,21 @@ export function VisualEditSelector({
     hasBothToolbars &&
     width <
       toolbarWidth(leftActions.length) + toolbarWidth(rightActions.length) + 8
+  // The scoped prompt box docks under the element at a fixed 288px width. The
+  // name badge normally pins to the element's bottom-right; on a narrow element
+  // it would land on top of the prompt box, so we move it to the prompt's
+  // bottom edge instead. Estimate the badge width (11px semibold ≈ 7px/char +
+  // padding) so the relocation also covers wide-ish elements with long labels.
+  const PROMPT_WIDTH = 288
+  const promptVisible = Boolean(onSubmitPrompt) && showChrome
+  const estimatedBadgeWidth = label.length * 7 + 8
+  const relocateLabel = promptVisible && width < PROMPT_WIDTH + estimatedBadgeWidth
+
+  const badgeClass = cn(
+    "z-20 items-center whitespace-nowrap rounded-bl-[4px] rounded-br-[4px] rounded-tl-[4px] bg-[#6938ef] px-1 py-px",
+    "font-[family-name:var(--font-inter)] text-[11px] font-semibold leading-4 text-white"
+  )
+
   // "Filled" drives the active send button (Figma 5625:23865 / 23868).
   const filled = promptValue.trim().length > 0
 
@@ -185,18 +200,21 @@ export function VisualEditSelector({
       )}
 
       {/* Corner name badge — pinned bottom-right (Figma 3194:71355). Selected
-          shows it always; otherwise it follows the deepest-only hover. */}
-      <div
-        className={cn(
-          "absolute -bottom-2 right-0 z-20 items-center whitespace-nowrap rounded-bl-[4px] rounded-br-[4px] rounded-tl-[4px] bg-[#6938ef] px-1 py-px",
-          "font-[family-name:var(--font-inter)] text-[11px] font-semibold leading-4 text-white",
-          selected
-            ? "flex"
-            : "hidden group-hover/sel:flex group-has-[[data-sel]:hover]/sel:hidden"
-        )}
-      >
-        {label}
-      </div>
+          shows it always; otherwise it follows the deepest-only hover. Hidden
+          when relocated onto the prompt box (narrow element) to avoid overlap. */}
+      {relocateLabel ? null : (
+        <div
+          className={cn(
+            "absolute -bottom-2 right-0",
+            badgeClass,
+            selected
+              ? "flex"
+              : "hidden group-hover/sel:flex group-has-[[data-sel]:hover]/sel:hidden"
+          )}
+        >
+          {label}
+        </div>
+      )}
 
       {/* Scoped "Describe your edit" prompt docked below the selected layer.
           Hover → purple/300 border + md shadow; focus → purple/400 border + lg
@@ -252,6 +270,15 @@ export function VisualEditSelector({
           >
             <Send aria-hidden />
           </button>
+
+          {/* On a narrow element the name sits just under the prompt box's
+              bottom-left (2px gap) instead of the element corner, so it never
+              overlaps the prompt and has room to breathe. */}
+          {relocateLabel ? (
+            <div className={cn("absolute left-0 top-full mt-0.5 flex", badgeClass)}>
+              {label}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

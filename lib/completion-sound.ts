@@ -1,98 +1,101 @@
 "use client"
 
-// A tiny synthesized "generation complete" cue, played when the builder
-// finishes producing a layout — the equivalent of Cursor's done chime, kept
-// short and soft so it reads as a confirmation rather than a notification.
-//
-// Synthesized via the Web Audio API on purpose: no audio asset to ship, no
-// licensing concerns, and it works offline. Swap the oscillator section for an
-// `Audio(src)` element later if a bespoke recorded SFX is preferred.
+// Completion cue: a short (~120ms) "receipt tear" — white noise through a
+// highpass filter sweeping 900Hz → 4200Hz, with a fast attack and exponential
+// decay, so it reads as a crisp receipt rip. Synthesized via the Web Audio API
+// on purpose: no audio asset to ship, no licensing concerns, works offline.
+// Played when the builder finishes producing a layout.
 
-let audioContext: AudioContext | null = null
+const MIN_INTERVAL_MS = 400 // debounce rapid back-to-back generations
+const DEFAULT_VOLUME = 0.75
 
-function getAudioContext(): AudioContext | null {
+let sharedCtx: AudioContext | null = null
+let sharedNoise: AudioBuffer | null = null
+let lastPlayed = 0
+
+function getContext(): AudioContext | null {
   if (typeof window === "undefined") {
     return null
   }
 
-  const AudioCtor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext })
-      .webkitAudioContext
-
-  if (!AudioCtor) {
-    return null
-  }
-
-  if (!audioContext) {
+  if (!sharedCtx) {
+    const Ctor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext
+    if (!Ctor) {
+      return null
+    }
     try {
-      audioContext = new AudioCtor()
+      sharedCtx = new Ctor()
     } catch {
       return null
     }
   }
 
-  return audioContext
+  if (sharedCtx.state === "suspended") {
+    void sharedCtx.resume().catch(() => {})
+  }
+
+  return sharedCtx
+}
+
+function getNoiseBuffer(ctx: AudioContext): AudioBuffer {
+  if (!sharedNoise) {
+    sharedNoise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate)
+    const data = sharedNoise.getChannelData(0)
+    for (let i = 0; i < data.length; i++) {
+      data[i] = Math.random() * 2 - 1
+    }
+  }
+  return sharedNoise
 }
 
 /**
  * Warms (and resumes) the audio context from inside a user gesture — e.g. the
  * click that kicks off generation. Browsers only allow audio to start after an
- * interaction, so priming here lets the later completion cue play even though
- * it fires from a timer once generation settles.
+ * interaction, so priming here lets the cue play even though it fires from a
+ * timer once generation settles.
  */
 export function primeCompletionSound(): void {
-  const ctx = getAudioContext()
-  if (ctx && ctx.state === "suspended") {
-    void ctx.resume().catch(() => {})
-  }
+  getContext()
 }
 
 /**
- * Plays a short, soft ascending two-note chime. Safe to call on every
- * generation; it's a no-op when the Web Audio API is unavailable.
+ * Plays the receipt-tear completion cue. Debounced so rapid back-to-back
+ * generations don't stack, and a no-op when the Web Audio API is unavailable,
+ * so it's safe to call on every generation.
  */
-export function playCompletionSound(): void {
-  const ctx = getAudioContext()
+export function playCompletionSound(volume = DEFAULT_VOLUME): void {
+  const ctx = getContext()
   if (!ctx) {
     return
   }
 
-  if (ctx.state === "suspended") {
-    void ctx.resume().catch(() => {})
+  const now = Date.now()
+  if (now - lastPlayed < MIN_INTERVAL_MS) {
+    return
   }
+  lastPlayed = now
 
-  const now = ctx.currentTime
+  const t = ctx.currentTime
+  const source = ctx.createBufferSource()
+  source.buffer = getNoiseBuffer(ctx)
 
-  const master = ctx.createGain()
-  master.gain.setValueAtTime(0.12, now)
-  master.connect(ctx.destination)
+  const filter = ctx.createBiquadFilter()
+  filter.type = "highpass"
+  filter.frequency.setValueAtTime(900, t)
+  filter.frequency.exponentialRampToValueAtTime(4200, t + 0.1)
 
-  // Ascending perfect fifth (B5 → E6): bright and resolved, reads as "done".
-  const notes = [
-    { freq: 987.77, at: 0, duration: 0.16 },
-    { freq: 1318.51, at: 0.085, duration: 0.34 },
-  ]
+  const gain = ctx.createGain()
+  gain.gain.setValueAtTime(0, t)
+  gain.gain.linearRampToValueAtTime(volume, t + 0.008)
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12)
 
-  for (const note of notes) {
-    const oscillator = ctx.createOscillator()
-    const gain = ctx.createGain()
+  source.connect(filter)
+  filter.connect(gain)
+  gain.connect(ctx.destination)
 
-    oscillator.type = "triangle"
-    oscillator.frequency.setValueAtTime(note.freq, now)
-
-    const start = now + note.at
-    const end = start + note.duration
-
-    // Quick attack, smooth exponential release so it doesn't click.
-    gain.gain.setValueAtTime(0.0001, start)
-    gain.gain.exponentialRampToValueAtTime(1, start + 0.012)
-    gain.gain.exponentialRampToValueAtTime(0.0001, end)
-
-    oscillator.connect(gain)
-    gain.connect(master)
-
-    oscillator.start(start)
-    oscillator.stop(end + 0.02)
-  }
+  source.start(t)
+  source.stop(t + 0.15)
 }

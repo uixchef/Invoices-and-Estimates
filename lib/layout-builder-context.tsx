@@ -196,6 +196,92 @@ const FOLLOW_UP_CONCRETE_TERMS = [
   "terms",
 ]
 
+/** Style adjectives that signal the user already has a visual direction. */
+const STYLE_HINT_TERMS = [
+  "minimal",
+  "modern",
+  "classic",
+  "bold",
+  "clean",
+  "simple",
+  "elegant",
+  "professional",
+  "corporate",
+  "playful",
+  "luxury",
+  "vintage",
+  "sleek",
+  "colorful",
+  "colourful",
+]
+
+/** Section keywords that signal the user already named what to include. */
+const SECTION_HINT_TERMS = [
+  "logo",
+  "brand",
+  "item",
+  "table",
+  "tax",
+  "discount",
+  "note",
+  "term",
+  "payment",
+  "total",
+  "column",
+  "qr",
+  "signature",
+]
+
+const CURRENCY_HINT_RE = /\b(usd|eur|gbp|inr|dollar|euro|pound|rupee)\b|[$€£₹]/i
+
+/**
+ * Scales the *initial* clarifying questions to what the prompt is actually
+ * missing instead of always asking the full set. A detailed brief (or a
+ * reference image plus a few words) generates straight away; a sparse prompt
+ * still gets the questions it needs. Returns `null` to skip questions entirely.
+ *
+ * Stands in for a model confidence signal until the generation API is wired in.
+ */
+function buildInitialQuestions(
+  text: string,
+  hasReferences: boolean
+): AiQuestion[] | null {
+  const normalized = text.trim().toLowerCase()
+  const wordCount = normalized
+    ? normalized.split(/\s+/).filter(Boolean).length
+    : 0
+
+  // A reference image carries strong intent; with even a short prompt, generate.
+  if (hasReferences && wordCount >= 3) {
+    return null
+  }
+
+  const hasStyle = STYLE_HINT_TERMS.some((term) => normalized.includes(term))
+  const hasSections = SECTION_HINT_TERMS.some((term) =>
+    normalized.includes(term)
+  )
+  const hasCurrency = CURRENCY_HINT_RE.test(text)
+  const signals = [hasStyle, hasSections, hasCurrency].filter(Boolean).length
+
+  // Specific enough to act on directly: a longer brief with a couple of
+  // concrete signals, or three signals regardless of length.
+  if ((wordCount >= 12 && signals >= 2) || signals >= 3) {
+    return null
+  }
+
+  // Otherwise ask only for the gaps. Style/sections/currency are dropped when
+  // the prompt already implies them; the open "focus" + line-item count are
+  // kept only for genuinely sparse prompts.
+  const missing = BUILDER_QUESTIONS.filter((question) => {
+    if (question.id === "style") return !hasStyle
+    if (question.id === "sections") return !hasSections
+    if (question.id === "currency") return !hasCurrency
+    return wordCount < 8
+  })
+
+  return missing.length > 0 ? missing : null
+}
+
 /**
  * Returns a scoped clarification set when a follow-up reads as ambiguous, or
  * `null` when the request is specific enough to generate from directly.
@@ -214,7 +300,9 @@ function buildFollowUpQuestions(text: string): AiQuestion[] | null {
     normalized.includes(term)
   )
 
-  const isUncertain = wordCount < 5 || (hasVague && !hasConcrete)
+  // Any concrete instruction is actioned directly. Only clarify when there's no
+  // concrete signal and the request is either very short or explicitly vague.
+  const isUncertain = !hasConcrete && (wordCount < 5 || hasVague)
   if (!isUncertain) {
     return null
   }
@@ -1106,8 +1194,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       },
     ])
 
-    // Think first, then surface clarifying questions before the first draft.
-    startReasoning(BUILDER_QUESTIONS)
+    // Think first, then clarify only the gaps the prompt left open — a detailed
+    // brief (or a reference image) goes straight to generation.
+    startReasoning(buildInitialQuestions(seed.prompt, seed.references.length > 0))
   }, [consumePendingGeneration, consumePendingEdit, startReasoning])
 
   useEffect(() => {

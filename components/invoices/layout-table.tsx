@@ -222,34 +222,34 @@ function LayoutTableRow({ item }: { item: LayoutRow }) {
         "group transition-colors hover:bg-[#f5f8ff]"
       )}
     >
-      <div className="flex h-[52px] items-center gap-2.5 border-b border-[#d0d5dd] px-3 py-2">
+      <div className="flex h-[56px] items-center gap-2.5 border-b border-[#d0d5dd] px-3 py-2">
         <RowThumbnail item={item} />
         <span className="truncate font-[family-name:var(--font-inter)] text-base font-medium leading-6 text-[#475467]">
           {item.name}
         </span>
       </div>
 
-      <div className="flex h-[52px] items-center border-b border-[#d0d5dd] px-3 py-2">
+      <div className="flex h-[56px] items-center border-b border-[#d0d5dd] px-3 py-2">
         <TypeBadge label={item.type} />
       </div>
 
-      <div className="flex h-[52px] items-center border-b border-[#d0d5dd] px-3 py-2">
+      <div className="flex h-[56px] items-center border-b border-[#d0d5dd] px-3 py-2">
         <span className="truncate font-[family-name:var(--font-inter)] text-base font-medium leading-6 text-[#475467]">
           {getMediumName(item.mediumId)}
         </span>
       </div>
 
-      <div className="flex h-[52px] items-center border-b border-[#d0d5dd] px-3 py-2">
+      <div className="flex h-[56px] items-center border-b border-[#d0d5dd] px-3 py-2">
         <StatusBadge status={item.status} />
       </div>
 
-      <div className="flex h-[52px] items-center border-b border-[#d0d5dd] px-3 py-2">
+      <div className="flex h-[56px] items-center border-b border-[#d0d5dd] px-3 py-2">
         <span className="truncate font-[family-name:var(--font-inter)] text-base font-normal leading-6 text-[#475467]">
           {item.updatedOn}, {item.updatedAgo}
         </span>
       </div>
 
-      <div className="flex h-[52px] items-center gap-1 border-b border-[#d0d5dd] px-3 py-2">
+      <div className="flex h-[56px] items-center gap-1 border-b border-[#d0d5dd] px-3 py-2">
         <Tooltip>
           <TooltipTrigger asChild>
             <button
