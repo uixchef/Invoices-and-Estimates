@@ -190,6 +190,10 @@ function EditableText({
     layerStyles,
     selectLayer,
     seedLayer,
+    isLayerHidden,
+    layerDuplicateCount,
+    duplicateLayer,
+    requestDeleteLayer,
   } = useLayoutBuilder()
   const spanRef = useRef<HTMLSpanElement>(null)
 
@@ -198,6 +202,11 @@ function EditableText({
   const current = layerText[label] ?? value
   const isSelected = selections.some((selection) => selection.label === label)
   const appliedStyle = styleFromLayer(layerStyles[label])
+
+  // Deleted layers stay hidden in both edit and preview until undone.
+  if (isLayerHidden(label)) {
+    return null
+  }
 
   if (!editMode) {
     return (
@@ -290,17 +299,44 @@ function EditableText({
   }
 
   // Every other layer gets the full Cursor-style selector: click to select,
-  // hover the selection for the scoped "Describe your edit" prompt.
+  // hover the selection for the scoped "Describe your edit" prompt, plus the
+  // duplicate / delete controls every element exposes.
+  const duplicateCount = layerDuplicateCount(label)
   return (
-    <VisualEditSelector
-      label={label}
-      selected={isSelected}
-      onSelect={() => selectLayer(label)}
-      onSubmitPrompt={(text) => sendMessage(`${label}: ${text}`)}
-      className="inline-flex max-w-full align-baseline"
-    >
-      {editable("focus:ring-2 focus:ring-[#6938ef]")}
-    </VisualEditSelector>
+    <>
+      <VisualEditSelector
+        label={label}
+        selected={isSelected}
+        onSelect={() => selectLayer(label)}
+        onSubmitPrompt={(text) => sendMessage(`${label}: ${text}`)}
+        rightActions={[
+          {
+            icon: <Copy />,
+            label: `Duplicate ${label}`,
+            onClick: () => duplicateLayer(label),
+          },
+          {
+            icon: <Trash2 />,
+            label: `Delete ${label}`,
+            onClick: () => requestDeleteLayer(label),
+          },
+        ]}
+        className="inline-flex max-w-full align-baseline"
+      >
+        {editable("focus:ring-2 focus:ring-[#6938ef]")}
+      </VisualEditSelector>
+      {Array.from({ length: duplicateCount }, (_, index) => {
+        const copyLabel = `${label} copy ${index + 1}`
+        return (
+          <EditableText
+            key={copyLabel}
+            value={current}
+            label={copyLabel}
+            className={className}
+          />
+        )
+      })}
+    </>
   )
 }
 

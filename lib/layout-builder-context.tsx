@@ -15,6 +15,15 @@ import {
 
 import type { AiAnswers, AiQuestion } from "@/components/ai/ai-questions"
 import type { AiTodoItem } from "@/components/ai/ai-todo-list"
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
+import {
+  playCompletionSound,
+  primeCompletionSound,
+} from "@/lib/completion-sound"
+import {
+  DELETE_CANCEL_LABEL,
+  DELETE_CONFIRMATION_LABEL,
+} from "@/lib/delete-confirmation-copy"
 import {
   buildCompletionSummary,
   buildPostReasoning,
@@ -56,6 +65,10 @@ type BuilderHistorySnapshot = {
   layoutEdits: Partial<GeneratedLayout>
   layerText: Record<string, string>
   layerStyles: Record<string, BuilderLayerStyle>
+  /** Layers hidden via the selector's delete control (reversible through undo). */
+  hiddenLayers: string[]
+  /** Per-layer inline duplicate count produced by the selector's duplicate control. */
+  layerDuplicates: Record<string, number>
   placedElements: PlacedElement[]
   codeOverride: string | null
 }
@@ -615,6 +628,15 @@ type LayoutBuilderContextValue = {
   layerStyles: Record<string, BuilderLayerStyle>
   setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
 
+  /** True when the layer has been deleted (hidden) via its selector control. */
+  isLayerHidden: (label: string) => boolean
+  /** Number of inline copies a layer currently has from the duplicate control. */
+  layerDuplicateCount: (label: string) => number
+  /** Adds an inline copy of the layer. */
+  duplicateLayer: (label: string) => void
+  /** Opens the delete confirmation for a layer (hide on confirm). */
+  requestDeleteLayer: (label: string) => void
+
   /**
    * The layer whose Visual edits inspector is open (replaces the chat). Null
    * shows the normal AI conversation.
@@ -721,7 +743,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [layerStyles, setLayerStyles] = useState<
     Record<string, BuilderLayerStyle>
   >({})
+  const [hiddenLayers, setHiddenLayers] = useState<string[]>([])
+  const [layerDuplicates, setLayerDuplicates] = useState<
+    Record<string, number>
+  >({})
   const [inspectingLayer, setInspectingLayer] = useState<string | null>(null)
+  const [pendingDeleteLayer, setPendingDeleteLayer] = useState<string | null>(
+    null
+  )
   const [editsTab, setEditsTab] = useState<"style" | "advanced">("style")
   const [addingElement, setAddingElement] = useState(false)
   const [placedElements, setPlacedElements] = useState<PlacedElement[]>([])
@@ -736,6 +765,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     layoutEdits: {},
     layerText: {},
     layerStyles: {},
+    hiddenLayers: [],
+    layerDuplicates: {},
     placedElements: [],
     codeOverride: null,
   })
@@ -769,10 +800,20 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       layoutEdits,
       layerText,
       layerStyles,
+      hiddenLayers,
+      layerDuplicates,
       placedElements,
       codeOverride,
     }
-  }, [layoutEdits, layerText, layerStyles, placedElements, codeOverride])
+  }, [
+    layoutEdits,
+    layerText,
+    layerStyles,
+    hiddenLayers,
+    layerDuplicates,
+    placedElements,
+    codeOverride,
+  ])
 
   const syncHistoryFlags = useCallback(() => {
     setCanUndo(historyPastRef.current.length > 0)
@@ -796,6 +837,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayoutEdits(snapshot.layoutEdits)
       setLayerTextState(snapshot.layerText)
       setLayerStyles(snapshot.layerStyles)
+      setHiddenLayers(snapshot.hiddenLayers)
+      setLayerDuplicates(snapshot.layerDuplicates)
       setPlacedElements(snapshot.placedElements)
       setCodeOverrideState(snapshot.codeOverride)
       applyingHistoryRef.current = false
@@ -1196,6 +1239,59 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     [pushHistory]
   )
 
+  // Inline duplicate: bumps the layer's copy count so the element renders an
+  // extra, independently editable copy of itself (reversible through undo).
+  const duplicateLayer = useCallback(
+    (label: string) => {
+      pushHistory()
+      setLayerDuplicates((current) => ({
+        ...current,
+        [label]: (current[label] ?? 0) + 1,
+      }))
+    },
+    [pushHistory]
+  )
+
+  // Delete hides the layer (kept reversible via undo rather than destroyed).
+  const deleteLayer = useCallback(
+    (label: string) => {
+      pushHistory()
+      setHiddenLayers((current) =>
+        current.includes(label) ? current : [...current, label]
+      )
+      setSelections((current) =>
+        current.filter((selection) => selection.label !== label)
+      )
+      setInspectingLayer((open) => (open === label ? null : open))
+    },
+    [pushHistory]
+  )
+
+  const requestDeleteLayer = useCallback((label: string) => {
+    setPendingDeleteLayer(label)
+  }, [])
+
+  const confirmDeleteLayer = useCallback(() => {
+    if (pendingDeleteLayer) {
+      deleteLayer(pendingDeleteLayer)
+    }
+    setPendingDeleteLayer(null)
+  }, [deleteLayer, pendingDeleteLayer])
+
+  const cancelDeleteLayer = useCallback(() => {
+    setPendingDeleteLayer(null)
+  }, [])
+
+  const isLayerHidden = useCallback(
+    (label: string) => hiddenLayers.includes(label),
+    [hiddenLayers]
+  )
+
+  const layerDuplicateCount = useCallback(
+    (label: string) => layerDuplicates[label] ?? 0,
+    [layerDuplicates]
+  )
+
   const inspectLayer = useCallback((label: string | null) => {
     setInspectingLayer(label)
     if (label !== null) {
@@ -1347,6 +1443,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const submitAnswers = useCallback(
     (submitted: AiAnswers) => {
+      primeCompletionSound()
       setAnswers(submitted)
       setReceivedAnswers(formatReceivedAnswers(questions, submitted))
       startThinking()
@@ -1355,6 +1452,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   )
 
   const skipQuestions = useCallback(() => {
+    primeCompletionSound()
     setReceivedAnswers(null)
     startThinking()
   }, [startThinking])
@@ -1365,6 +1463,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       if (!trimmed && references.length === 0) {
         return
       }
+
+      // Warm the audio context under this click so the completion cue is
+      // allowed to play once generation settles (timer-driven, no gesture).
+      primeCompletionSound()
 
       // New turn — clear any prior answer recap until this turn asks again.
       setReceivedAnswers(null)
@@ -1406,6 +1508,24 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (status === "ready") {
       setHasGeneratedOnce(true)
+    }
+  }, [status])
+
+  // Play a soft completion cue whenever a turn finishes generating a layout.
+  // Gated on the previous status being an active generating phase so it never
+  // fires when an existing layout is restored straight into "ready" for edits.
+  const prevStatusRef = useRef<BuilderStatus>("idle")
+  useEffect(() => {
+    const previous = prevStatusRef.current
+    prevStatusRef.current = status
+
+    const wasGenerating =
+      previous === "thinking" ||
+      previous === "reasoning" ||
+      previous === "asking"
+
+    if (status === "ready" && wasGenerating) {
+      playCompletionSound()
     }
   }, [status])
 
@@ -1520,6 +1640,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerText,
       layerStyles,
       setLayerStyle,
+      isLayerHidden,
+      layerDuplicateCount,
+      duplicateLayer,
+      requestDeleteLayer,
       inspectingLayer,
       inspectLayer,
       editsTab,
@@ -1583,6 +1707,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerText,
       layerStyles,
       setLayerStyle,
+      isLayerHidden,
+      layerDuplicateCount,
+      duplicateLayer,
+      requestDeleteLayer,
       inspectingLayer,
       inspectLayer,
       editsTab,
@@ -1620,6 +1748,21 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   return (
     <LayoutBuilderContext.Provider value={value}>
       {children}
+      <ConfirmationDialog
+        open={pendingDeleteLayer !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            cancelDeleteLayer()
+          }
+        }}
+        title="Delete element"
+        description="Are you sure you want to delete this element? You can undo this action from the toolbar"
+        confirmLabel={DELETE_CONFIRMATION_LABEL}
+        cancelLabel={DELETE_CANCEL_LABEL}
+        variant="destructive"
+        onConfirm={confirmDeleteLayer}
+        onCancel={cancelDeleteLayer}
+      />
     </LayoutBuilderContext.Provider>
   )
 }

@@ -14,6 +14,8 @@ import {
 import { useRouter } from "next/navigation"
 
 import { useHubToast } from "@/components/payment-hub/hub-toast"
+import { primeCompletionSound } from "@/lib/completion-sound"
+import { detectBuilderMediumFromText } from "@/lib/mediums-data"
 import {
   CREATE_WITH_AI_MEDIUM_REQUIRED_MESSAGE,
   type CreateWithAiGenerateInput,
@@ -146,11 +148,21 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
       // Generation API will consume prompt + referenceImages as multimodal input.
       void payload
 
+      // Warm the audio context under this click so the builder's completion
+      // cue can play once the (timer-driven) first generation settles.
+      primeCompletionSound()
+
+      // An explicit paper size in the prompt ("US letter", "legal size", …)
+      // wins over the picker selection: the prompt is the stronger signal of
+      // intent, so the builder opens on the size the user actually described.
+      const resolvedMediumId =
+        detectBuilderMediumFromText(trimmedPrompt) ?? mediumId
+
       // Hand the prompt off to the builder. Preview URLs are transferred to the
       // builder session, so clear attachments without revoking them here.
       pendingGenerationRef.current = {
         prompt: trimmedPrompt,
-        mediumId,
+        mediumId: resolvedMediumId,
         modelId,
         references: imageAttachments.map((attachment) => ({
           id: attachment.id,

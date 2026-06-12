@@ -323,6 +323,45 @@ export const BUILDER_PAPER_PRESETS: MediumRow[] = [
 
 export const DEFAULT_BUILDER_MEDIUM_ID = BUILDER_PAPER_PRESETS[0].id
 
+const BUILDER_PRESET_ID_BY_NAME: Record<string, string> = Object.fromEntries(
+  BUILDER_PAPER_PRESETS.map((medium) => [medium.name, medium.id])
+)
+
+/**
+ * Detects an explicit paper-size request inside free-text and maps it to one of
+ * the builder paper presets, or returns `null` when the text names no size (so
+ * the caller keeps the picker selection).
+ *
+ * Matching is intentionally conservative: it requires size-qualifying phrasing
+ * ("US letter", "letter size", "8.5 x 11", "legal size") rather than the bare
+ * words "letter" or "legal", which routinely appear in invoice copy and would
+ * otherwise trigger false overrides.
+ */
+export function detectBuilderMediumFromText(text: string): string | null {
+  const value = text.toLowerCase()
+
+  if (/\ba4\b/.test(value)) {
+    return BUILDER_PRESET_ID_BY_NAME.A4 ?? null
+  }
+
+  if (
+    /\bus[-\s]?letter\b/.test(value) ||
+    /\bletter[-\s](?:size|sized|paper|format)\b/.test(value) ||
+    /\b8\.5\s*["”]?\s*[x×]\s*11\b/.test(value)
+  ) {
+    return BUILDER_PRESET_ID_BY_NAME["US letter"] ?? null
+  }
+
+  if (
+    /\blegal[-\s]?(?:size|sized|paper|format)\b/.test(value) ||
+    /\b8\.5\s*["”]?\s*[x×]\s*14\b/.test(value)
+  ) {
+    return BUILDER_PRESET_ID_BY_NAME.Legal ?? null
+  }
+
+  return null
+}
+
 /** The three paper presets surfaced in the builder/prompt medium picker. */
 export function getBuilderMediumPresets(): MediumRow[] {
   return BUILDER_PAPER_PRESETS

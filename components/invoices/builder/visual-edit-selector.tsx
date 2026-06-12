@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, type ReactNode } from "react"
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { Send } from "lucide-react"
 
 import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
@@ -73,10 +73,36 @@ export function VisualEditSelector({
   const [promptValue, setPromptValue] = useState("")
   const [promptFocused, setPromptFocused] = useState(false)
   const promptRef = useRef<HTMLTextAreaElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(Number.POSITIVE_INFINITY)
+
+  // Track the element's rendered width so narrow elements can collapse their
+  // left + right toolbars into one bar instead of letting them overlap.
+  useLayoutEffect(() => {
+    const node = rootRef.current
+    if (!node) {
+      return
+    }
+    const update = () => setWidth(node.getBoundingClientRect().width)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
 
   // Tools + prompt belong to the "hover over the selected layer" state; we keep
   // them while the prompt is focused so typing doesn't dismiss them.
   const showChrome = selected && (hovered || promptFocused)
+
+  // A toolbar is p-1 padding (8px) + N×16px buttons + gaps. When both toolbars
+  // can't sit side by side without overlapping, merge them into one.
+  const toolbarWidth = (count: number) =>
+    count > 0 ? 8 + count * 16 + (count - 1) * 4 : 0
+  const hasBothToolbars = leftActions.length > 0 && rightActions.length > 0
+  const mergeToolbars =
+    hasBothToolbars &&
+    width <
+      toolbarWidth(leftActions.length) + toolbarWidth(rightActions.length) + 8
   // "Filled" drives the active send button (Figma 5625:23865 / 23868).
   const filled = promptValue.trim().length > 0
 
@@ -100,6 +126,7 @@ export function VisualEditSelector({
 
   return (
     <div
+      ref={rootRef}
       data-sel
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -122,21 +149,40 @@ export function VisualEditSelector({
     >
       {children}
 
-      {showChrome && leftActions.length > 0 ? (
+      {showChrome && mergeToolbars ? (
+        // Narrow element: a single combined bar (arrange + clipboard) so the
+        // controls stay fully visible instead of overlapping.
         <div className={cn(TOOLBAR_BASE, "left-0 rounded-t-[4px]")}>
           {leftActions.map((action) => (
             <ToolbarButton key={action.label} action={action} />
           ))}
-        </div>
-      ) : null}
-
-      {showChrome && rightActions.length > 0 ? (
-        <div className={cn(TOOLBAR_BASE, "right-0 rounded-t-[4px]")}>
+          <span
+            className="mx-0.5 h-3.5 w-px shrink-0 bg-white/30"
+            aria-hidden
+          />
           {rightActions.map((action) => (
             <ToolbarButton key={action.label} action={action} />
           ))}
         </div>
-      ) : null}
+      ) : (
+        <>
+          {showChrome && leftActions.length > 0 ? (
+            <div className={cn(TOOLBAR_BASE, "left-0 rounded-t-[4px]")}>
+              {leftActions.map((action) => (
+                <ToolbarButton key={action.label} action={action} />
+              ))}
+            </div>
+          ) : null}
+
+          {showChrome && rightActions.length > 0 ? (
+            <div className={cn(TOOLBAR_BASE, "right-0 rounded-t-[4px]")}>
+              {rightActions.map((action) => (
+                <ToolbarButton key={action.label} action={action} />
+              ))}
+            </div>
+          ) : null}
+        </>
+      )}
 
       {/* Corner name badge — pinned bottom-right (Figma 3194:71355). Selected
           shows it always; otherwise it follows the deepest-only hover. */}

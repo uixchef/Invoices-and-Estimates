@@ -109,10 +109,12 @@ function ToolbarIconButton({
           "disabled:pointer-events-none disabled:text-[#d0d5dd]",
           active && tone === "accent" && "bg-[#ebe9fe] text-[#6938ef]",
           active && tone === "default" && "bg-[#f2f4f7] text-[#101828]",
-          !active && "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]",
+          !active &&
+            !comingSoon &&
+            "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]",
           // Not-yet-built tools stay hoverable (for the tooltip) but signal that
-          // they can't be actioned yet.
-          comingSoon && "cursor-not-allowed",
+          // they can't be actioned yet — no hover fill, just the resting color.
+          comingSoon && "cursor-not-allowed text-[#475467]",
           className
         )}
         {...props}
@@ -342,7 +344,7 @@ export function LayoutBuilderToolbar() {
               <DropdownMenuItem
                 key={type}
                 onSelect={() => setDocumentType(type)}
-                className={cn(documentType === type && "bg-[#f4f3ff]")}
+                className={cn(documentType === type && "bg-[#eff4ff]")}
               >
                 {type}
               </DropdownMenuItem>
