@@ -22,6 +22,7 @@ import {
 } from "@/lib/create-with-ai-types"
 import {
   LAYOUT_BUILDER_ROUTE,
+  type LayoutBuilderEditSeed,
   type LayoutBuilderSeed,
 } from "@/lib/layout-builder-types"
 
@@ -68,6 +69,10 @@ type CreateWithAiContextValue = {
   generateLayout: (input: CreateWithAiGenerateRequest) => void
   /** Reads and clears the generation request queued for the builder route. */
   consumePendingGeneration: () => LayoutBuilderSeed | null
+  /** Opens an existing layout in the builder (dashboard "Edit" action). */
+  requestLayoutEdit: (seed: LayoutBuilderEditSeed) => void
+  /** Reads and clears the edit request queued for the builder route. */
+  consumePendingEdit: () => LayoutBuilderEditSeed | null
 }
 
 const CreateWithAiContext = createContext<CreateWithAiContextValue | null>(null)
@@ -77,6 +82,7 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
   const { showError } = useHubToast()
   const attachmentsRef = useRef<PromptAttachment[]>([])
   const pendingGenerationRef = useRef<LayoutBuilderSeed | null>(null)
+  const pendingEditRef = useRef<LayoutBuilderEditSeed | null>(null)
 
   const [isOpen, setIsOpen] = useState(false)
   const [prompt, setPrompt] = useState("")
@@ -168,6 +174,22 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
     return seed
   }, [])
 
+  const requestLayoutEdit = useCallback(
+    (seed: LayoutBuilderEditSeed) => {
+      // A queued edit takes precedence over any stale generation request.
+      pendingGenerationRef.current = null
+      pendingEditRef.current = seed
+      router.push(LAYOUT_BUILDER_ROUTE)
+    },
+    [router]
+  )
+
+  const consumePendingEdit = useCallback(() => {
+    const seed = pendingEditRef.current
+    pendingEditRef.current = null
+    return seed
+  }, [])
+
   useEffect(() => {
     return () => {
       revokeAttachmentUrls(attachmentsRef.current)
@@ -187,12 +209,16 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
       removeAttachment,
       generateLayout,
       consumePendingGeneration,
+      requestLayoutEdit,
+      consumePendingEdit,
     }),
     [
       addAttachments,
       attachments,
       close,
       consumePendingGeneration,
+      consumePendingEdit,
+      requestLayoutEdit,
       generateLayout,
       isOpen,
       open,

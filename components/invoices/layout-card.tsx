@@ -15,6 +15,8 @@ import { getLayoutThumbnail } from "@/lib/layout-thumbnails"
 import { useLayoutClone } from "@/lib/layout-clone-context"
 import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { useLayoutPreview } from "@/lib/layout-preview-context"
+import { useCreateWithAi } from "@/lib/create-with-ai-context"
+import { layoutEditSeedFromRow } from "@/lib/layout-edit-seed"
 import { usePreviewReveal } from "@/lib/use-preview-reveal"
 import { cn } from "@/lib/utils"
 
@@ -148,6 +150,7 @@ function LayoutCardActions({ item }: { item: LayoutRow }) {
   const { open } = useLayoutPreview()
   const { cloneLayout } = useLayoutClone()
   const { requestDelete } = useLayoutDelete()
+  const { requestLayoutEdit } = useCreateWithAi()
   const [menuOpen, setMenuOpen] = useState(false)
 
   return (
@@ -164,6 +167,7 @@ function LayoutCardActions({ item }: { item: LayoutRow }) {
       <button
         type="button"
         aria-label={`Edit ${item.name}`}
+        onClick={() => requestLayoutEdit(layoutEditSeedFromRow(item))}
         className={cn(
           "inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-2 rounded border border-[#84adff] bg-white px-2.5 py-1.5",
           "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#004eeb]",

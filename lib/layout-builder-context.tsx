@@ -35,6 +35,7 @@ import {
   type BuilderVisualStyle,
   type GeneratedLayout,
   type GeneratedLineItem,
+  type LayoutBuilderEditSeed,
   type PlacedElement,
   type PlacedElementZone,
 } from "@/lib/layout-builder-types"
@@ -401,6 +402,45 @@ function deriveLayout(
   }
 }
 
+/**
+ * Reconstructs a believable creation session for an existing layout opened via
+ * the dashboard "Edit" action. The layout's numeric `seed` deterministically
+ * resolves style, currency, sections, and item count, so a given layout always
+ * reopens to the same design. Returns the original "prompt" and the clarifying
+ * answers, which feed `deriveLayout` exactly like a fresh generation — keeping
+ * the restored session 100% real (fully editable, with matching chat history).
+ */
+function deriveEditSession(editSeed: LayoutBuilderEditSeed): {
+  prompt: string
+  answers: AiAnswers
+} {
+  const styles: BuilderVisualStyle[] = ["minimal", "modern", "classic", "bold"]
+  const currencies = ["usd", "eur", "gbp", "inr"]
+  const seed = Math.max(0, editSeed.seed)
+
+  const style = styles[seed % styles.length]
+  const currency = currencies[Math.floor(seed / 4) % currencies.length]
+
+  // Header, table, and totals are always present; notes/terms vary so reopened
+  // layouts read as distinct documents rather than one template.
+  const sections = ["logo", "items", "taxes"]
+  if (seed % 2 === 0) sections.push("notes")
+  if (seed % 3 === 0) sections.push("terms")
+
+  const itemCount = (seed % 5) + 1
+  const docLabel = editSeed.documentType.toLowerCase()
+
+  return {
+    prompt: `Create a ${docLabel} layout for ${editSeed.name}.`,
+    answers: {
+      style,
+      currency,
+      sections,
+      "line-items": String(itemCount),
+    },
+  }
+}
+
 /** Mirrors the "Other" sentinel used by the questions card. */
 const OTHER_ANSWER_VALUE = "__other__"
 
@@ -617,7 +657,7 @@ function nextMessageId() {
 }
 
 export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
-  const { consumePendingGeneration } = useCreateWithAi()
+  const { consumePendingGeneration, consumePendingEdit } = useCreateWithAi()
 
   const [name, setName] = useState(DEFAULT_LAYOUT_NAME)
   const [draftName, setDraftName] = useState(DEFAULT_LAYOUT_NAME)
@@ -904,6 +944,34 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     }
     initializedRef.current = true
 
+    // "Edit" on an existing layout: restore it into a real, editable session.
+    // We reconstruct the original prompt + answers deterministically, seed the
+    // transcript, and land directly in the ready state (no generation
+    // animation). The ready-effect appends the matching assistant recap, so the
+    // chat reads like the conversation that produced this layout.
+    const editSeed = consumePendingEdit()
+    if (editSeed) {
+      const { prompt, answers: editAnswers } = deriveEditSession(editSeed)
+      setName(editSeed.name)
+      setDraftName(editSeed.name)
+      setMediumId(editSeed.mediumId)
+      setDocumentType(editSeed.documentType)
+      setAnswers(editAnswers)
+      // The layout's display name is the business on the document.
+      setLayoutEdits({ businessName: editSeed.name })
+      setMessages([
+        {
+          id: nextMessageId(),
+          role: "user",
+          text: prompt,
+          references: [],
+        },
+      ])
+      setHasGeneratedOnce(true)
+      setStatus("ready")
+      return
+    }
+
     const seed = consumePendingGeneration()
     if (!seed) {
       return
@@ -930,7 +998,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
     // Think first, then surface clarifying questions before the first draft.
     startReasoning(BUILDER_QUESTIONS)
-  }, [consumePendingGeneration, startReasoning])
+  }, [consumePendingGeneration, consumePendingEdit, startReasoning])
 
   useEffect(() => {
     const urls = referenceUrlsRef

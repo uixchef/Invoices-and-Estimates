@@ -28,6 +28,8 @@ import { FILTER_DEFINITIONS } from "@/lib/layout-filters"
 import type { LayoutFilterSelections } from "@/lib/filter-layouts"
 import type { LayoutRow } from "@/lib/layouts-data"
 import { useLayoutClone } from "@/lib/layout-clone-context"
+import { useCreateWithAi } from "@/lib/create-with-ai-context"
+import { layoutEditSeedFromRow } from "@/lib/layout-edit-seed"
 import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { useLayoutPreview } from "@/lib/layout-preview-context"
 import { useMediumsStore } from "@/lib/mediums-store"
@@ -178,6 +180,7 @@ function LayoutTableRow({ item }: { item: LayoutRow }) {
   const { open } = useLayoutPreview()
   const { cloneLayout } = useLayoutClone()
   const { requestDelete } = useLayoutDelete()
+  const { requestLayoutEdit } = useCreateWithAi()
 
   return (
     <div
@@ -217,6 +220,7 @@ function LayoutTableRow({ item }: { item: LayoutRow }) {
           type="button"
           aria-label={`Edit ${item.name}`}
           className={ACTION_BUTTON_CLASS}
+          onClick={() => requestLayoutEdit(layoutEditSeedFromRow(item))}
         >
           <Pencil className="size-4" aria-hidden />
         </button>

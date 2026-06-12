@@ -96,6 +96,22 @@ export type LayoutBuilderSeed = {
   references: BuilderReferenceImage[]
 }
 
+/**
+ * Handoff for opening an existing layout in the builder (the dashboard "Edit"
+ * action). The builder restores this layout's name, medium, and document type,
+ * reconstructs a believable chat history, and lands directly in the ready state
+ * (no generation animation). `seed` deterministically resolves the same design
+ * each time the layout is opened.
+ */
+export type LayoutBuilderEditSeed = {
+  layoutId: string
+  name: string
+  documentType: BuilderDocumentType
+  mediumId: string
+  /** Stable derivation seed (the layout's numeric index) for the design. */
+  seed: number
+}
+
 import type { AiTodoItem } from "@/components/ai/ai-todo-list"
 
 export type BuilderUserMessage = {
