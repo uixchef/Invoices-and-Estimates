@@ -24,6 +24,12 @@ import {
 
 import { GeneratingCarousel } from "@/components/invoices/builder/generating-carousel"
 import { VisualEditSelector } from "@/components/invoices/builder/visual-edit-selector"
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
+import {
+  DELETE_CANCEL_LABEL,
+  DELETE_CONFIRMATION_LABEL,
+  getDeleteConfirmationDescription,
+} from "@/lib/delete-confirmation-copy"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { getDocumentPageProfile } from "@/lib/mediums-data"
 import { useMediumsStore } from "@/lib/mediums-store"
@@ -793,6 +799,7 @@ function ElementDropZone({ zone }: { zone: PlacedElementZone }) {
     editMode,
   } = useLayoutBuilder()
   const [dragOver, setDragOver] = useState(false)
+  const [pendingRemove, setPendingRemove] = useState<PlacedElement | null>(null)
   const zoneElements = placedElements.filter((element) => element.zone === zone)
 
   const acceptDrag = (event: React.DragEvent) => {
@@ -837,7 +844,7 @@ function ElementDropZone({ zone }: { zone: PlacedElementZone }) {
             <button
               type="button"
               aria-label={`Remove ${element.label}`}
-              onClick={() => removePlacedElement(element.id)}
+              onClick={() => setPendingRemove(element)}
               className="absolute -right-1 -top-1 z-10 inline-flex size-6 items-center justify-center rounded-full border border-[#eaecf0] bg-white text-[#667085] opacity-0 shadow-sm outline-none transition-opacity hover:border-[#fda29b] hover:text-[#b42318] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[#155eef]/40 group-hover/placed:opacity-100"
             >
               <Trash2 className="size-3.5" aria-hidden />
@@ -869,6 +876,31 @@ function ElementDropZone({ zone }: { zone: PlacedElementZone }) {
           )}
         />
       </div>
+
+      <ConfirmationDialog
+        open={pendingRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingRemove(null)
+          }
+        }}
+        title="Delete element"
+        description={
+          pendingRemove
+            ? getDeleteConfirmationDescription(pendingRemove.label)
+            : null
+        }
+        confirmLabel={DELETE_CONFIRMATION_LABEL}
+        cancelLabel={DELETE_CANCEL_LABEL}
+        variant="destructive"
+        onConfirm={() => {
+          if (pendingRemove) {
+            removePlacedElement(pendingRemove.id)
+          }
+          setPendingRemove(null)
+        }}
+        onCancel={() => setPendingRemove(null)}
+      />
     </div>
   )
 }
@@ -953,6 +985,10 @@ function DocumentSurface() {
     mediumId,
   } = useLayoutBuilder()
 
+  const [pendingDeleteItem, setPendingDeleteItem] = useState<number | null>(
+    null
+  )
+
   const pageProfile = getDocumentPageProfile(mediumId)
   const { padding: safePadding } = pageProfile
 
@@ -1000,6 +1036,7 @@ function DocumentSurface() {
     : "font-[family-name:var(--font-inter)]"
 
   return (
+    <>
     <PaginatedDocument
       pageWidth={pageProfile.widthPx}
       pageHeight={pageProfile.heightPx}
@@ -1179,7 +1216,7 @@ function DocumentSurface() {
                     {
                       icon: <Trash2 />,
                       label: "Delete item",
-                      onClick: () => deleteItem(index),
+                      onClick: () => setPendingDeleteItem(index),
                       disabled: layout.lineItems.length <= 1,
                     },
                   ]}
@@ -1266,6 +1303,28 @@ function DocumentSurface() {
         </div>
       </div>
     </PaginatedDocument>
+
+    <ConfirmationDialog
+      open={pendingDeleteItem !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          setPendingDeleteItem(null)
+        }
+      }}
+      title="Delete item"
+      description="Are you sure you want to delete this item? You can undo this action from the toolbar"
+      confirmLabel={DELETE_CONFIRMATION_LABEL}
+      cancelLabel={DELETE_CANCEL_LABEL}
+      variant="destructive"
+      onConfirm={() => {
+        if (pendingDeleteItem !== null) {
+          deleteItem(pendingDeleteItem)
+        }
+        setPendingDeleteItem(null)
+      }}
+      onCancel={() => setPendingDeleteItem(null)}
+    />
+    </>
   )
 }
 

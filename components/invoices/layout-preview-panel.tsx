@@ -8,6 +8,8 @@ import type { LayoutRow } from "@/lib/layouts-data"
 import { useLayoutClone } from "@/lib/layout-clone-context"
 import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { useLayoutPreview } from "@/lib/layout-preview-context"
+import { useCreateWithAi } from "@/lib/create-with-ai-context"
+import { layoutEditSeedFromRow } from "@/lib/layout-edit-seed"
 import { getLayoutThumbnail } from "@/lib/layout-thumbnails"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { Button } from "@/components/highrise/button"
@@ -55,6 +57,7 @@ export function LayoutPreviewPanel() {
   const { layout, isOpen, close } = useLayoutPreview()
   const { cloneLayout } = useLayoutClone()
   const { requestDelete } = useLayoutDelete()
+  const { requestLayoutEdit } = useCreateWithAi()
   const { getMediumName } = useMediumsStore()
 
   useEffect(() => {
@@ -161,7 +164,18 @@ export function LayoutPreviewPanel() {
             </div>
 
             <footer className="flex shrink-0 flex-col gap-3">
-              <Button type="button" variant="primary" className="w-full px-2.5">
+              <Button
+                type="button"
+                variant="primary"
+                className="w-full px-2.5"
+                onClick={() => {
+                  if (!layout) {
+                    return
+                  }
+                  close()
+                  requestLayoutEdit(layoutEditSeedFromRow(layout))
+                }}
+              >
                 <Pencil className="size-4 shrink-0" aria-hidden />
                 Edit layout
               </Button>

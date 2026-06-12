@@ -15,7 +15,7 @@ export function NewLayoutButton() {
   return (
     <Button type="button" variant="primary" onClick={() => createBlankLayout()}>
       <Plus className="size-5 shrink-0" strokeWidth={2} aria-hidden />
-      New
+      Start from blank
     </Button>
   )
 }

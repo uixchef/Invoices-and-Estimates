@@ -23,6 +23,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import type { FilterDefinition, LayoutFilterType } from "@/lib/layout-filters"
 import { FILTER_DEFINITIONS } from "@/lib/layout-filters"
 import type { LayoutFilterSelections } from "@/lib/filter-layouts"
@@ -216,22 +221,32 @@ function LayoutTableRow({ item }: { item: LayoutRow }) {
       </div>
 
       <div className="flex h-11 items-center gap-1 border-b border-[#d0d5dd] px-3 py-2">
-        <button
-          type="button"
-          aria-label={`Edit ${item.name}`}
-          className={ACTION_BUTTON_CLASS}
-          onClick={() => requestLayoutEdit(layoutEditSeedFromRow(item))}
-        >
-          <Pencil className="size-4" aria-hidden />
-        </button>
-        <button
-          type="button"
-          aria-label={`Preview ${item.name}`}
-          className={ACTION_BUTTON_CLASS}
-          onClick={() => open(item)}
-        >
-          <Eye className="size-4" aria-hidden />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Edit ${item.name}`}
+              className={ACTION_BUTTON_CLASS}
+              onClick={() => requestLayoutEdit(layoutEditSeedFromRow(item))}
+            >
+              <Pencil className="size-4" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Edit</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Preview ${item.name}`}
+              className={ACTION_BUTTON_CLASS}
+              onClick={() => open(item)}
+            >
+              <Eye className="size-4" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Preview</TooltipContent>
+        </Tooltip>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button

@@ -784,7 +784,7 @@ function EditsTab({
         "inline-flex h-6 flex-1 items-center justify-center gap-1 rounded-[4px] px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
         "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5",
         active
-          ? "bg-white text-[#004eeb] shadow-[0px_1px_3px_0px_rgba(16,24,40,0.1),0px_1px_2px_0px_rgba(16,24,40,0.06)]"
+          ? "bg-white text-[#5925dc] shadow-[0px_1px_3px_0px_rgba(16,24,40,0.1),0px_1px_2px_0px_rgba(16,24,40,0.06)]"
           : "text-[#475467] hover:text-[#101828]"
       )}
     >
