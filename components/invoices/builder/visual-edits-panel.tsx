@@ -50,7 +50,7 @@ const MARGIN_ICON = {
   vertical: `${SAFE_AREA}/distribute-spacing-vertical.png`,
 } as const
 const MAXIMIZE_ICON = `${SAFE_AREA}/maximize-02.png`
-const MAXIMIZE_ICON_ACTIVE = `${SAFE_AREA}/maximize-02-purple.svg`
+const MAXIMIZE_ICON_ACTIVE = `${SAFE_AREA}/maximize-02-blue.png`
 
 const EDIT_ICONS = "/icons/edits"
 const ROUNDED_CORNER_ICON = `${EDIT_ICONS}/rounded-corner.svg`
@@ -214,8 +214,8 @@ function PanelDivider() {
 
 const INPUT_SHELL = cn(
   "flex h-8 w-full items-center gap-2 rounded-[4px] border border-[#d0d5dd] bg-white px-2",
-  "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] transition-colors",
-  "focus-within:border-[#9b8afb] focus-within:ring-2 focus-within:ring-[#9b8afb]/30"
+  "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] transition-shadow",
+  "focus-within:border-[#84adff] focus-within:shadow-[0_0_0_4px_#eff4ff,0_1px_2px_rgba(16,24,40,0.05)]"
 )
 
 /**
@@ -362,7 +362,7 @@ function LinkToggle({
       className={cn(
         "inline-flex size-8 shrink-0 items-center justify-center rounded-[4px] border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
         linked
-          ? "border-[#bdb4fe] bg-[#ebe9fe]"
+          ? "border-[#84adff] bg-[#d1e0ff]"
           : "border-[#d0d5dd] bg-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#f9fafb]"
       )}
     >
@@ -858,7 +858,7 @@ function SegmentToggle({
         "inline-flex flex-1 items-center justify-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#155eef]/40",
         !last && "border-r border-[#d0d5dd]",
         active
-          ? "bg-[#f4f3ff] text-[#5925dc]"
+          ? "bg-[#eff4ff] text-[#004eeb]"
           : "bg-white text-[#475467] hover:bg-[#f9fafb]"
       )}
     >
@@ -1065,14 +1065,14 @@ function AdvancedTab() {
               "relative",
               // Only the accordion being edited is outlined in primary — the
               // surrounding group stays neutral (Figma 3246:56729 active state).
-              editingField && "z-10 rounded-[8px] ring-1 ring-inset ring-[#bdb4fe]"
+              editingField && "z-10 rounded-[8px] ring-1 ring-inset ring-[#84adff]"
             )}
           >
             <div
               className={cn(
                 "flex h-14 items-center gap-3 px-4",
                 editingField
-                  ? "border-b border-[#bdb4fe] bg-[#f4f3ff]"
+                  ? "border-b border-[#84adff] bg-[#eff4ff]"
                   : "bg-white"
               )}
             >
@@ -1086,7 +1086,7 @@ function AdvancedTab() {
                 <button
                   type="button"
                   onClick={() => setEditingField(false)}
-                  className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#5925dc] outline-none focus-visible:underline"
+                  className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#004eeb] outline-none focus-visible:underline"
                 >
                   Cancel
                 </button>
@@ -1140,13 +1140,13 @@ function AdvancedTab() {
                             }}
                             className={cn(
                               "flex w-full items-center gap-2 rounded-[4px] px-2 py-1 text-left font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none transition-colors hover:bg-[#f9fafb] focus-visible:bg-[#f4f3ff]",
-                              isSelected && "bg-[#f4f3ff] font-medium"
+                              isSelected && "bg-[#f5f8ff] font-medium"
                             )}
                           >
                             <span className="min-w-0 flex-1 truncate">{field}</span>
                             {isSelected ? (
                               <Check
-                                className="size-4 shrink-0 text-[#5925dc]"
+                                className="size-4 shrink-0 text-[#155eef]"
                                 aria-hidden
                               />
                             ) : null}
@@ -1205,7 +1205,7 @@ function AccordionIcon({
     <span
       className={cn(
         "inline-flex size-6 shrink-0 items-center justify-center rounded-[6px]",
-        active ? "bg-[#ebe9fe] text-[#5925dc]" : "bg-[#f2f4f7] text-[#475467]"
+        active ? "bg-[#d1e0ff] text-[#155eef]" : "bg-[#f2f4f7] text-[#475467]"
       )}
     >
       {children}
@@ -1249,13 +1249,13 @@ function ConditionAccordion({
     <div
       className={cn(
         "overflow-hidden rounded-[8px] border transition-colors",
-        open ? "border-[#bdb4fe]" : "border-[#d0d5dd]"
+        open ? "border-[#84adff]" : "border-[#d0d5dd]"
       )}
     >
       <div
         className={cn(
           "flex h-[52px] items-center gap-2 px-4 transition-colors",
-          open ? "bg-[#f4f3ff]" : "bg-white hover:bg-[#f9fafb]"
+          open ? "bg-[#eff4ff]" : "bg-white hover:bg-[#f9fafb]"
         )}
       >
         <button
@@ -1295,7 +1295,7 @@ function ConditionAccordion({
                 className={cn(
                   "inline-flex flex-1 items-center justify-center gap-1.5 border-r border-[#d0d5dd] font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 outline-none transition-colors",
                   condition === "show"
-                    ? "bg-[#f4f3ff] text-[#5925dc]"
+                    ? "bg-[#eff4ff] text-[#004eeb]"
                     : "bg-white text-[#475467] hover:bg-[#f9fafb]"
                 )}
               >
@@ -1308,7 +1308,7 @@ function ConditionAccordion({
                 className={cn(
                   "inline-flex flex-1 items-center justify-center gap-1.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 outline-none transition-colors",
                   condition === "hide"
-                    ? "bg-[#f4f3ff] text-[#5925dc]"
+                    ? "bg-[#eff4ff] text-[#004eeb]"
                     : "bg-white text-[#475467] hover:bg-[#f9fafb]"
                 )}
               >
@@ -1332,7 +1332,7 @@ function ConditionAccordion({
             <button
               type="button"
               onClick={onApply}
-              className="inline-flex h-7 items-center justify-center rounded-[4px] border border-[#6938ef] bg-[#6938ef] px-2.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#5925dc] focus-visible:ring-2 focus-visible:ring-[#5925dc]/40"
+              className="inline-flex h-7 items-center justify-center rounded-[4px] border border-[#155eef] bg-[#155eef] px-2.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#0040c1] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
             >
               Apply
             </button>

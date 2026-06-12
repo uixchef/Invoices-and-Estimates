@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
-  AlertCircle,
   AtSign,
   ChevronDown,
   Link2,
@@ -733,7 +732,6 @@ export function InvoiceAiPanel({
       </div>
       )}
 
-      {inspecting ? <PendingChangesBar /> : null}
       <AiComposer />
     </aside>
   )
@@ -784,52 +782,12 @@ function EditsTab({
         "inline-flex h-6 flex-1 items-center justify-center gap-1 rounded-[4px] px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
         "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5",
         active
-          ? "bg-white text-[#5925dc] shadow-[0px_1px_3px_0px_rgba(16,24,40,0.1),0px_1px_2px_0px_rgba(16,24,40,0.06)]"
+          ? "bg-white text-[#004eeb] shadow-[0px_1px_3px_0px_rgba(16,24,40,0.1),0px_1px_2px_0px_rgba(16,24,40,0.06)]"
           : "text-[#475467] hover:text-[#101828]"
       )}
     >
       {icon}
       {label}
     </button>
-  )
-}
-
-/**
- * Footer chip surfacing unsaved layer edits (Figma 3246:59049). Appears above
- * the composer while editing a layer; lets the user discard (revert to the
- * original) or save (acknowledge) the pending overrides.
- */
-function PendingChangesBar() {
-  const { pendingLayerChanges, discardLayerEdits, saveLayerEdits } =
-    useLayoutBuilder()
-
-  if (pendingLayerChanges <= 0) {
-    return null
-  }
-
-  return (
-    <div className="px-4 pt-2">
-      <div className="flex items-center gap-1 rounded-lg border border-[#9b8afb] bg-white p-2">
-        <AlertCircle className="size-3.5 shrink-0 text-[#475467]" aria-hidden />
-        <p className="min-w-0 flex-1 truncate font-[family-name:var(--font-inter)] text-xs font-medium leading-[18px] text-[#475467]">
-          {pendingLayerChanges} pending{" "}
-          {pendingLayerChanges === 1 ? "change" : "changes"}
-        </p>
-        <button
-          type="button"
-          onClick={discardLayerEdits}
-          className="inline-flex h-6 items-center justify-center rounded-[4px] px-1.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-[18px] text-[#475467] outline-none transition-colors hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-        >
-          Discard
-        </button>
-        <button
-          type="button"
-          onClick={saveLayerEdits}
-          className="inline-flex h-6 items-center justify-center rounded-[4px] bg-[#6938ef] px-1.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-[18px] text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#5925dc] focus-visible:ring-2 focus-visible:ring-[#6938ef]/40"
-        >
-          Save
-        </button>
-      </div>
-    </div>
   )
 }
