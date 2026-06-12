@@ -1134,6 +1134,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       const next = !on
       if (next) {
         setPreviewOpen(true)
+        // Entering edit mode supersedes the Add elements palette, so close it
+        // and fall through to the edit empty state.
+        setAddingElement(false)
       } else {
         setInspectingLayer(null)
       }
