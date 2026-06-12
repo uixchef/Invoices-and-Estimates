@@ -403,16 +403,64 @@ function deriveLayout(
 }
 
 /**
+ * Believable placeholder businesses for a restored document. The layout's own
+ * name (e.g. "Signature Wren", "Layout 2") is a template label, not a brand, so
+ * the reconstructed invoice uses a real-sounding business instead.
+ */
+const EDIT_BUSINESSES = [
+  "Northwind Studio",
+  "Atlas & Co.",
+  "Maple Lane Design",
+  "Harbor Creative",
+  "Brightwork Agency",
+  "Cedar & Sage",
+  "Lumen Studio",
+  "Foundry Collective",
+  "Meridian Consulting",
+  "Olive & Ash",
+  "Riverstone Partners",
+  "Wildflower Co.",
+  "Summit Works",
+  "Paper Crane Studio",
+  "Indigo House",
+  "Ironwood Labs",
+] as const
+
+const EDIT_OPENERS = [
+  "I need",
+  "Can you put together",
+  "Build me",
+  "Help me set up",
+  "I'd like",
+] as const
+
+const EDIT_STYLE_PHRASE: Record<BuilderVisualStyle, string> = {
+  minimal: "Keep it clean and minimal",
+  modern: "Give it a modern look with a subtle accent colour",
+  classic: "Make it classic and formal",
+  bold: "Make it bold with a strong branded header",
+}
+
+function indefiniteArticle(noun: string): string {
+  return /^[aeiou]/i.test(noun) ? "an" : "a"
+}
+
+/**
  * Reconstructs a believable creation session for an existing layout opened via
  * the dashboard "Edit" action. The layout's numeric `seed` deterministically
- * resolves style, currency, sections, and item count, so a given layout always
- * reopens to the same design. Returns the original "prompt" and the clarifying
- * answers, which feed `deriveLayout` exactly like a fresh generation — keeping
- * the restored session 100% real (fully editable, with matching chat history).
+ * resolves the business, style, currency, sections, item count, and timings, so
+ * a given layout always reopens to the same design and the same transcript.
+ * Returns the natural-language prompt, a clean reasoning "gist", the clarifying
+ * answers (which feed `deriveLayout` exactly like a fresh generation), and the
+ * resolved business name — keeping the restored session 100% real.
  */
 function deriveEditSession(editSeed: LayoutBuilderEditSeed): {
   prompt: string
+  gist: string
+  businessName: string
   answers: AiAnswers
+  preDurationSec: number
+  durationSec: number
 } {
   const styles: BuilderVisualStyle[] = ["minimal", "modern", "classic", "bold"]
   const currencies = ["usd", "eur", "gbp", "inr"]
@@ -420,6 +468,7 @@ function deriveEditSession(editSeed: LayoutBuilderEditSeed): {
 
   const style = styles[seed % styles.length]
   const currency = currencies[Math.floor(seed / 4) % currencies.length]
+  const business = EDIT_BUSINESSES[seed % EDIT_BUSINESSES.length]
 
   // Header, table, and totals are always present; notes/terms vary so reopened
   // layouts read as distinct documents rather than one template.
@@ -429,15 +478,36 @@ function deriveEditSession(editSeed: LayoutBuilderEditSeed): {
 
   const itemCount = (seed % 5) + 1
   const docLabel = editSeed.documentType.toLowerCase()
+  const article = indefiniteArticle(docLabel)
+
+  // Natural-language request, assembled from the resolved design so the prompt,
+  // the document, and the assistant's recap all agree.
+  const clauses = ["our logo and business details in the header"]
+  clauses.push("an itemised table for the work")
+  clauses.push("subtotal and tax totals")
+  if (sections.includes("notes")) clauses.push("a short thank-you note")
+  if (sections.includes("terms")) clauses.push("payment terms at the bottom")
+
+  const detail =
+    clauses.length === 1
+      ? clauses[0]
+      : `${clauses.slice(0, -1).join(", ")}, and ${clauses[clauses.length - 1]}`
+
+  const opener = EDIT_OPENERS[seed % EDIT_OPENERS.length]
+  const prompt = `${opener} ${article} ${docLabel} for ${business}. ${EDIT_STYLE_PHRASE[style]}. Include ${detail}.`
 
   return {
-    prompt: `Create a ${docLabel} layout for ${editSeed.name}.`,
+    prompt,
+    gist: `${article} ${docLabel} for ${business}`,
+    businessName: business,
     answers: {
       style,
       currency,
       sections,
       "line-items": String(itemCount),
     },
+    preDurationSec: 2 + (seed % 4),
+    durationSec: 6 + (seed % 7),
   }
 }
 
@@ -951,20 +1021,53 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     // chat reads like the conversation that produced this layout.
     const editSeed = consumePendingEdit()
     if (editSeed) {
-      const { prompt, answers: editAnswers } = deriveEditSession(editSeed)
+      const session = deriveEditSession(editSeed)
       setName(editSeed.name)
       setDraftName(editSeed.name)
       setMediumId(editSeed.mediumId)
       setDocumentType(editSeed.documentType)
-      setAnswers(editAnswers)
-      // The layout's display name is the business on the document.
-      setLayoutEdits({ businessName: editSeed.name })
+      setAnswers(session.answers)
+      // The resolved business name is what shows on the document.
+      setLayoutEdits({ businessName: session.businessName })
+      setThoughtDurationSec(session.durationSec)
+
+      // Rebuild the original turn so the transcript reads exactly like the
+      // session that produced this layout: prompt → clarifying answers →
+      // reasoning → completed plan → recap. Seeding both messages means the
+      // ready-effect leaves the history untouched (no duplicate turn).
+      const restoredLayout: GeneratedLayout = {
+        ...deriveLayout(session.prompt, session.answers, editSeed.documentType),
+        businessName: session.businessName,
+      }
+      const receivedEditAnswers = formatReceivedAnswers(
+        BUILDER_QUESTIONS,
+        session.answers
+      )
+      const completedTodos: AiTodoItem[] = BUILDER_TODO_LABELS.map(
+        (label, index) => ({
+          id: `builder-todo-${index}`,
+          label,
+          status: "done",
+        })
+      )
+
       setMessages([
         {
           id: nextMessageId(),
           role: "user",
-          text: prompt,
+          text: session.prompt,
           references: [],
+        },
+        {
+          id: nextMessageId(),
+          role: "assistant",
+          receivedAnswers: receivedEditAnswers,
+          preReasoning: buildReasoning(session.gist),
+          preDurationSec: session.preDurationSec,
+          reasoning: buildPostReasoning(session.gist, receivedEditAnswers),
+          durationSec: session.durationSec,
+          todos: completedTodos,
+          summary: buildCompletionSummary(restoredLayout),
         },
       ])
       setHasGeneratedOnce(true)
