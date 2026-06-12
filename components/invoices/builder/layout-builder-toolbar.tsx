@@ -11,6 +11,7 @@ import {
   Plus,
   Redo2,
   Ruler,
+  Save,
   Type,
   Undo2,
 } from "lucide-react"
@@ -36,13 +37,18 @@ import { cn } from "@/lib/utils"
  * Wraps a control in a hover/focus tooltip when a label is supplied. Disabled
  * triggers don't emit pointer events, so the button is wrapped in a span to keep
  * the tooltip working even while the action is unavailable.
+ *
+ * When `description` is set the tooltip stacks the label over a muted subtitle —
+ * used for the "Coming soon" treatment on not-yet-built tools (Figma 3137:155701).
  */
 function WithTooltip({
   label,
+  description,
   disabled,
   children,
 }: {
   label?: string
+  description?: string
   disabled?: boolean
   children: React.ReactElement
 }) {
@@ -58,7 +64,16 @@ function WithTooltip({
           children
         )}
       </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
+      <TooltipContent>
+        {description ? (
+          <span className="flex flex-col gap-0.5">
+            <span className="font-semibold text-[#101828]">{label}</span>
+            <span className="text-[#475467]">{description}</span>
+          </span>
+        ) : (
+          label
+        )}
+      </TooltipContent>
     </Tooltip>
   )
 }
@@ -67,6 +82,8 @@ type ToolbarIconButtonProps = React.ComponentProps<"button"> & {
   active?: boolean
   tone?: "default" | "accent"
   tooltip?: string
+  /** Marks a placeholder tool: shows a "Coming soon" subtitle in the tooltip. */
+  comingSoon?: boolean
 }
 
 function ToolbarIconButton({
@@ -74,10 +91,15 @@ function ToolbarIconButton({
   active = false,
   tone = "default",
   tooltip,
+  comingSoon = false,
   ...props
 }: ToolbarIconButtonProps) {
   return (
-    <WithTooltip label={tooltip ?? props["aria-label"]} disabled={props.disabled}>
+    <WithTooltip
+      label={tooltip ?? props["aria-label"]}
+      description={comingSoon ? "Coming soon" : undefined}
+      disabled={props.disabled}
+    >
       <button
         type="button"
         aria-pressed={active}
@@ -88,6 +110,9 @@ function ToolbarIconButton({
           active && tone === "accent" && "bg-[#ebe9fe] text-[#6938ef]",
           active && tone === "default" && "bg-[#f2f4f7] text-[#101828]",
           !active && "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]",
+          // Not-yet-built tools stay hoverable (for the tooltip) but signal that
+          // they can't be actioned yet.
+          comingSoon && "cursor-not-allowed",
           className
         )}
         {...props}
@@ -242,10 +267,10 @@ export function LayoutBuilderToolbar() {
           >
             <AutoAwesomeIcon className="size-4 text-[#6938ef]" />
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Insert text" disabled={!canEdit}>
+          <ToolbarIconButton aria-label="Insert text" comingSoon>
             <Type aria-hidden />
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Theme" disabled={!canEdit}>
+          <ToolbarIconButton aria-label="Theme" comingSoon>
             <svg viewBox="0 0 24 24" fill="none" aria-hidden className="size-4">
               <path
                 d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1 .8-1.8 1.8-1.8H16a5 5 0 0 0 5-5c0-3.9-4-7-9-7Z"
@@ -257,6 +282,9 @@ export function LayoutBuilderToolbar() {
               <circle cx="10" cy="7.5" r="1" fill="currentColor" />
               <circle cx="14.5" cy="7.5" r="1" fill="currentColor" />
             </svg>
+          </ToolbarIconButton>
+          <ToolbarIconButton aria-label="Saved items" comingSoon>
+            <Save aria-hidden />
           </ToolbarIconButton>
         </div>
 

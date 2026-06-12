@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Eye, Pencil, Save } from "lucide-react"
+import { ArrowLeft, Pencil, Save } from "lucide-react"
 
 import { Button } from "@/components/highrise/button"
 import { useHubToast } from "@/components/payment-hub/hub-toast"
@@ -77,6 +77,12 @@ export function LayoutBuilderHeader() {
     router.push(LAYOUTS_LIST_HREF)
   }
 
+  const handleSave = () => {
+    // Persistence is stubbed in the prototype; saving confirms via a toast and
+    // keeps the user in the builder (unlike Publish, which returns to the list).
+    showSuccess(`${name} has been saved.`)
+  }
+
   const handlePublish = () => {
     showSuccess(`${name} has been published.`)
     router.push(LAYOUTS_LIST_HREF)
@@ -139,10 +145,7 @@ export function LayoutBuilderHeader() {
       </div>
 
       <div className="flex w-[200px] shrink-0 items-center justify-end gap-2">
-        <HeaderIconButton aria-label="Preview layout">
-          <Eye className="size-5" strokeWidth={2} aria-hidden />
-        </HeaderIconButton>
-        <HeaderIconButton aria-label="Save layout">
+        <HeaderIconButton aria-label="Save layout" onClick={handleSave}>
           <Save className="size-5" strokeWidth={2} aria-hidden />
         </HeaderIconButton>
         <Button
