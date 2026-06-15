@@ -153,14 +153,27 @@ export function LayoutPreviewPanel() {
             </header>
 
             <div className="mb-4 min-h-0 flex-1 overflow-hidden rounded-lg border border-[#eaecf0] bg-white">
-              <div className="h-full overflow-y-auto overflow-x-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={getLayoutThumbnail(layout.id, layout.clonedFromId)}
-                  alt={`Preview of ${layout.name}`}
-                  className="block h-auto w-full"
-                />
-              </div>
+              {layout.isBlank ? (
+                // A blank layout has no rendered document yet — mirror the card's
+                // empty thumbnail (Figma 3082:30384) instead of a stock template.
+                <div className="flex h-full items-center justify-center bg-[#f2f4f7]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/layouts/empty-thumbnail-default.png"
+                    alt={`${layout.name} is empty`}
+                    className="size-60"
+                  />
+                </div>
+              ) : (
+                <div className="h-full overflow-y-auto overflow-x-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={getLayoutThumbnail(layout.id, layout.clonedFromId)}
+                    alt={`Preview of ${layout.name}`}
+                    className="block h-auto w-full"
+                  />
+                </div>
+              )}
             </div>
 
             <footer className="flex shrink-0 flex-col gap-3">

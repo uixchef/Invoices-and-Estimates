@@ -18,6 +18,8 @@ import type { AiTodoItem } from "@/components/ai/ai-todo-list"
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
 import {
   playCompletionSound,
+  playErrorSound,
+  playQuestionSound,
   primeCompletionSound,
 } from "@/lib/completion-sound"
 import {
@@ -30,6 +32,7 @@ import {
   buildReasoning,
 } from "@/lib/builder-narrative"
 import { getDefaultPlacedContent } from "@/lib/placed-element-defaults"
+import { getDefaultBuilderMediumId } from "@/lib/mediums-data"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import {
   BUILDER_DOCUMENT_TYPES,
@@ -759,12 +762,34 @@ type LayoutBuilderContextValue = {
     kind: string
     label: string
     zone: PlacedElementZone
+    /** Insert position in the placed-element order (blank page). Appends if omitted. */
+    index?: number
   }) => void
   updatePlacedElementContent: (id: string, content: string) => void
   removePlacedElement: (id: string) => void
+  /** Inserts a copy of a placed element directly after the original. */
+  duplicatePlacedElement: (id: string) => void
+
+  /**
+   * "Start from blank" session: the builder opened on its empty state with no
+   * seed prompt. Drives the AI panel welcome state and the canvas empty state
+   * (Figma 3268:37410). Cleared the moment the user sends a prompt or places an
+   * element, after which the normal generate/edit flow takes over.
+   */
+  isBlankSession: boolean
+  /** Bumped to pull focus into the blank-state prompt input (e.g. canvas CTA). */
+  promptFocusToken: number
+  /** Requests focus on the blank-state prompt input. */
+  focusPrompt: () => void
 
   messages: BuilderMessage[]
   status: BuilderStatus
+  /** Human-readable failure reason shown while `status === "error"`. */
+  errorMessage: string | null
+  /** Re-runs the last failed turn (clears the error and tries again). */
+  retryGeneration: () => void
+  /** Dismisses the error and returns the builder to its prior resting state. */
+  dismissError: () => void
   /**
    * True once the builder has produced a layout at least once. Follow-up prompts
    * keep this set so the canvas can keep the existing layout on screen instead of
@@ -808,7 +833,8 @@ function nextMessageId() {
 }
 
 export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
-  const { consumePendingGeneration, consumePendingEdit } = useCreateWithAi()
+  const { consumePendingGeneration, consumePendingEdit, consumePendingBlank } =
+    useCreateWithAi()
 
   const [name, setName] = useState(DEFAULT_LAYOUT_NAME)
   const [draftName, setDraftName] = useState(DEFAULT_LAYOUT_NAME)
@@ -862,6 +888,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [canRedo, setCanRedo] = useState(false)
   const [messages, setMessages] = useState<BuilderMessage[]>([])
   const [status, setStatus] = useState<BuilderStatus>("idle")
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isBlankSession, setIsBlankSession] = useState(false)
+  const [promptFocusToken, setPromptFocusToken] = useState(0)
   const [hasGeneratedOnce, setHasGeneratedOnce] = useState(false)
   const [questions, setQuestions] = useState<AiQuestion[]>(BUILDER_QUESTIONS)
   const [answers, setAnswers] = useState<AiAnswers | null>(null)
@@ -1109,6 +1138,16 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     }
     initializedRef.current = true
 
+    // "Start from blank": open on the empty state (Figma 3268:37410). No seed
+    // prompt, no generation — the canvas shows the empty state and the panel
+    // shows the AI welcome until the user describes a layout or inserts an
+    // element. A default medium keeps the toolbar's size picker populated.
+    if (consumePendingBlank()) {
+      setIsBlankSession(true)
+      setMediumId(getDefaultBuilderMediumId())
+      return
+    }
+
     // "Edit" on an existing layout: restore it into a real, editable session.
     // We reconstruct the original prompt + answers deterministically, seed the
     // transcript, and land directly in the ready state (no generation
@@ -1116,6 +1155,20 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     // chat reads like the conversation that produced this layout.
     const editSeed = consumePendingEdit()
     if (editSeed) {
+      // A blank layout has no design yet — editing it reopens the same empty
+      // state as "Start from blank", but keyed to this layout (its name,
+      // medium, and document type are preserved). No reconstructed transcript,
+      // no ready state: the panel shows the AI welcome and the canvas shows the
+      // empty-state CTAs until the user describes a layout or inserts elements.
+      if (editSeed.isBlank) {
+        setName(editSeed.name)
+        setDraftName(editSeed.name)
+        setMediumId(editSeed.mediumId)
+        setDocumentType(editSeed.documentType)
+        setIsBlankSession(true)
+        return
+      }
+
       const session = deriveEditSession(editSeed)
       setName(editSeed.name)
       setDraftName(editSeed.name)
@@ -1197,7 +1250,22 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     // Think first, then clarify only the gaps the prompt left open — a detailed
     // brief (or a reference image) goes straight to generation.
     startReasoning(buildInitialQuestions(seed.prompt, seed.references.length > 0))
-  }, [consumePendingGeneration, consumePendingEdit, startReasoning])
+  }, [
+    consumePendingGeneration,
+    consumePendingEdit,
+    consumePendingBlank,
+    startReasoning,
+  ])
+
+  const focusPrompt = useCallback(() => {
+    // Bring the AI composer forward: open the panel and dismiss whatever else is
+    // occupying it (Add elements palette / Visual edits inspector), mirroring how
+    // `openAddElements` surfaces the palette. Then focus the prompt input.
+    setPanelOpen(true)
+    setAddingElement(false)
+    setInspectingLayer(null)
+    setPromptFocusToken((token) => token + 1)
+  }, [])
 
   useEffect(() => {
     const urls = referenceUrlsRef
@@ -1417,10 +1485,12 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       kind,
       label,
       zone,
+      index,
     }: {
       kind: string
       label: string
       zone: PlacedElementZone
+      index?: number
     }) => {
       pushHistory()
       placedElementCounterRef.current += 1
@@ -1431,16 +1501,23 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         const displayLabel =
           sameKind.length > 0 ? `${label} ${sameKind.length + 1}` : label
 
-        return [
-          ...current,
-          {
-            id,
-            kind,
-            label: displayLabel,
-            zone,
-            content: getDefaultPlacedContent(kind),
-          },
-        ]
+        const next: PlacedElement = {
+          id,
+          kind,
+          label: displayLabel,
+          zone,
+          content: getDefaultPlacedContent(kind),
+        }
+
+        if (index == null) {
+          return [...current, next]
+        }
+        // Positional insert for the blank build-from-scratch page (drop between
+        // existing blocks). The blank session stays blank — the page just
+        // accumulates the elements the user drops, no invoice scaffold.
+        const copy = [...current]
+        copy.splice(Math.max(0, Math.min(index, copy.length)), 0, next)
+        return copy
       })
     },
     [pushHistory]
@@ -1464,6 +1541,30 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setPlacedElements((current) =>
         current.filter((element) => element.id !== id)
       )
+    },
+    [pushHistory]
+  )
+
+  const duplicatePlacedElement = useCallback(
+    (id: string) => {
+      pushHistory()
+      placedElementCounterRef.current += 1
+      const copyId = `placed-${placedElementCounterRef.current}`
+      setPlacedElements((current) => {
+        const index = current.findIndex((element) => element.id === id)
+        if (index === -1) {
+          return current
+        }
+        const source = current[index]
+        const copy: PlacedElement = {
+          ...source,
+          id: copyId,
+          label: `${source.label} copy`,
+        }
+        const next = [...current]
+        next.splice(index + 1, 0, copy)
+        return next
+      })
     },
     [pushHistory]
   )
@@ -1546,6 +1647,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     startThinking()
   }, [startThinking])
 
+  // Marks the current turn as failed. The status effect plays the error cue on
+  // entry; the panel surfaces the reason with a retry affordance.
+  const failGeneration = useCallback((message: string) => {
+    setErrorMessage(message)
+    setQuestions([])
+    setStatus("error")
+  }, [])
+
   const sendMessage = useCallback(
     (text: string, references: BuilderReferenceImage[] = []) => {
       const trimmed = text.trim()
@@ -1553,9 +1662,15 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      // Warm the audio context under this click so the completion cue is
-      // allowed to play once generation settles (timer-driven, no gesture).
+      // Warm the audio context under this click so the completion/error cue is
+      // allowed to play once the turn settles (timer-driven, no gesture).
       primeCompletionSound()
+
+      // The first prompt ends the blank empty state; the generate flow takes over.
+      setIsBlankSession(false)
+
+      // A new turn supersedes any prior failure.
+      setErrorMessage(null)
 
       // New turn — clear any prior answer recap until this turn asks again.
       setReceivedAnswers(null)
@@ -1577,12 +1692,43 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         },
       ])
 
+      // Can't reach the model offline — fail the turn so the user gets a clear
+      // error (and the error cue) instead of a generation that never resolves.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        failGeneration(
+          "Couldn't reach Invoice AI. Check your connection and try again."
+        )
+        return
+      }
+
       // Always think first; only interrupt with questions when the request
       // reads as ambiguous, otherwise reasoning rolls into generation.
       startReasoning(buildFollowUpQuestions(trimmed))
     },
-    [startReasoning]
+    [startReasoning, failGeneration]
   )
+
+  const retryGeneration = useCallback(() => {
+    const lastUser = [...messages]
+      .reverse()
+      .find((message) => message.role === "user")
+    const prompt = lastUser?.text ?? ""
+    setErrorMessage(null)
+
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      failGeneration(
+        "Couldn't reach Invoice AI. Check your connection and try again."
+      )
+      return
+    }
+
+    startReasoning(buildFollowUpQuestions(prompt))
+  }, [messages, startReasoning, failGeneration])
+
+  const dismissError = useCallback(() => {
+    setErrorMessage(null)
+    setStatus(hasGeneratedOnce ? "ready" : "idle")
+  }, [hasGeneratedOnce])
 
   const generatedLayout = useMemo<GeneratedLayout>(() => {
     const firstUser = messages.find((message) => message.role === "user")
@@ -1615,6 +1761,18 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
     if (status === "ready" && wasGenerating) {
       playCompletionSound()
+    }
+
+    // Soft prompt chime when the AI surfaces clarifying questions, so the user
+    // notices the turn now needs their input.
+    if (status === "asking" && previous !== "asking") {
+      playQuestionSound()
+    }
+
+    // Distinct descending cue when a turn fails, so a failure is noticed even if
+    // the user has looked away from the panel.
+    if (status === "error" && previous !== "error") {
+      playErrorSound()
     }
   }, [status])
 
@@ -1746,8 +1904,15 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       addPlacedElement,
       updatePlacedElementContent,
       removePlacedElement,
+      duplicatePlacedElement,
+      isBlankSession,
+      promptFocusToken,
+      focusPrompt,
       messages,
       status,
+      errorMessage,
+      retryGeneration,
+      dismissError,
       hasGeneratedOnce,
       preThoughtDurationSec,
       preReasoning,
@@ -1813,8 +1978,15 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       addPlacedElement,
       updatePlacedElementContent,
       removePlacedElement,
+      duplicatePlacedElement,
+      isBlankSession,
+      promptFocusToken,
+      focusPrompt,
       messages,
       status,
+      errorMessage,
+      retryGeneration,
+      dismissError,
       hasGeneratedOnce,
       preThoughtDurationSec,
       preReasoning,

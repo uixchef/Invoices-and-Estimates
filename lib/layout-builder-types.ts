@@ -110,6 +110,12 @@ export type LayoutBuilderEditSeed = {
   mediumId: string
   /** Stable derivation seed (the layout's numeric index) for the design. */
   seed: number
+  /**
+   * The layout was never built out (no design yet). Editing it opens the
+   * builder on the blank empty state — AI welcome panel + canvas CTAs — rather
+   * than reconstructing a generated document.
+   */
+  isBlank?: boolean
 }
 
 import type { AiTodoItem } from "@/components/ai/ai-todo-list"
@@ -154,6 +160,7 @@ export type BuilderStatus =
   | "asking"
   | "thinking"
   | "ready"
+  | "error"
 
 export type BuilderViewMode = "preview" | "code"
 

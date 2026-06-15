@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -24,6 +25,7 @@ import {
 
 import { GeneratingCarousel } from "@/components/invoices/builder/generating-carousel"
 import { VisualEditSelector } from "@/components/invoices/builder/visual-edit-selector"
+import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
 import {
   DELETE_CANCEL_LABEL,
@@ -2039,22 +2041,495 @@ const MIN_CODE_PX = 280
 const MIN_PREVIEW_PX = 320
 const SPLIT_KEYBOARD_STEP = 0.04
 
+/**
+ * Canvas empty state for a blank start (Figma 3268:37410 / 3268:38357). Two
+ * paths out: insert elements manually (opens the Add elements palette) or hand
+ * off to Invoice AI (focuses the welcome prompt input).
+ */
+function CanvasBlankEmptyState({
+  onInsertElements,
+  onGenerate,
+}: {
+  onInsertElements: () => void
+  onGenerate: () => void
+}) {
+  return (
+    <div className="flex flex-1 items-center justify-center overflow-auto bg-[#f9fafb] p-6">
+      <div className="flex w-[440px] max-w-full flex-col items-center gap-4">
+        <div className="flex flex-col items-center gap-1 text-center">
+          <p className="font-[family-name:var(--font-inter)] text-lg font-semibold leading-7 text-[#101828]">
+            Start creating your invoice layout
+          </p>
+          <p className="font-[family-name:var(--font-inter)] text-sm font-normal leading-5 text-[#475467]">
+            Add elements manually or let AI build your page — your creative
+            journey starts here!
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onInsertElements}
+            className={cn(
+              "inline-flex items-center justify-center gap-2 rounded-[8px] border border-[#d0d5dd] bg-white px-4 py-2.5 outline-none transition-colors",
+              "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#344054]",
+              "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#f9fafb] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+            )}
+          >
+            <Plus className="size-5 shrink-0" strokeWidth={2} aria-hidden />
+            Insert elements
+          </button>
+          <button
+            type="button"
+            onClick={onGenerate}
+            className={cn(
+              "inline-flex items-center justify-center gap-2 rounded-[8px] border border-[#6938ef] bg-[#6938ef] px-4 py-2.5 outline-none transition-colors",
+              "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-white",
+              "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:border-[#5925dc] hover:bg-[#5925dc] focus-visible:ring-2 focus-visible:ring-[#6938ef]/40"
+            )}
+          >
+            <AutoAwesomeIcon className="size-5 shrink-0" />
+            Generate with AI
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Thick blue insertion line shown at the active drop position on the blank page
+ * (matches the funnel-builder drop affordance). End caps + a 3px bar read as a
+ * clear "your element lands here" cue. Collapses to nothing when inactive.
+ */
+function DropIndicator({ active }: { active: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex w-full items-center transition-opacity duration-150",
+        active ? "opacity-100" : "h-0 opacity-0"
+      )}
+      aria-hidden
+    >
+      <span className="size-2 shrink-0 rounded-full bg-[#2970ff]" />
+      <span className="h-[3px] flex-1 rounded-full bg-[#2970ff]" />
+      <span className="size-2 shrink-0 rounded-full bg-[#2970ff]" />
+    </div>
+  )
+}
+
+/**
+ * Drop target on the blank build-from-scratch page. `seam` is the thin gap
+ * between placed blocks; `fill` is the tall empty-page target shown before the
+ * first element exists. Both insert at `index` so a drop lands exactly where
+ * the blue line previews.
+ */
+function BlankDropZone({
+  index,
+  variant = "seam",
+}: {
+  index: number
+  variant?: "seam" | "fill" | "tail"
+}) {
+  const { addPlacedElement } = useLayoutBuilder()
+  const [over, setOver] = useState(false)
+
+  const accept = (event: React.DragEvent) => {
+    if (!event.dataTransfer.types.includes(ELEMENT_DRAG_MIME)) {
+      return
+    }
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "copy"
+    setOver(true)
+  }
+
+  const handleDragLeave = (event: React.DragEvent) => {
+    const related = event.relatedTarget as Node | null
+    if (related && event.currentTarget.contains(related)) {
+      return
+    }
+    setOver(false)
+  }
+
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault()
+    // Stop the canvas-level handler from treating this as a miss/revert.
+    event.stopPropagation()
+    setOver(false)
+    const payload = parseElementDrag(event.dataTransfer)
+    if (!payload) {
+      return
+    }
+    addPlacedElement({
+      kind: payload.kind,
+      label: payload.label,
+      zone: "end",
+      index,
+    })
+  }
+
+  if (variant === "fill") {
+    return (
+      <div
+        onDragOver={accept}
+        onDragEnter={accept}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={cn(
+          "flex min-h-[320px] flex-1 flex-col items-center justify-center gap-3 rounded-[8px] border border-dashed p-8 text-center transition-colors",
+          over ? "border-[#2970ff] bg-[#eff8ff]" : "border-[#d0d5dd] bg-transparent"
+        )}
+      >
+        <DropIndicator active={over} />
+        <p className="font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#475467]">
+          Drop elements here to start building
+        </p>
+        <p className="font-[family-name:var(--font-inter)] text-xs leading-[18px] text-[#98a2b3]">
+          Drag any element from the Add elements panel onto the page
+        </p>
+      </div>
+    )
+  }
+
+  // The trailing zone grows to fill the rest of the sheet so a drop anywhere in
+  // the empty space below the last block appends to the end.
+  if (variant === "tail") {
+    return (
+      <div
+        onDragOver={accept}
+        onDragEnter={accept}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className="flex min-h-[56px] flex-1 flex-col pt-1.5"
+        aria-hidden
+      >
+        <DropIndicator active={over} />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      onDragOver={accept}
+      onDragEnter={accept}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className="relative -my-1.5 flex h-3 items-center"
+      aria-hidden
+    >
+      <DropIndicator active={over} />
+    </div>
+  )
+}
+
+/** A placed block on the blank page: inline-editable, with a hover remove control. */
+function BlankPlacedElement({ element }: { element: PlacedElement }) {
+  const {
+    inspectingLayer,
+    inspectLayer,
+    seedLayer,
+    sendMessage,
+    layerText,
+    layerStyles,
+    updatePlacedElementContent,
+    duplicatePlacedElement,
+    removePlacedElement,
+  } = useLayoutBuilder()
+  const [pendingRemove, setPendingRemove] = useState(false)
+  const nodeRef = useRef<HTMLDivElement>(null)
+
+  // Inspector / inline edits win for display, mirroring the AI-flow layers so a
+  // dropped element behaves identically once it lands on the page.
+  const label = element.label
+  const displayContent = layerText[label] ?? element.content
+  // Selected ring tracks the open Visual edits inspector — we deliberately don't
+  // push a composer selection chip here (keeps the AiComposer unchanged).
+  const isSelected = inspectingLayer === label
+  const appliedStyle = styleFromLayer(layerStyles[label])
+
+  // Capture the element's live content + computed typography on first inspect so
+  // the Visual edits panel opens pre-filled, exactly like the AI-flow layers.
+  const openInspector = () => {
+    const node = nodeRef.current
+    if (node) {
+      const cs = window.getComputedStyle(node)
+      const align = ["left", "center", "right", "justify"].includes(cs.textAlign)
+        ? (cs.textAlign as BuilderLayerStyle["textAlign"])
+        : "left"
+      seedLayer(label, {
+        content: displayContent,
+        style: {
+          fontFamily: cs.fontFamily,
+          fontSize: Math.round(parseFloat(cs.fontSize)) || undefined,
+          fontStyle: cs.fontStyle === "italic" ? "italic" : "normal",
+          fontWeight: Number(cs.fontWeight) || undefined,
+          textAlign: align,
+          color: cs.color,
+        },
+      })
+    }
+    inspectLayer(label)
+  }
+
+  return (
+    <>
+      <VisualEditSelector
+        label={label}
+        selected={isSelected}
+        onSelect={openInspector}
+        onSubmitPrompt={(text) => sendMessage(`${label}: ${text}`)}
+        rightActions={[
+          {
+            icon: <Copy />,
+            label: `Duplicate ${label}`,
+            onClick: () => duplicatePlacedElement(element.id),
+          },
+          {
+            icon: <Trash2 />,
+            label: `Delete ${label}`,
+            onClick: () => setPendingRemove(true),
+          },
+        ]}
+        className="block"
+      >
+        <div ref={nodeRef} style={appliedStyle}>
+          <PlacedElementView
+            element={
+              displayContent === element.content
+                ? element
+                : { ...element, content: displayContent }
+            }
+            editMode
+            onContentChange={(content) =>
+              updatePlacedElementContent(element.id, content)
+            }
+          />
+        </div>
+      </VisualEditSelector>
+      <ConfirmationDialog
+        open={pendingRemove}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingRemove(false)
+          }
+        }}
+        title="Delete element"
+        description={getDeleteConfirmationDescription(element.label)}
+        confirmLabel={DELETE_CONFIRMATION_LABEL}
+        cancelLabel={DELETE_CANCEL_LABEL}
+        variant="destructive"
+        onConfirm={() => {
+          removePlacedElement(element.id)
+          setPendingRemove(false)
+        }}
+        onCancel={() => setPendingRemove(false)}
+      />
+    </>
+  )
+}
+
+/**
+ * The blank build-from-scratch page: a white invoice-sized sheet that only ever
+ * holds the elements the user drops (no invoice scaffold). Drop seams between
+ * blocks let new elements be inserted at any position.
+ */
+function BlankPage() {
+  const { placedElements, mediumId } = useLayoutBuilder()
+  const profile = getDocumentPageProfile(mediumId)
+  const { padding } = profile
+
+  return (
+    <DocumentStage>
+      <div
+        className={cn(DOCUMENT_PAPER_SHELL, "font-[family-name:var(--font-inter)]")}
+        style={{ minHeight: profile.heightPx }}
+      >
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          style={{
+            minHeight: profile.heightPx,
+            paddingTop: padding.top,
+            paddingBottom: padding.bottom,
+            paddingLeft: padding.left,
+            paddingRight: padding.right,
+          }}
+        >
+          {placedElements.length === 0 ? (
+            <BlankDropZone index={0} variant="fill" />
+          ) : (
+            <>
+              <BlankDropZone index={0} />
+              {placedElements.map((element, elementIndex) => (
+                <Fragment key={element.id}>
+                  <BlankPlacedElement element={element} />
+                  {elementIndex < placedElements.length - 1 ? (
+                    <BlankDropZone index={elementIndex + 1} />
+                  ) : null}
+                </Fragment>
+              ))}
+              <BlankDropZone index={placedElements.length} variant="tail" />
+            </>
+          )}
+        </div>
+      </div>
+    </DocumentStage>
+  )
+}
+
+/**
+ * Blank-start canvas. At rest with nothing placed it shows the empty-state CTAs
+ * (Figma 3268:37410). Dragging an element from the Add elements palette swaps in
+ * the blank page so the thick blue insertion line previews where the drop will
+ * land; dropping places the element on the page (build-from-scratch — no invoice
+ * scaffold). Dragging back out before dropping restores the empty state. Once
+ * any element exists, the page stays visible.
+ */
+function BlankCanvas({
+  onInsertElements,
+  onGenerate,
+}: {
+  onInsertElements: () => void
+  onGenerate: () => void
+}) {
+  const { placedElements } = useLayoutBuilder()
+  const [dragging, setDragging] = useState(false)
+  // Enter/leave fire for every nested child during a drag; a depth counter
+  // tells a real boundary crossing apart from movement between children.
+  const depthRef = useRef(0)
+
+  // Safety net for a cancelled drag: when a drag ends without a drop (dropped
+  // off-canvas, or Escape), the canvas may never receive a balanced dragleave —
+  // the element under the cursor can unmount mid-drag. `dragend`/`drop` fire
+  // globally at the end of any drag, so reset there to restore the empty state.
+  useEffect(() => {
+    const reset = () => {
+      depthRef.current = 0
+      setDragging(false)
+    }
+    window.addEventListener("dragend", reset)
+    window.addEventListener("drop", reset)
+    return () => {
+      window.removeEventListener("dragend", reset)
+      window.removeEventListener("drop", reset)
+    }
+  }, [])
+
+  const carriesElement = (event: React.DragEvent) =>
+    event.dataTransfer.types.includes(ELEMENT_DRAG_MIME)
+
+  const handleDragEnter = (event: React.DragEvent) => {
+    if (!carriesElement(event)) {
+      return
+    }
+    event.preventDefault()
+    depthRef.current += 1
+    setDragging(true)
+  }
+
+  const handleDragOver = (event: React.DragEvent) => {
+    if (!carriesElement(event)) {
+      return
+    }
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "copy"
+  }
+
+  const handleDragLeave = (event: React.DragEvent) => {
+    if (!carriesElement(event)) {
+      return
+    }
+    depthRef.current = Math.max(0, depthRef.current - 1)
+    if (depthRef.current === 0) {
+      setDragging(false)
+    }
+  }
+
+  const handleDrop = () => {
+    depthRef.current = 0
+    setDragging(false)
+  }
+
+  const hasContent = placedElements.length > 0
+  const showPage = hasContent || dragging
+
+  return (
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {showPage ? (
+        <div className="flex min-w-0 flex-1 items-start justify-center overflow-auto bg-[#f9fafb] p-4">
+          <BlankPage />
+        </div>
+      ) : (
+        <CanvasBlankEmptyState
+          onInsertElements={onInsertElements}
+          onGenerate={onGenerate}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * The "AI working" canvas outline: a light beam travels around the canvas border
+ * while the AI customizes existing content, so the user keeps seeing their work
+ * (no full-screen takeover or content tint) with clear feedback that a change is
+ * in flight. Pointer-events-none so the content underneath stays inert.
+ */
+function CanvasWorkingEdge() {
+  return (
+    <div
+      aria-hidden
+      className="canvas-working-edge pointer-events-none absolute inset-0 z-10"
+    />
+  )
+}
+
 export function LayoutBuilderCanvas() {
   const {
     status,
     hasGeneratedOnce,
+    placedElements,
     codeOpen,
     previewOpen,
     codeOverride,
     isCodeDetached,
+    isBlankSession,
+    openAddElements,
+    focusPrompt,
   } = useLayoutBuilder()
   // Resolves medium context for future preview sizing; kept for parity with prompt selection.
   useMediumsStore()
 
   const isReady = status === "ready"
-  // The full-screen generating animation is only for the very first build. Once
-  // a layout exists, follow-up prompts keep it on screen while the AI works.
-  const showCarousel = !isReady && !hasGeneratedOnce
+  // Blank build-from-scratch session (Figma 3268:37410): the canvas owns its own
+  // empty / drag / placed-content states, so it stays mounted for the whole
+  // session until the user hands off to AI generation (status leaves "idle").
+  const blankMode = isBlankSession && status === "idle"
+  // User dropped elements and then asked the AI to customize them: keep their
+  // build-from-scratch page on screen (no generating carousel takeover) while
+  // the AI works, overlaid with the working glow (Figma 3300:45143).
+  const customizingPlaced =
+    placedElements.length > 0 && !blankMode && !isReady
+  // The full-screen generating animation is only for the very first build with
+  // nothing on the canvas yet. Once a layout exists — or the user has dropped
+  // elements to customize — follow-up prompts keep the canvas visible instead.
+  const showCarousel =
+    !isReady &&
+    !hasGeneratedOnce &&
+    !blankMode &&
+    !customizingPlaced &&
+    status !== "error"
+  // Traveling outline beam while the AI is engaged with content already on the
+  // canvas (placed elements or a generated layout) — through reasoning, asking
+  // clarifying questions, and generating.
+  const aiWorking =
+    status === "thinking" || status === "reasoning" || status === "asking"
+  const showWorkingEdge =
+    aiWorking && (placedElements.length > 0 || hasGeneratedOnce)
   const showCode = isReady && codeOpen
   const showPreview = isReady && previewOpen
   const showSplit = showCode && showPreview
@@ -2144,7 +2619,16 @@ export function LayoutBuilderCanvas() {
               : "bg-[#f9fafb]"
         )}
       >
-        {showCarousel ? (
+        {blankMode ? (
+          <BlankCanvas
+            onInsertElements={openAddElements}
+            onGenerate={focusPrompt}
+          />
+        ) : customizingPlaced ? (
+          <div className="flex min-w-0 flex-1 items-start justify-center overflow-auto bg-[#f9fafb] p-4">
+            <BlankPage />
+          </div>
+        ) : showCarousel ? (
           <div className="flex flex-1 items-center justify-center overflow-hidden">
             <GeneratingCarousel />
           </div>
@@ -2214,6 +2698,8 @@ export function LayoutBuilderCanvas() {
             )}
           </div>
         )}
+
+        {showWorkingEdge ? <CanvasWorkingEdge /> : null}
       </div>
     </div>
   )

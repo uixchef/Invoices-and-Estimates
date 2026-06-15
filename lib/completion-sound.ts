@@ -99,3 +99,102 @@ export function playCompletionSound(volume = DEFAULT_VOLUME): void {
   source.start(t)
   source.stop(t + 0.15)
 }
+
+const QUESTION_VOLUME = 0.4
+
+/**
+ * Plays a soft two-note "question" chime — a gentle rising interval (E5 → B5)
+ * of triangle tones, clearly distinct from the receipt-tear completion cue.
+ * Signals the AI is asking for input. Debounced and a no-op without Web Audio,
+ * so it's safe to call on the status transition.
+ */
+export function playQuestionSound(volume = QUESTION_VOLUME): void {
+  const ctx = getContext()
+  if (!ctx) {
+    return
+  }
+
+  const now = Date.now()
+  if (now - lastPlayed < MIN_INTERVAL_MS) {
+    return
+  }
+  lastPlayed = now
+
+  const t = ctx.currentTime
+  // Rising two-note prompt: E5 then B5, each a soft triangle "mallet" tone.
+  const notes: { freq: number; at: number }[] = [
+    { freq: 659.25, at: 0 },
+    { freq: 987.77, at: 0.11 },
+  ]
+
+  for (const { freq, at } of notes) {
+    const start = t + at
+    const osc = ctx.createOscillator()
+    osc.type = "triangle"
+    osc.frequency.setValueAtTime(freq, start)
+
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0, start)
+    gain.gain.linearRampToValueAtTime(volume, start + 0.012)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22)
+
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+
+    osc.start(start)
+    osc.stop(start + 0.26)
+  }
+}
+
+const ERROR_VOLUME = 0.45
+
+/**
+ * Plays a low, descending two-note "error" cue (A3 → E3) on softened sawtooth
+ * tones — clearly negative and distinct from both the receipt-tear completion
+ * cue and the rising question chime. Signals that a turn failed. Debounced and a
+ * no-op without Web Audio, so it's safe to call on the status transition.
+ */
+export function playErrorSound(volume = ERROR_VOLUME): void {
+  const ctx = getContext()
+  if (!ctx) {
+    return
+  }
+
+  const now = Date.now()
+  if (now - lastPlayed < MIN_INTERVAL_MS) {
+    return
+  }
+  lastPlayed = now
+
+  const t = ctx.currentTime
+  // Falling two-note cue: A3 then E3, a descending interval that reads as a
+  // gentle "uh-oh" without being harsh.
+  const notes: { freq: number; at: number }[] = [
+    { freq: 220, at: 0 },
+    { freq: 164.81, at: 0.13 },
+  ]
+
+  for (const { freq, at } of notes) {
+    const start = t + at
+    const osc = ctx.createOscillator()
+    osc.type = "sawtooth"
+    osc.frequency.setValueAtTime(freq, start)
+
+    // Tame the sawtooth's edge so it reads soft rather than buzzy.
+    const filter = ctx.createBiquadFilter()
+    filter.type = "lowpass"
+    filter.frequency.setValueAtTime(1200, start)
+
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0, start)
+    gain.gain.linearRampToValueAtTime(volume, start + 0.014)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.3)
+
+    osc.connect(filter)
+    filter.connect(gain)
+    gain.connect(ctx.destination)
+
+    osc.start(start)
+    osc.stop(start + 0.34)
+  }
+}

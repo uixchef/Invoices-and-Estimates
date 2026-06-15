@@ -75,6 +75,10 @@ type CreateWithAiContextValue = {
   requestLayoutEdit: (seed: LayoutBuilderEditSeed) => void
   /** Reads and clears the edit request queued for the builder route. */
   consumePendingEdit: () => LayoutBuilderEditSeed | null
+  /** "Start from blank" — opens the builder on its empty state (no seed prompt). */
+  startBlankLayout: () => void
+  /** Reads and clears the blank-session request queued for the builder route. */
+  consumePendingBlank: () => boolean
 }
 
 const CreateWithAiContext = createContext<CreateWithAiContextValue | null>(null)
@@ -85,6 +89,7 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
   const attachmentsRef = useRef<PromptAttachment[]>([])
   const pendingGenerationRef = useRef<LayoutBuilderSeed | null>(null)
   const pendingEditRef = useRef<LayoutBuilderEditSeed | null>(null)
+  const pendingBlankRef = useRef(false)
 
   const [isOpen, setIsOpen] = useState(false)
   const [prompt, setPrompt] = useState("")
@@ -202,6 +207,22 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
     return seed
   }, [])
 
+  const startBlankLayout = useCallback(() => {
+    // A blank start supersedes any queued generation/edit — the builder should
+    // open on its empty state, not a stale seed.
+    pendingGenerationRef.current = null
+    pendingEditRef.current = null
+    pendingBlankRef.current = true
+    setIsOpen(false)
+    router.push(LAYOUT_BUILDER_ROUTE)
+  }, [router])
+
+  const consumePendingBlank = useCallback(() => {
+    const blank = pendingBlankRef.current
+    pendingBlankRef.current = false
+    return blank
+  }, [])
+
   useEffect(() => {
     return () => {
       revokeAttachmentUrls(attachmentsRef.current)
@@ -223,6 +244,8 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
       consumePendingGeneration,
       requestLayoutEdit,
       consumePendingEdit,
+      startBlankLayout,
+      consumePendingBlank,
     }),
     [
       addAttachments,
@@ -237,6 +260,8 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
       prompt,
       removeAttachment,
       toggle,
+      startBlankLayout,
+      consumePendingBlank,
     ]
   )
 

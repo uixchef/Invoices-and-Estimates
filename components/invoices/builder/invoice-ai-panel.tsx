@@ -2,15 +2,19 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
+  AlertCircle,
   AtSign,
   ChevronDown,
+  ImageIcon,
   Link2,
   MousePointerClick,
   Palette,
   Paperclip,
+  RotateCcw,
   Send,
   Settings2,
   Square,
+  Upload,
   X,
 } from "lucide-react"
 
@@ -20,6 +24,7 @@ import { AiQuestions } from "@/components/ai/ai-questions"
 import { AiTodoList } from "@/components/ai/ai-todo-list"
 import { StreamingText } from "@/components/ai/streaming-text"
 import { AddElementsPanel } from "@/components/invoices/builder/add-elements-panel"
+import { AiWelcomeState } from "@/components/invoices/builder/ai-welcome-state"
 import { VisualEditsPanel } from "@/components/invoices/builder/visual-edits-panel"
 import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
 import {
@@ -244,6 +249,9 @@ function AiComposer() {
   const {
     sendMessage,
     status,
+    errorMessage,
+    retryGeneration,
+    dismissError,
     stopGeneration,
     questions,
     submitAnswers,
@@ -252,17 +260,28 @@ function AiComposer() {
     editMode,
     toggleEditMode,
     isCodeDetached,
+    inspectingLayer,
+    inspectLayer,
     selections,
     removeSelection,
     clearSelections,
+    isBlankSession,
   } = useLayoutBuilder()
   const [value, setValue] = useState("")
   const [modelId, setModelId] = useState(AI_MODELS[0].id)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // The Edit / model actions appear once there's a generated layout to act on.
+  // The Edit / model actions appear once there's a generated layout to act on,
+  // and also in a blank build-from-scratch session where elements are dropped
+  // directly onto the page — the composer stays identical to the AI flow.
   const hasGenerated =
     status === "ready" || messages.some((message) => message.role === "assistant")
+  const showComposerActions = hasGenerated || isBlankSession
+  // The Edit toggle reads active whenever a layer's Visual edits panel is open —
+  // in the AI flow that always implies edit mode; the blank flow opens the
+  // inspector directly, so fold the inspecting state into the active look too.
+  const editActive = editMode || inspectingLayer !== null
   const activeModel =
     AI_MODELS.find((model) => model.id === modelId) ?? AI_MODELS[0]
 
@@ -309,6 +328,40 @@ function AiComposer() {
                 onComplete={submitAnswers}
                 onSkip={skipQuestions}
               />
+            </div>
+          ) : null}
+
+          {status === "error" ? (
+            <div
+              role="alert"
+              className="mb-2 flex w-full items-start gap-2.5 rounded-lg border border-[#fda29b] bg-[#fffbfa] p-3"
+            >
+              <AlertCircle
+                className="mt-px size-4 shrink-0 text-[#d92d20]"
+                aria-hidden
+              />
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <p className="font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#b42318]">
+                  {errorMessage ?? "Something went wrong. Please try again."}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={retryGeneration}
+                    className="inline-flex h-7 items-center justify-center gap-1 rounded-[6px] border border-[#d92d20] bg-[#d92d20] px-2.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-[17px] text-white outline-none transition-colors hover:bg-[#b42318] focus-visible:ring-2 focus-visible:ring-[#d92d20]/40"
+                  >
+                    <RotateCcw className="size-3.5" aria-hidden />
+                    Try again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={dismissError}
+                    className="inline-flex h-7 items-center justify-center rounded-[6px] px-2.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-[17px] text-[#667085] outline-none transition-colors hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
             </div>
           ) : null}
           <div
@@ -375,26 +428,72 @@ function AiComposer() {
 
           <div className="flex items-center gap-1">
             <div className="flex items-center gap-0.5">
-              <button
-                type="button"
-                aria-label="Attach file"
-                disabled={isBusy}
-                className={cn(
-                  "inline-flex size-6 items-center justify-center rounded-[4px] text-[#667085] outline-none transition-colors",
-                  "hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
-                  "disabled:cursor-not-allowed disabled:text-[#d0d5dd] disabled:hover:bg-transparent"
-                )}
-              >
-                <Paperclip className="size-4" aria-hidden />
-              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                multiple
+                className="hidden"
+                aria-hidden
+                tabIndex={-1}
+                onChange={(event) => {
+                  event.target.value = ""
+                }}
+              />
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Attach file"
+                    disabled={isBusy}
+                    className={cn(
+                      "inline-flex size-6 items-center justify-center rounded-[4px] text-[#667085] outline-none transition-colors",
+                      "hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
+                      "disabled:cursor-not-allowed disabled:text-[#d0d5dd] disabled:hover:bg-transparent"
+                    )}
+                  >
+                    <Paperclip className="size-4" aria-hidden />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="min-w-[220px] rounded-lg"
+                >
+                  <DropdownMenuItem
+                    className="gap-2.5 px-3 py-2"
+                    onSelect={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="size-4 text-[#667085]" aria-hidden />
+                    <span className="font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054]">
+                      Upload file
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2.5 px-3 py-2">
+                    <ImageIcon className="size-4 text-[#667085]" aria-hidden />
+                    <span className="font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054]">
+                      Add from media library
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               {/* Visual edit toggle (Figma 3191:71120 / 3192:71293): gray at
                   rest, purple while editing the invoice directly. */}
-              {hasGenerated ? (
+              {showComposerActions ? (
                 <button
                   type="button"
-                  aria-pressed={editMode}
-                  onClick={toggleEditMode}
+                  aria-pressed={editActive}
+                  onClick={() => {
+                    // One click should always exit the active state: close the
+                    // open inspector directly when edit mode isn't what's driving
+                    // it (blank flow), otherwise toggle edit mode as usual.
+                    if (inspectingLayer !== null && !editMode) {
+                      inspectLayer(null)
+                    } else {
+                      toggleEditMode()
+                    }
+                  }}
                   disabled={isCodeDetached}
                   title={
                     isCodeDetached
@@ -405,7 +504,7 @@ function AiComposer() {
                     "inline-flex h-6 items-center justify-center gap-1 rounded-[4px] border px-1.5 outline-none transition-colors",
                     "text-xs font-semibold leading-[17px] focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
                     "disabled:cursor-not-allowed disabled:border-[#f9fafb] disabled:bg-[#f2f4f7] disabled:text-[#d0d5dd]",
-                    editMode
+                    editActive
                       ? "border-[#f4f3ff] bg-[#ebe9fe] text-[#5925dc]"
                       : "border-[#f9fafb] bg-[#f2f4f7] text-[#475467] hover:bg-[#eaecf0]"
                   )}
@@ -418,7 +517,7 @@ function AiComposer() {
 
             <div className="min-w-px flex-1" />
 
-            {hasGenerated ? (
+            {showComposerActions ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   className={cn(
@@ -548,6 +647,7 @@ export function InvoiceAiPanel({
     closeAddElements,
     editMode,
     toggleEditMode,
+    isBlankSession,
   } = useLayoutBuilder()
   const scrollRef = useRef<HTMLDivElement>(null)
   const inspecting = inspectingLayer !== null
@@ -555,6 +655,10 @@ export function InvoiceAiPanel({
   // Edit mode is on but nothing is selected yet — show the educational empty
   // state prompting the user to pick an element on the canvas (Figma 3249:58583).
   const editsEmpty = editMode && !inspecting && !adding
+  // "Start from blank" welcome state (Figma 3268:37411) — greeting + suggestions
+  // + prompt input. Yields to the palette/inspector if the user opens those.
+  const blankWelcome =
+    isBlankSession && status === "idle" && !inspecting && !adding && !editsEmpty
   const lastTurnRef = useRef<HTMLDivElement>(null)
   // Drives the spacer min-height on the latest turn so its prompt can always be
   // scrolled to the very top of the viewport, the way Cursor pins each turn.
@@ -596,7 +700,12 @@ export function InvoiceAiPanel({
       style={{ width }}
       className="flex h-full shrink-0 flex-col overflow-hidden rounded-[12px] bg-white shadow-[0_12px_8px_rgba(16,24,40,0.08),0_4px_3px_rgba(16,24,40,0.03)]"
     >
-      <div className={cn("flex flex-col gap-3 px-4 pt-4", inspecting ? "pb-4" : "pb-0")}>
+      <div
+        className={cn(
+          "flex flex-col gap-3 px-4 pt-4",
+          inspecting || blankWelcome ? "pb-4" : "pb-0"
+        )}
+      >
         <div className="flex items-center gap-2">
           {!inspecting && !adding && !editsEmpty ? (
             <AutoAwesomeIcon className="size-4 shrink-0 text-[#6938ef]" />
@@ -657,6 +766,8 @@ export function InvoiceAiPanel({
         <div className="min-h-0 flex-1 overflow-y-auto px-4">
           <VisualEditsPanel />
         </div>
+      ) : blankWelcome ? (
+        <AiWelcomeState />
       ) : editsEmpty ? (
         <EditsEmptyState />
       ) : (
@@ -732,7 +843,10 @@ export function InvoiceAiPanel({
       </div>
       )}
 
-      <AiComposer />
+      {/* The docked composer is a chat affordance — hidden in the Add elements
+          palette (a drag-and-drop surface) and in the blank welcome state, which
+          carries its own prompt input. */}
+      {adding || blankWelcome ? null : <AiComposer />}
     </aside>
   )
 }

@@ -222,6 +222,7 @@ export function LayoutBuilderToolbar() {
     canRedo,
     undo,
     redo,
+    isBlankSession,
   } = useLayoutBuilder()
 
   // The Invoice AI button represents the AI conversation view. The panel can
@@ -235,6 +236,11 @@ export function LayoutBuilderToolbar() {
   // disabled until the first generation completes (status === "ready").
   const canEdit = status === "ready"
 
+  // Manually inserting elements is the whole point of the blank flow, so the
+  // Add elements tool is available from the empty state (status === "idle")
+  // even before anything has been generated.
+  const canAddElements = canEdit || isBlankSession
+
   return (
     <div className="relative flex h-11 w-full shrink-0 items-center gap-4 border-b border-[#d0d5dd] bg-white px-4 py-1">
       {/* Width tracks the Invoice AI panel so this cluster's right edge stays
@@ -247,7 +253,7 @@ export function LayoutBuilderToolbar() {
           <ToolbarIconButton
             aria-label="Add elements"
             active={addingElement}
-            disabled={!canEdit}
+            disabled={!canAddElements}
             onClick={addingElement ? closeAddElements : openAddElements}
           >
             <Plus aria-hidden />

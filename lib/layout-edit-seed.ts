@@ -32,5 +32,6 @@ export function layoutEditSeedFromRow(row: LayoutRow): LayoutBuilderEditSeed {
     documentType: DOCUMENT_TYPE_BY_LAYOUT_TYPE[row.type],
     mediumId: row.mediumId,
     seed: layoutSeedFromId(row.id),
+    isBlank: Boolean(row.isBlank),
   }
 }

@@ -267,6 +267,60 @@ nextjs-portal:has([role="dialog"]) > * {
   }
 }
 
+/* Canvas "AI working" outline. A light beam travels around the canvas border to
+   signal work-in-progress without tinting or overwhelming the content: a faint
+   static ring with a brighter segment sweeping continuously around the edge. */
+@property --canvas-edge-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes canvas-working-edge {
+  to {
+    --canvas-edge-angle: 360deg;
+  }
+}
+
+@layer utilities {
+  .canvas-working-edge {
+    --canvas-edge-angle: 0deg;
+    border-radius: 12px;
+    /* Ring thickness. */
+    padding: 3px;
+    background: conic-gradient(
+      from var(--canvas-edge-angle),
+      rgba(105, 56, 239, 0.2) 0deg,
+      rgba(105, 56, 239, 0.2) 200deg,
+      rgba(124, 88, 247, 0.7) 270deg,
+      rgba(199, 184, 255, 1) 320deg,
+      rgba(124, 88, 247, 0.7) 350deg,
+      rgba(105, 56, 239, 0.2) 360deg
+    );
+    /* Show only the padding ring, masking out the inner content box. */
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: canvas-working-edge 2.4s linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .canvas-working-edge {
+      animation: none;
+      background: linear-gradient(
+        90deg,
+        rgba(105, 56, 239, 0.4),
+        rgba(155, 138, 251, 0.4)
+      );
+    }
+  }
+}
+
 @keyframes prompt-placeholder-in {
   from {
     opacity: 0;
