@@ -2514,20 +2514,19 @@ export function LayoutBuilderCanvas() {
   // the AI works, overlaid with the working glow (Figma 3300:45143).
   const customizingPlaced =
     placedElements.length > 0 && !blankMode && !isReady
-  // The full-screen generating animation is only for the very first build with
-  // nothing on the canvas yet. Once a layout exists — or the user has dropped
-  // elements to customize — follow-up prompts keep the canvas visible instead.
-  const showCarousel =
-    !isReady &&
-    !hasGeneratedOnce &&
-    !blankMode &&
-    !customizingPlaced &&
-    status !== "error"
   // Traveling outline beam while the AI is engaged with content already on the
   // canvas (placed elements or a generated layout) — through reasoning, asking
   // clarifying questions, and generating.
   const aiWorking =
     status === "thinking" || status === "reasoning" || status === "asking"
+  // The full-screen generating animation is only for the very first build while
+  // it's actively running with nothing on the canvas yet. Gating on an active
+  // generating status (not merely "not generated") means an idle builder — e.g.
+  // a refresh with no restored layout — never spins the animation forever. Once
+  // a layout exists or the user is customizing placed elements, follow-up
+  // prompts keep the canvas visible instead.
+  const showCarousel =
+    aiWorking && !hasGeneratedOnce && !blankMode && !customizingPlaced
   const showWorkingEdge =
     aiWorking && (placedElements.length > 0 || hasGeneratedOnce)
   const showCode = isReady && codeOpen

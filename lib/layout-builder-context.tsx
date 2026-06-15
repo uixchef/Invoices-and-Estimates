@@ -63,6 +63,40 @@ const PANEL_DEFAULT_WIDTH = 360
 const HISTORY_LIMIT = 50
 const CODE_HISTORY_DEBOUNCE_MS = 500
 
+/**
+ * Per-tab persistence key. The builder keeps its working session in
+ * sessionStorage so a refresh restores the user's recent state (generated
+ * layout, placed elements, blank session, transcript) instead of dropping them
+ * back into an empty builder that spins the first-generation animation forever.
+ */
+const SESSION_STORAGE_KEY = "invoice-builder-session-v1"
+
+/** Shape persisted to sessionStorage. Transcript references (blob URLs) are
+ *  dropped on save since they don't survive a reload. */
+type PersistedBuilderSession = {
+  v: 1
+  name: string
+  mediumId: string | null
+  modelId: string | null
+  documentType: BuilderDocumentType
+  isBlankSession: boolean
+  hasGeneratedOnce: boolean
+  hasUnsavedChanges: boolean
+  messages: BuilderMessage[]
+  answers: AiAnswers | null
+  receivedAnswers: BuilderReceivedAnswer[] | null
+  preReasoning: string | null
+  preThoughtDurationSec: number | null
+  thoughtDurationSec: number | null
+  layoutEdits: Partial<GeneratedLayout>
+  layerText: Record<string, string>
+  layerStyles: Record<string, BuilderLayerStyle>
+  hiddenLayers: string[]
+  layerDuplicates: Record<string, number>
+  placedElements: PlacedElement[]
+  codeOverride: string | null
+}
+
 /** Undo/redo captures document-editing state only (not panel chrome or chat). */
 type BuilderHistorySnapshot = {
   layoutEdits: Partial<GeneratedLayout>
@@ -1155,6 +1189,74 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     }
     initializedRef.current = true
 
+    // Rehydrates the working session saved before a refresh / reload. Returns
+    // true when a session was restored. Settles the status from the persisted
+    // content so a reload never lands on the endless first-generation animation:
+    // a finished layout reopens "ready", an in-flight first build resumes, and a
+    // blank session reopens its empty state.
+    const restoreSession = (): boolean => {
+      if (typeof window === "undefined") {
+        return false
+      }
+      let raw: string | null = null
+      try {
+        raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY)
+      } catch {
+        return false
+      }
+      if (!raw) {
+        return false
+      }
+
+      let saved: PersistedBuilderSession
+      try {
+        const parsed = JSON.parse(raw) as PersistedBuilderSession
+        if (!parsed || parsed.v !== 1) {
+          return false
+        }
+        saved = parsed
+      } catch {
+        return false
+      }
+
+      setName(saved.name)
+      setDraftName(saved.name)
+      setMediumId(saved.mediumId)
+      setModelId(saved.modelId)
+      setDocumentType(saved.documentType)
+      setIsBlankSession(saved.isBlankSession)
+      setMessages(saved.messages ?? [])
+      setAnswers(saved.answers ?? null)
+      setReceivedAnswers(saved.receivedAnswers ?? null)
+      setPreReasoning(saved.preReasoning ?? null)
+      setPreThoughtDurationSec(saved.preThoughtDurationSec ?? null)
+      setThoughtDurationSec(saved.thoughtDurationSec ?? null)
+      setLayoutEdits(saved.layoutEdits ?? {})
+      setLayerTextState(saved.layerText ?? {})
+      setLayerStyles(saved.layerStyles ?? {})
+      setHiddenLayers(saved.hiddenLayers ?? [])
+      setLayerDuplicates(saved.layerDuplicates ?? {})
+      setPlacedElements(saved.placedElements ?? [])
+      setCodeOverrideState(saved.codeOverride ?? null)
+      setHasUnsavedChanges(saved.hasUnsavedChanges ?? false)
+
+      if (saved.hasGeneratedOnce) {
+        setHasGeneratedOnce(true)
+        setStatus("ready")
+      } else if (
+        !saved.isBlankSession &&
+        (saved.messages ?? []).some((message) => message.role === "user")
+      ) {
+        // A first build was interrupted mid-flight — resume it to completion so
+        // the user lands on a finished layout rather than a dead empty canvas.
+        startReasoning(null)
+      } else {
+        setStatus("idle")
+      }
+
+      return true
+    }
+
     // "Start from blank": open on the empty state (Figma 3268:37410). No seed
     // prompt, no generation — the canvas shows the empty state and the panel
     // shows the AI welcome until the user describes a layout or inserts an
@@ -1242,6 +1344,13 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
     const seed = consumePendingGeneration()
     if (!seed) {
+      // No fresh navigation seed → this is a refresh / direct load. Bring the
+      // user back to their recent session; if there's nothing saved, open the
+      // blank empty state instead of the first-generation animation.
+      if (!restoreSession()) {
+        setIsBlankSession(true)
+        setMediumId(getDefaultBuilderMediumId())
+      }
       return
     }
 
@@ -1272,6 +1381,77 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     consumePendingEdit,
     consumePendingBlank,
     startReasoning,
+  ])
+
+  // Persist the working session so a refresh restores it. Only writes once the
+  // session has real content, which also prevents the initial (pre-hydration)
+  // render from clobbering a saved session with empty defaults. Status is not
+  // persisted — it's re-derived on restore — and transcript references (blob
+  // URLs) are dropped since they can't survive a reload.
+  useEffect(() => {
+    if (!initializedRef.current || typeof window === "undefined") {
+      return
+    }
+    const hasContent =
+      hasGeneratedOnce ||
+      isBlankSession ||
+      placedElements.length > 0 ||
+      messages.length > 0
+    if (!hasContent) {
+      return
+    }
+    const snapshot: PersistedBuilderSession = {
+      v: 1,
+      name,
+      mediumId,
+      modelId,
+      documentType,
+      isBlankSession,
+      hasGeneratedOnce,
+      hasUnsavedChanges,
+      messages: messages.map((message) => ({ ...message, references: [] })),
+      answers,
+      receivedAnswers,
+      preReasoning,
+      preThoughtDurationSec,
+      thoughtDurationSec,
+      layoutEdits,
+      layerText,
+      layerStyles,
+      hiddenLayers,
+      layerDuplicates,
+      placedElements,
+      codeOverride,
+    }
+    try {
+      window.sessionStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify(snapshot)
+      )
+    } catch {
+      // Storage full / unavailable — persistence is best-effort.
+    }
+  }, [
+    name,
+    mediumId,
+    modelId,
+    documentType,
+    isBlankSession,
+    hasGeneratedOnce,
+    hasUnsavedChanges,
+    messages,
+    answers,
+    receivedAnswers,
+    preReasoning,
+    preThoughtDurationSec,
+    thoughtDurationSec,
+    layoutEdits,
+    layerText,
+    layerStyles,
+    hiddenLayers,
+    layerDuplicates,
+    placedElements,
+    codeOverride,
   ])
 
   const focusPrompt = useCallback(() => {
