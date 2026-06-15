@@ -1,9 +1,22 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { AtSign, BookOpen, Paperclip, Send } from "lucide-react"
+import {
+  AtSign,
+  BookOpen,
+  Image as ImageIcon,
+  Paperclip,
+  Send,
+  Upload,
+} from "lucide-react"
 
 import { AutoAwesomeGradientIcon } from "@/components/icons/auto-awesome-icon"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { cn } from "@/lib/utils"
 
@@ -48,6 +61,7 @@ export function AiWelcomeState() {
   const { sendMessage, promptFocusToken } = useLayoutBuilder()
   const [value, setValue] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const syncHeight = () => {
     const textarea = textareaRef.current
@@ -66,6 +80,23 @@ export function AiWelcomeState() {
       textareaRef.current?.focus()
     }
   }, [promptFocusToken])
+
+  // Land focus on the prompt once the disclosure settles, matching the final
+  // (focused) frame of the reveal. Skipped under reduced-motion-friendly timing
+  // by focusing near-immediately when the user prefers less animation.
+  useEffect(() => {
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    const delay = reduceMotion ? 0 : 820
+    const timer = window.setTimeout(() => {
+      // Don't yank focus away if the user already interacted elsewhere.
+      if (document.activeElement === document.body) {
+        textareaRef.current?.focus({ preventScroll: true })
+      }
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   const canSend = value.trim().length > 0
 
@@ -94,13 +125,16 @@ export function AiWelcomeState() {
       style={{ background: PANEL_WASH }}
     >
       <div className="flex w-full max-w-[632px] flex-col gap-4">
-        <div className="flex flex-col gap-2">
+        <div className="welcome-disclose flex flex-col gap-2">
           <AutoAwesomeGradientIcon className="size-6" />
           <h2 className="font-[family-name:var(--font-inter)] text-xl font-semibold leading-[30px] text-[#5925dc]">
             What&rsquo;s on your mind, Sarthak?
           </h2>
         </div>
-        <p className="font-[family-name:var(--font-inter)] text-base font-normal leading-6 text-[#101828]">
+        <p
+          className="welcome-disclose font-[family-name:var(--font-inter)] text-base font-normal leading-6 text-[#101828]"
+          style={{ animationDelay: "90ms" }}
+        >
           Tell AI what your invoice should include, or pick a starting point:
           create a clean layout, add your branding, organize line items, or
           highlight payment details.
@@ -111,9 +145,10 @@ export function AiWelcomeState() {
         {/* Suggested starting points — connected to the top of the prompt input
             (rounded-t, no bottom border) so they read as one surface. */}
         <div
-          className="mx-2 flex flex-col gap-3 rounded-t-[8px] border-x border-t border-[#d9d6fe] p-4"
+          className="welcome-suggestions-emerge mx-2 flex flex-col gap-3 rounded-t-[8px] border-x border-t border-[#d9d6fe] p-4"
           style={{
             background: "linear-gradient(180deg, #ebe9fe 0%, #fafaff 100%)",
+            animationDelay: "330ms",
           }}
         >
           <div className="flex items-center gap-1">
@@ -142,7 +177,10 @@ export function AiWelcomeState() {
         </div>
 
         {/* Prompt input (Figma 21:446461). Sending kicks off the first build. */}
-        <div className="flex flex-col gap-2.5 rounded-[8px] border border-[#9b8afb] bg-white p-2 shadow-[0_12px_8px_rgba(16,24,40,0.08),0_4px_3px_rgba(16,24,40,0.03)] focus-within:border-[#9b8afb]">
+        <div
+          className="welcome-disclose flex flex-col gap-2.5 rounded-[8px] border border-[#9b8afb] bg-white p-2 shadow-[0_12px_8px_rgba(16,24,40,0.08),0_4px_3px_rgba(16,24,40,0.03)] focus-within:border-[#9b8afb]"
+          style={{ animationDelay: "180ms" }}
+        >
           <div className="flex flex-wrap items-center gap-1">
             <span
               className="inline-flex size-[22px] items-center justify-center rounded-[4px] border border-[#d0d5dd] bg-white text-[#667085]"
@@ -176,16 +214,51 @@ export function AiWelcomeState() {
           />
 
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              aria-label="Attach file"
-              className={cn(
-                "inline-flex size-6 items-center justify-center rounded-[4px] text-[#667085] outline-none transition-colors",
-                "hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-              )}
-            >
-              <Paperclip className="size-4" aria-hidden />
-            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                event.target.value = ""
+              }}
+            />
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Attach file"
+                  className={cn(
+                    "inline-flex size-6 items-center justify-center rounded-[4px] text-[#667085] outline-none transition-colors",
+                    "hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+                  )}
+                >
+                  <Paperclip className="size-4" aria-hidden />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="min-w-[220px] rounded-lg"
+              >
+                <DropdownMenuItem
+                  className="gap-2.5 px-3 py-2"
+                  onSelect={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="size-4 text-[#667085]" aria-hidden />
+                  <span className="font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054]">
+                    Upload file
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="gap-2.5 px-3 py-2">
+                  <ImageIcon className="size-4 text-[#667085]" aria-hidden />
+                  <span className="font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054]">
+                    Add from media library
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <div className="min-w-px flex-1" />
 

@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useId, useRef } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowLeft, Pencil, Save } from "lucide-react"
 
 import { Button } from "@/components/highrise/button"
+import { UnsavedChangesDialog } from "@/components/invoices/builder/unsaved-changes-dialog"
 import { useHubToast } from "@/components/payment-hub/hub-toast"
 import {
   Tooltip,
@@ -64,7 +65,11 @@ export function LayoutBuilderHeader() {
     cancelNameEdit,
     hasGeneratedOnce,
     placedElements,
+    hasUnsavedChanges,
+    markSaved,
   } = useLayoutBuilder()
+
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
 
   // Nothing to publish until the user has actually built something — a generated
   // layout or at least one element dropped onto the blank canvas.
@@ -79,23 +84,48 @@ export function LayoutBuilderHeader() {
     input?.select()
   }, [isEditingName])
 
-  const handleBack = () => {
+  const leaveBuilder = () => {
     router.push(LAYOUTS_LIST_HREF)
+  }
+
+  const handleBack = () => {
+    // Guard the exit only when there are pending edits; otherwise leave directly.
+    if (hasUnsavedChanges) {
+      setShowUnsavedDialog(true)
+      return
+    }
+    leaveBuilder()
   }
 
   const handleSave = () => {
     // Persistence is stubbed in the prototype; saving confirms via a toast and
     // keeps the user in the builder (unlike Publish, which returns to the list).
     showSuccess(`${name} has been saved.`)
+    markSaved()
   }
 
   const handlePublish = () => {
     showSuccess(`${name} has been published.`)
+    markSaved()
     router.push(LAYOUTS_LIST_HREF)
   }
 
+  // From the unsaved-changes guard: save the layout, then leave.
+  const handleSaveAndLeave = () => {
+    setShowUnsavedDialog(false)
+    handleSave()
+    leaveBuilder()
+  }
+
+  // From the unsaved-changes guard: leave without persisting.
+  const handleDiscardAndLeave = () => {
+    setShowUnsavedDialog(false)
+    leaveBuilder()
+  }
+
   return (
-    <div className="flex h-[52px] w-full shrink-0 items-center border-b border-[#d0d5dd] bg-white px-4 py-1">
+    <>
+      <div className="flex h-[52px] w-full shrink-0 items-center border-b border-[#d0d5dd] bg-white px-4 py-1">
       <div className="w-[200px] shrink-0">
         <button
           type="button"
@@ -167,6 +197,14 @@ export function LayoutBuilderHeader() {
           Publish
         </Button>
       </div>
-    </div>
+      </div>
+
+      <UnsavedChangesDialog
+        open={showUnsavedDialog}
+        onOpenChange={setShowUnsavedDialog}
+        onSave={handleSaveAndLeave}
+        onDiscard={handleDiscardAndLeave}
+      />
+    </>
   )
 }

@@ -321,6 +321,58 @@ nextjs-portal:has([role="dialog"]) > * {
   }
 }
 
+/* Progressive disclosure for the AI welcome state — each section rises and
+   fades in, staggered by inline animation-delay (Ask AI 7992:334497/560/435/466
+   show the staged reveal: greeting → copy → suggestions → prompt input). */
+@keyframes welcome-disclose {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Suggestions unfurl upward out of the top edge of the prompt box — anchored at
+   the bottom (where the card meets the input) and revealed from the bottom up via
+   a top clip inset, so it reads as being pulled out of the prompt box. */
+@keyframes welcome-suggestions-emerge {
+  from {
+    opacity: 0;
+    clip-path: inset(100% 0 0 0);
+    transform: translateY(8px) scaleY(0.96);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@layer utilities {
+  .welcome-disclose {
+    animation: welcome-disclose 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .welcome-suggestions-emerge {
+    transform-origin: bottom center;
+    animation: welcome-suggestions-emerge 0.55s cubic-bezier(0.22, 1, 0.36, 1)
+      both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .welcome-disclose,
+    .welcome-suggestions-emerge {
+      animation: none;
+      opacity: 1;
+      clip-path: none;
+      transform: none;
+    }
+  }
+}
+
 @keyframes prompt-placeholder-in {
   from {
     opacity: 0;

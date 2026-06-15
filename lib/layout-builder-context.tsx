@@ -822,6 +822,15 @@ type LayoutBuilderContextValue = {
   canRedo: boolean
   undo: () => void
   redo: () => void
+
+  /**
+   * True once the session has edits that haven't been persisted — drives the
+   * "Unsaved changes?" guard when leaving the builder. Set by any document
+   * mutation, a generation, or a rename; cleared by Save / Publish.
+   */
+  hasUnsavedChanges: boolean
+  /** Clears the unsaved-changes flag after a successful Save / Publish. */
+  markSaved: () => void
 }
 
 const LayoutBuilderContext = createContext<LayoutBuilderContextValue | null>(null)
@@ -886,6 +895,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   })
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [messages, setMessages] = useState<BuilderMessage[]>([])
   const [status, setStatus] = useState<BuilderStatus>("idle")
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -968,6 +978,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    // Any edit that records history is an unsaved change.
+    setHasUnsavedChanges(true)
+
     historyPastRef.current.push(
       cloneHistorySnapshot(documentStateRef.current)
     )
@@ -1008,6 +1021,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (status === "reasoning" || status === "thinking") {
       clearHistory()
+      // A generation produces an unsaved result. Restored (saved) layouts open
+      // straight into "ready" and never pass through these phases, so they stay
+      // clean until the user edits.
+      setHasUnsavedChanges(true)
     }
   }, [status, clearHistory])
 
@@ -1588,9 +1605,19 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const commitName = useCallback(() => {
     const trimmed = draftName.trim()
-    setName(trimmed || DEFAULT_LAYOUT_NAME)
+    const nextName = trimmed || DEFAULT_LAYOUT_NAME
+    setName((current) => {
+      if (current !== nextName) {
+        setHasUnsavedChanges(true)
+      }
+      return nextName
+    })
     setIsEditingName(false)
   }, [draftName])
+
+  const markSaved = useCallback(() => {
+    setHasUnsavedChanges(false)
+  }, [])
 
   const cancelNameEdit = useCallback(() => {
     setDraftName(name)
@@ -1929,6 +1956,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       canRedo,
       undo,
       redo,
+      hasUnsavedChanges,
+      markSaved,
     }),
     [
       name,
@@ -2003,6 +2032,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       canRedo,
       undo,
       redo,
+      hasUnsavedChanges,
+      markSaved,
     ]
   )
 

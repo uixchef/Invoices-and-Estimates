@@ -24,6 +24,12 @@ import {
 } from "lucide-react"
 
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -1318,8 +1324,13 @@ function ConditionAccordion({
             </div>
           ) : null}
 
-          <PlaceholderSelect placeholder="Select field" />
-          {!selectOnly ? <PlaceholderSelect value="Is set" /> : null}
+          <PlaceholderSelect
+            placeholder="Select field"
+            options={CONDITION_FIELDS}
+          />
+          {!selectOnly ? (
+            <PlaceholderSelect value="Is set" options={CONDITION_OPERATORS} />
+          ) : null}
 
           <div className="flex items-center justify-end gap-2 pt-1">
             <button
@@ -1343,27 +1354,100 @@ function ConditionAccordion({
   )
 }
 
+/** Condition operators offered by the conditional-logic select (screenshot). */
+const CONDITION_OPERATORS = [
+  "Is set",
+  "Is empty",
+  "Equals",
+  "Does not equal",
+  "Greater than",
+  "Greater than or equal",
+  "Less than",
+  "Less than or equal",
+] as const
+
+/** Invoice fields offered by the conditional-logic field picker. */
+const CONDITION_FIELDS = [
+  "Invoice number",
+  "Invoice number prefix",
+  "Title",
+  "Internal name",
+  "Status",
+  "Currency (ISO 4217)",
+  "Issue date",
+  "Due date",
+  "Sent at",
+  "Last paid at",
+] as const
+
 function PlaceholderSelect({
   value,
   placeholder,
+  options,
 }: {
   value?: string
   placeholder?: string
+  /** When provided, the control opens a HighRise dropdown of choices. */
+  options?: readonly string[]
 }) {
-  return (
+  const [selected, setSelected] = useState<string | undefined>(value)
+  const display = selected ?? value
+
+  const trigger = (
     <button
       type="button"
-      className="flex h-7 w-full items-center gap-2 rounded-[4px] border border-[#d0d5dd] bg-white px-2 shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#f9fafb] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+      className="group flex h-7 w-full items-center gap-2 rounded-[4px] border border-[#d0d5dd] bg-white px-2 shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#f9fafb] focus-visible:ring-2 focus-visible:ring-[#155eef]/40 data-[state=open]:border-[#84adff] data-[state=open]:ring-2 data-[state=open]:ring-[#155eef]/40"
     >
       <span
         className={cn(
           "min-w-0 flex-1 truncate text-left font-[family-name:var(--font-inter)] text-sm leading-5",
-          value ? "text-[#101828]" : "text-[#667085]"
+          display ? "text-[#101828]" : "text-[#667085]"
         )}
       >
-        {value ?? placeholder}
+        {display ?? placeholder}
       </span>
-      <ChevronDown className="size-4 shrink-0 text-[#667085]" aria-hidden />
+      <ChevronDown
+        className="size-4 shrink-0 text-[#667085] transition-transform duration-200 group-data-[state=open]:rotate-180"
+        aria-hidden
+      />
     </button>
+  )
+
+  if (!options) {
+    return trigger
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[200px] rounded-lg p-1.5 font-[family-name:var(--font-inter)]"
+      >
+        {options.map((option) => {
+          const isActive = option === display
+          return (
+            <DropdownMenuItem
+              key={option}
+              onSelect={() => setSelected(option)}
+              className={cn(
+                "flex items-center justify-between gap-2 rounded-[4px] px-2 py-1.5 text-sm leading-5",
+                isActive
+                  ? "bg-[#eff4ff] text-[#004eeb] focus:bg-[#eff4ff] focus:text-[#004eeb]"
+                  : "text-[#475467]"
+              )}
+            >
+              <span className="truncate">{option}</span>
+              {isActive ? (
+                <Check
+                  className="size-4 shrink-0 text-[#004eeb]"
+                  aria-hidden
+                />
+              ) : null}
+            </DropdownMenuItem>
+          )
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
