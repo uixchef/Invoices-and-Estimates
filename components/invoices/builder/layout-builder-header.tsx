@@ -62,7 +62,13 @@ export function LayoutBuilderHeader() {
     startNameEdit,
     commitName,
     cancelNameEdit,
+    hasGeneratedOnce,
+    placedElements,
   } = useLayoutBuilder()
+
+  // Nothing to publish until the user has actually built something — a generated
+  // layout or at least one element dropped onto the blank canvas.
+  const canPublish = hasGeneratedOnce || placedElements.length > 0
 
   useEffect(() => {
     if (!isEditingName) {
@@ -153,6 +159,10 @@ export function LayoutBuilderHeader() {
           variant="primary"
           className="h-9 px-2.5 py-1.5"
           onClick={handlePublish}
+          disabled={!canPublish}
+          title={
+            canPublish ? undefined : "Add or generate content before publishing"
+          }
         >
           Publish
         </Button>

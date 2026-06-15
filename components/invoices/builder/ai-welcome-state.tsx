@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { AtSign, BookOpen, Paperclip, Send } from "lucide-react"
 
-import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
+import { AutoAwesomeGradientIcon } from "@/components/icons/auto-awesome-icon"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { cn } from "@/lib/utils"
 
@@ -13,10 +13,10 @@ import { cn } from "@/lib/utils"
  * firing a generation off a three-word chip.
  */
 const SUGGESTIONS = [
-  "Create a clean invoice",
-  "Use my brand style",
+  "SaaS subscription invoice",
+  "Simple store receipt",
+  "Monthly statement",
   "Add service items",
-  "Highlight payment details",
 ] as const
 
 /**
@@ -95,9 +95,9 @@ export function AiWelcomeState() {
     >
       <div className="flex w-full max-w-[632px] flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <AutoAwesomeIcon className="size-6 text-[#6938ef]" />
+          <AutoAwesomeGradientIcon className="size-6" />
           <h2 className="font-[family-name:var(--font-inter)] text-xl font-semibold leading-[30px] text-[#5925dc]">
-            What&rsquo;s on your mind?
+            What&rsquo;s on your mind, Sarthak?
           </h2>
         </div>
         <p className="font-[family-name:var(--font-inter)] text-base font-normal leading-6 text-[#101828]">
@@ -117,7 +117,7 @@ export function AiWelcomeState() {
           }}
         >
           <div className="flex items-center gap-1">
-            <BookOpen className="size-4 text-[#475467]" aria-hidden />
+            <BookOpen className="size-4 text-[#6938ef]" aria-hidden />
             <span className="font-[family-name:var(--font-inter)] text-xs font-medium leading-[17px] text-[#475467]">
               Suggested
             </span>
@@ -135,7 +135,7 @@ export function AiWelcomeState() {
                   "hover:border-[#bdb4fe] hover:bg-[#f4f3ff] focus-visible:border-[#9b8afb] focus-visible:ring-2 focus-visible:ring-[#9b8afb]/40"
                 )}
               >
-                {suggestion}
+                <span className="line-clamp-2">{suggestion}</span>
               </button>
             ))}
           </div>
