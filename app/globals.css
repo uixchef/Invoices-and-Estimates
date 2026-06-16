@@ -364,6 +364,45 @@ nextjs-portal:has([role="dialog"]) > * {
   }
 }
 
+/* Scoped "AI working" highlight. Layered under the traveling beam when a single
+   container is being edited from the prompt box, this adds a breathing purple
+   glow + inner ring + faint wash so the targeted block reads as clearly
+   highlighted (stronger than the canvas-wide beam alone) without hiding the
+   content underneath. */
+@keyframes canvas-working-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(105, 56, 239, 0),
+      inset 0 0 0 1px rgba(124, 88, 247, 0.3);
+    opacity: 0.85;
+  }
+
+  50% {
+    box-shadow:
+      0 0 22px 4px rgba(105, 56, 239, 0.42),
+      inset 0 0 0 1.5px rgba(124, 88, 247, 0.65);
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  .canvas-working-highlight {
+    border-radius: 4px;
+    background: rgba(124, 88, 247, 0.07);
+    animation: canvas-working-pulse 1.5s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .canvas-working-highlight {
+      animation: none;
+      opacity: 1;
+      box-shadow: inset 0 0 0 1.5px rgba(124, 88, 247, 0.55);
+      background: rgba(124, 88, 247, 0.07);
+    }
+  }
+}
+
 /* Progressive disclosure for the AI welcome state — each section rises and
    fades in, staggered by inline animation-delay (Ask AI 7992:334497/560/435/466
    show the staged reveal: greeting → copy → suggestions → prompt input). */

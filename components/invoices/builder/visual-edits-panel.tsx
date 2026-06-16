@@ -397,7 +397,11 @@ function Stepper({
   )
 }
 
-/** Native select styled as the Figma "Select" control. */
+/**
+ * "Select" control rendered with our shared HighRise dropdown (matching
+ * PlaceholderSelect) instead of a native <select>: a bordered trigger that
+ * aligns with the adjacent steppers (h-8) plus a check-marked menu.
+ */
 function SelectField({
   value,
   options,
@@ -407,24 +411,50 @@ function SelectField({
   options: { label: string; value: string }[]
   onChange: (next: string) => void
 }) {
+  const selected = options.find((option) => option.value === value) ?? options[0]
+
   return (
-    <div className={cn(INPUT_SHELL, "relative pr-0")}>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 appearance-none border-0 bg-transparent p-0 pr-6 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none"
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="group flex h-8 w-full items-center gap-2 rounded-[4px] border border-[#d0d5dd] bg-white px-2 shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-shadow hover:bg-[#f9fafb] focus-visible:border-[#84adff] focus-visible:shadow-[0_0_0_4px_#eff4ff,0_1px_2px_rgba(16,24,40,0.05)] data-[state=open]:border-[#84adff] data-[state=open]:shadow-[0_0_0_4px_#eff4ff,0_1px_2px_rgba(16,24,40,0.05)]"
+        >
+          <span className="min-w-0 flex-1 truncate text-left font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828]">
+            {selected?.label ?? ""}
+          </span>
+          <ChevronDown
+            className="size-4 shrink-0 text-[#667085] transition-transform duration-200 group-data-[state=open]:rotate-180"
+            aria-hidden
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="min-w-[var(--radix-dropdown-menu-trigger-width)] rounded-lg p-1.5 font-[family-name:var(--font-inter)]"
       >
-        {options.map((option) => (
-          <option key={option.value || option.label} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown
-        className="pointer-events-none absolute right-2 size-4 text-[#667085]"
-        aria-hidden
-      />
-    </div>
+        {options.map((option) => {
+          const isActive = option.value === value
+          return (
+            <DropdownMenuItem
+              key={option.value || option.label}
+              onSelect={() => onChange(option.value)}
+              className={cn(
+                "flex items-center justify-between gap-2 rounded-[4px] px-2 py-1.5 text-sm leading-5",
+                isActive
+                  ? "bg-[#eff4ff] text-[#004eeb] focus:bg-[#eff4ff] focus:text-[#004eeb]"
+                  : "text-[#475467]"
+              )}
+            >
+              <span className="truncate">{option.label}</span>
+              {isActive ? (
+                <Check className="size-4 shrink-0 text-[#004eeb]" aria-hidden />
+              ) : null}
+            </DropdownMenuItem>
+          )
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -1247,7 +1277,7 @@ function AdvancedTab() {
     layerRules,
     setLayerRule,
     clearLayerRule,
-    showFeedbackToast,
+    showCanvasToast,
   } = useLayoutBuilder()
   const [openCard, setOpenCard] = useState<"condition" | "repeat" | "wrap" | null>(
     null
@@ -1303,14 +1333,14 @@ function AdvancedTab() {
                   setLayerRule(inspectingLayer, key, rule)
                 }
                 setOpenCard(null)
-                showFeedbackToast(RULE_APPLIED_TOAST[key])
+                showCanvasToast(RULE_APPLIED_TOAST[key])
               }}
               onClear={() => {
                 if (inspectingLayer) {
                   clearLayerRule(inspectingLayer, key)
                 }
                 setOpenCard(null)
-                showFeedbackToast(RULE_CLEARED_TOAST[key])
+                showCanvasToast(RULE_CLEARED_TOAST[key])
               }}
               onCancel={() => setOpenCard(null)}
             />

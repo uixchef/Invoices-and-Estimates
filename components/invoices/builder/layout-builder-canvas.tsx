@@ -14,6 +14,7 @@ import {
 import {
   ArrowDown,
   ArrowUp,
+  CheckCircle2,
   Code2,
   Copy,
   GripVertical,
@@ -2867,6 +2868,7 @@ export function LayoutBuilderCanvas() {
     isBlankSession,
     openAddElements,
     focusPrompt,
+    canvasToast,
   } = useLayoutBuilder()
   // Resolves medium context for future preview sizing; kept for parity with prompt selection.
   useMediumsStore()
@@ -3072,6 +3074,27 @@ export function LayoutBuilderCanvas() {
 
         {showWorkingEdge ? <CanvasWorkingShimmer /> : null}
         {showWorkingEdge ? <CanvasWorkingEdge /> : null}
+
+        {canvasToast ? <CanvasToast message={canvasToast} /> : null}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Transient confirmation toast pinned to the horizontal center of the canvas
+ * (edit confirmations like applied/cleared conditional rules). AI-related
+ * feedback stays in the panel; this surfaces document edits over the canvas.
+ * Matches the dashboard success toast treatment; auto-dismissed by the context.
+ */
+function CanvasToast({ message }: { message: string }) {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-4 z-30 flex justify-center px-4">
+      <div className="animate-in fade-in-0 slide-in-from-top-1 flex items-center gap-1.5 rounded-[8px] border border-[#6ce9a6] bg-[#ecfdf3] py-1.5 pl-2.5 pr-3 shadow-[0px_4px_8px_-2px_rgba(16,24,40,0.1),0px_2px_4px_-2px_rgba(16,24,40,0.06)]">
+        <CheckCircle2 className="size-4 shrink-0 text-[#027a48]" aria-hidden />
+        <span className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#027a48]">
+          {message}
+        </span>
       </div>
     </div>
   )

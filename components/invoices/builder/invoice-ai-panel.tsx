@@ -806,6 +806,31 @@ export function InvoiceAiPanel({
     prevUserTurnCount.current = userTurnCount
   }, [userTurnCount])
 
+  // Entering the chat (open builder / return from the inspector) should land on
+  // the latest turn, not scrolled to the top replaying the whole history. Pin
+  // the last turn to the top of the viewport — the same resting place as a new
+  // prompt — once per entry. The flag resets whenever the chat is hidden.
+  const showChat = !adding && !inspecting && !blankWelcome && !editsEmpty
+  const didEntryScrollRef = useRef(false)
+  useLayoutEffect(() => {
+    if (!showChat) {
+      didEntryScrollRef.current = false
+      return
+    }
+    if (didEntryScrollRef.current) {
+      return
+    }
+    const node = scrollRef.current
+    const last = lastTurnRef.current
+    if (!node || turns.length === 0) {
+      return
+    }
+    node.scrollTop = last ? last.offsetTop : node.scrollHeight
+    didEntryScrollRef.current = true
+    // Keep the new-prompt baseline in sync so it doesn't double-jump this render.
+    prevUserTurnCount.current = userTurnCount
+  }, [showChat, turns.length, viewportHeight, userTurnCount])
+
   return (
     <aside
       style={{ width }}

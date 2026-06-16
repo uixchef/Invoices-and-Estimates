@@ -1095,8 +1095,13 @@ type LayoutBuilderContextValue = {
 
   /** Transient confirmation toast above the composer; null when hidden. */
   feedbackToast: string | null
-  /** Shows a toast above the composer for a few seconds (answer feedback, etc.). */
+  /** Shows a toast above the composer for a few seconds (AI answer feedback). */
   showFeedbackToast: (message: string) => void
+
+  /** Transient confirmation toast centered over the canvas; null when hidden. */
+  canvasToast: string | null
+  /** Shows a toast at the horizontal center of the canvas (edit confirmations). */
+  showCanvasToast: (message: string) => void
 
   /**
    * True once the session has edits that haven't been persisted — drives the
@@ -1173,6 +1178,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   // submitting answer feedback). Auto-clears.
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null)
   const feedbackToastTimerRef = useRef<number | null>(null)
+  const [canvasToast, setCanvasToast] = useState<string | null>(null)
+  const canvasToastTimerRef = useRef<number | null>(null)
 
   const placedElementCounterRef = useRef(0)
   const historyPastRef = useRef<BuilderHistorySnapshot[]>([])
@@ -2347,10 +2354,24 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const showCanvasToast = useCallback((message: string) => {
+    setCanvasToast(message)
+    if (canvasToastTimerRef.current) {
+      window.clearTimeout(canvasToastTimerRef.current)
+    }
+    canvasToastTimerRef.current = window.setTimeout(
+      () => setCanvasToast(null),
+      2600
+    )
+  }, [])
+
   useEffect(() => {
     return () => {
       if (feedbackToastTimerRef.current) {
         window.clearTimeout(feedbackToastTimerRef.current)
+      }
+      if (canvasToastTimerRef.current) {
+        window.clearTimeout(canvasToastTimerRef.current)
       }
     }
   }, [])
@@ -2637,6 +2658,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       hasVersionSnapshot,
       feedbackToast,
       showFeedbackToast,
+      canvasToast,
+      showCanvasToast,
       hasUnsavedChanges,
       markSaved,
     }),
@@ -2729,6 +2752,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       snapshotVersion,
       feedbackToast,
       showFeedbackToast,
+      canvasToast,
+      showCanvasToast,
       hasUnsavedChanges,
       markSaved,
     ]

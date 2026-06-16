@@ -229,6 +229,11 @@ export function VisualEditSelector({
         <>
           <div
             aria-hidden
+            className="canvas-working-highlight pointer-events-none absolute inset-0 z-[14]"
+            style={{ borderRadius: 4 }}
+          />
+          <div
+            aria-hidden
             className="canvas-working-shimmer pointer-events-none absolute inset-0 z-[15]"
             style={{ borderRadius: 4 }}
           />
