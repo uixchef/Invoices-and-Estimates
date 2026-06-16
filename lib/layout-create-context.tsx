@@ -39,7 +39,6 @@ function createBlankLayoutRow(sequence: number): LayoutRow {
     status: "Draft",
     updatedOn: formatUpdatedOn(new Date()),
     updatedAgo: "Just now",
-    isBlank: true,
   }
 }
 

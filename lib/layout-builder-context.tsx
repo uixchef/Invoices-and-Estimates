@@ -38,9 +38,12 @@ import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import {
   BUILDER_DOCUMENT_TYPES,
   DEFAULT_LAYOUT_NAME,
+  type BuilderConditionRule,
   type BuilderDocumentType,
   type BuilderLayerKind,
+  type BuilderLayerRules,
   type BuilderLayerStyle,
+  type BuilderRuleKind,
   type BuilderMessage,
   type BuilderReferenceImage,
   type BuilderReceivedAnswer,
@@ -983,6 +986,18 @@ type LayoutBuilderContextValue = {
   ) => void
 
   /**
+   * Advanced-tab rules (conditional show/hide, repeat, wrap) per layer. Applied
+   * rules persist so reopening a card shows its saved configuration.
+   */
+  layerRules: Record<string, BuilderLayerRules>
+  setLayerRule: (
+    label: string,
+    kind: BuilderRuleKind,
+    rule: BuilderConditionRule
+  ) => void
+  clearLayerRule: (label: string, kind: BuilderRuleKind) => void
+
+  /**
    * Add-elements palette open in the panel (replaces the chat), opened from the
    * toolbar's plus button. Mutually exclusive with the Visual edits inspector.
    */
@@ -1129,6 +1144,12 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [hiddenLayers, setHiddenLayers] = useState<string[]>([])
   const [layerDuplicates, setLayerDuplicates] = useState<
     Record<string, number>
+  >({})
+  // Advanced-tab conditional-logic / repeat / wrap rules, keyed by layer label
+  // then by card, so applied rules survive collapsing the card or switching
+  // layers and back.
+  const [layerRules, setLayerRules] = useState<
+    Record<string, BuilderLayerRules>
   >({})
   const [inspectingLayer, setInspectingLayer] = useState<string | null>(null)
   const [inspectingLayerKind, setInspectingLayerKind] =
@@ -1519,20 +1540,6 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     // chat reads like the conversation that produced this layout.
     const editSeed = consumePendingEdit()
     if (editSeed) {
-      // A blank layout has no design yet — editing it reopens the same empty
-      // state as "Start from blank", but keyed to this layout (its name,
-      // medium, and document type are preserved). No reconstructed transcript,
-      // no ready state: the panel shows the AI welcome and the canvas shows the
-      // empty-state CTAs until the user describes a layout or inserts elements.
-      if (editSeed.isBlank) {
-        setName(editSeed.name)
-        setDraftName(editSeed.name)
-        setMediumId(editSeed.mediumId)
-        setDocumentType(editSeed.documentType)
-        setIsBlankSession(true)
-        return
-      }
-
       const session = deriveEditSession(editSeed)
       setName(editSeed.name)
       setDraftName(editSeed.name)
@@ -2027,6 +2034,35 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerStyles((current) =>
         label in current ? current : { ...current, [label]: seed.style }
       )
+    },
+    []
+  )
+
+  // Saves (or replaces) an Advanced-tab rule for a layer. Persisted in session
+  // state so reopening the card shows the applied configuration.
+  const setLayerRule = useCallback(
+    (label: string, kind: BuilderRuleKind, rule: BuilderConditionRule) => {
+      setLayerRules((current) => ({
+        ...current,
+        [label]: { ...current[label], [kind]: rule },
+      }))
+      setHasUnsavedChanges(true)
+    },
+    []
+  )
+
+  // Removes a previously applied Advanced-tab rule for a layer.
+  const clearLayerRule = useCallback(
+    (label: string, kind: BuilderRuleKind) => {
+      setLayerRules((current) => {
+        const existing = current[label]
+        if (!existing || !(kind in existing)) {
+          return current
+        }
+        const { [kind]: _removed, ...rest } = existing
+        return { ...current, [label]: rest }
+      })
+      setHasUnsavedChanges(true)
     },
     []
   )
@@ -2556,6 +2592,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setEditsTab,
       selectLayer,
       seedLayer,
+      layerRules,
+      setLayerRule,
+      clearLayerRule,
       addingElement,
       openAddElements,
       closeAddElements,
@@ -2643,6 +2682,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setEditsTab,
       selectLayer,
       seedLayer,
+      layerRules,
+      setLayerRule,
+      clearLayerRule,
       addingElement,
       openAddElements,
       closeAddElements,

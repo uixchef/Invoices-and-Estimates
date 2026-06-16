@@ -41,7 +41,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
-import type { BuilderLayerStyle } from "@/lib/layout-builder-types"
+import type {
+  BuilderConditionRule,
+  BuilderLayerStyle,
+} from "@/lib/layout-builder-types"
 import { cn } from "@/lib/utils"
 
 /**
@@ -268,6 +271,19 @@ const CONDITION_ACCORDIONS: {
       "Focus this element on one object so its fields get short names — e.g. wrap with the customer, then use {name} instead of {customer.name}.",
   },
 ]
+
+/** Confirmation toast copy per conditional-logic card (Apply / Remove). */
+const RULE_APPLIED_TOAST: Record<"condition" | "repeat" | "wrap", string> = {
+  condition: "Conditional rule applied",
+  repeat: "Repeat rule applied",
+  wrap: "Wrap rule applied",
+}
+
+const RULE_CLEARED_TOAST: Record<"condition" | "repeat" | "wrap", string> = {
+  condition: "Conditional rule removed",
+  repeat: "Repeat rule removed",
+  wrap: "Wrap rule removed",
+}
 
 /** Normalizes an rgb()/rgba() or hex color string into a #rrggbb hex value. */
 function toHex(color: string | undefined): string {
@@ -1226,11 +1242,18 @@ function FieldSearchList({
 }
 
 function AdvancedTab() {
-  const { inspectingLayer } = useLayoutBuilder()
+  const {
+    inspectingLayer,
+    layerRules,
+    setLayerRule,
+    clearLayerRule,
+    showFeedbackToast,
+  } = useLayoutBuilder()
   const [openCard, setOpenCard] = useState<"condition" | "repeat" | "wrap" | null>(
     null
   )
-  const [condition, setCondition] = useState<"show" | "hide">("show")
+  // Applied rules for the inspected layer drive each card's saved state.
+  const rules = inspectingLayer ? (layerRules[inspectingLayer] ?? {}) : {}
   // Index of the row whose binding is being changed (its picker is open).
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   // Whether the "Add field" accordion is open at the top of the list.
@@ -1271,13 +1294,25 @@ function AdvancedTab() {
               icon={icon}
               label={label}
               tooltip={tooltip}
+              selectOnly={key !== "condition"}
               open={openCard === key}
               onToggle={() => setOpenCard((prev) => (prev === key ? null : key))}
-              condition={condition}
-              onConditionChange={setCondition}
+              rule={rules[key]}
+              onApply={(rule) => {
+                if (inspectingLayer) {
+                  setLayerRule(inspectingLayer, key, rule)
+                }
+                setOpenCard(null)
+                showFeedbackToast(RULE_APPLIED_TOAST[key])
+              }}
+              onClear={() => {
+                if (inspectingLayer) {
+                  clearLayerRule(inspectingLayer, key)
+                }
+                setOpenCard(null)
+                showFeedbackToast(RULE_CLEARED_TOAST[key])
+              }}
               onCancel={() => setOpenCard(null)}
-              onApply={() => setOpenCard(null)}
-              selectOnly={key !== "condition"}
             />
           ))}
         </div>
@@ -1459,10 +1494,10 @@ function ConditionAccordion({
   tooltip,
   open,
   onToggle,
-  condition,
-  onConditionChange,
-  onCancel,
+  rule,
   onApply,
+  onCancel,
+  onClear,
   selectOnly = false,
 }: {
   icon: React.ReactNode
@@ -1470,26 +1505,63 @@ function ConditionAccordion({
   tooltip: string
   open: boolean
   onToggle: () => void
-  condition: "show" | "hide"
-  onConditionChange: (next: "show" | "hide") => void
+  /** The applied rule for this card (undefined when nothing is saved yet). */
+  rule?: BuilderConditionRule
+  /** Saves the edited rule (and shows a confirmation toast in the parent). */
+  onApply: (rule: BuilderConditionRule) => void
+  /** Collapses without saving. */
   onCancel: () => void
-  onApply: () => void
+  /** Removes the saved rule. */
+  onClear: () => void
   /**
    * Repeat / Wrap only need a field picker, so this drops the show/hide toggle
    * and the condition ("Is set") select that the conditional-logic card uses.
    */
   selectOnly?: boolean
 }) {
+  // Draft edits live here until Apply; seeded from the saved rule each time the
+  // card opens so reopening shows the persisted configuration.
+  const [mode, setMode] = useState<"show" | "hide">(rule?.mode ?? "show")
+  const [field, setField] = useState<string | undefined>(rule?.field)
+  const [operator, setOperator] = useState<string>(rule?.operator ?? "Is set")
+
+  useEffect(() => {
+    if (open) {
+      setMode(rule?.mode ?? "show")
+      setField(rule?.field)
+      setOperator(rule?.operator ?? "Is set")
+    }
+  }, [open, rule])
+
+  const isConfigured = Boolean(rule?.field)
+  const canApply = Boolean(field)
+  const summary = isConfigured
+    ? selectOnly
+      ? rule?.field
+      : `${rule?.mode === "hide" ? "Hide if" : "Show if"} ${rule?.field} · ${rule?.operator ?? "Is set"}`
+    : null
+
+  const apply = () => {
+    if (!canApply) {
+      return
+    }
+    onApply(selectOnly ? { field } : { mode, field, operator })
+  }
+
   return (
     <div
       className={cn(
         "overflow-hidden rounded-[8px] border transition-colors",
-        open ? "border-[#84adff]" : "border-[#d0d5dd]"
+        open
+          ? "border-[#84adff]"
+          : isConfigured
+            ? "border-[#84adff]"
+            : "border-[#d0d5dd]"
       )}
     >
       <div
         className={cn(
-          "flex h-[52px] items-center gap-2 px-4 transition-colors",
+          "flex min-h-[52px] items-center gap-2 px-4 transition-colors",
           open ? "bg-[#eff4ff]" : "bg-white hover:bg-[#f9fafb]"
         )}
       >
@@ -1497,11 +1569,18 @@ function ConditionAccordion({
           type="button"
           aria-expanded={open}
           onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#155eef]/40"
+          className="flex min-w-0 flex-1 items-center gap-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#155eef]/40"
         >
-          <AccordionIcon active={open}>{icon}</AccordionIcon>
-          <span className="min-w-0 flex-1 truncate font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#101828]">
-            {label}
+          <AccordionIcon active={open || isConfigured}>{icon}</AccordionIcon>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="min-w-0 truncate font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#101828]">
+              {label}
+            </span>
+            {!open && summary ? (
+              <span className="min-w-0 truncate font-[family-name:var(--font-inter)] text-xs leading-4 text-[#475467]">
+                {summary}
+              </span>
+            ) : null}
           </span>
         </button>
         <Tooltip>
@@ -1526,10 +1605,10 @@ function ConditionAccordion({
             <div className="flex h-7 items-stretch overflow-hidden rounded-[4px] border border-[#d0d5dd]">
               <button
                 type="button"
-                onClick={() => onConditionChange("show")}
+                onClick={() => setMode("show")}
                 className={cn(
                   "inline-flex flex-1 items-center justify-center gap-1.5 border-r border-[#d0d5dd] font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 outline-none transition-colors",
-                  condition === "show"
+                  mode === "show"
                     ? "bg-[#eff4ff] text-[#004eeb]"
                     : "bg-white text-[#475467] hover:bg-[#f9fafb]"
                 )}
@@ -1539,10 +1618,10 @@ function ConditionAccordion({
               </button>
               <button
                 type="button"
-                onClick={() => onConditionChange("hide")}
+                onClick={() => setMode("hide")}
                 className={cn(
                   "inline-flex flex-1 items-center justify-center gap-1.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 outline-none transition-colors",
-                  condition === "hide"
+                  mode === "hide"
                     ? "bg-[#eff4ff] text-[#004eeb]"
                     : "bg-white text-[#475467] hover:bg-[#f9fafb]"
                 )}
@@ -1556,12 +1635,27 @@ function ConditionAccordion({
           <PlaceholderSelect
             placeholder="Select field"
             options={CONDITION_FIELDS}
+            value={field}
+            onChange={setField}
           />
           {!selectOnly ? (
-            <PlaceholderSelect value="Is set" options={CONDITION_OPERATORS} />
+            <PlaceholderSelect
+              options={CONDITION_OPERATORS}
+              value={operator}
+              onChange={setOperator}
+            />
           ) : null}
 
           <div className="flex items-center justify-end gap-2 pt-1">
+            {isConfigured ? (
+              <button
+                type="button"
+                onClick={onClear}
+                className="mr-auto inline-flex h-7 items-center justify-center rounded-[4px] px-2.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#b42318] outline-none transition-colors hover:bg-[#fef3f2] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+              >
+                Remove
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onCancel}
@@ -1571,8 +1665,9 @@ function ConditionAccordion({
             </button>
             <button
               type="button"
-              onClick={onApply}
-              className="inline-flex h-7 items-center justify-center rounded-[4px] border border-[#155eef] bg-[#155eef] px-2.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#0040c1] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+              onClick={apply}
+              disabled={!canApply}
+              className="inline-flex h-7 items-center justify-center rounded-[4px] border border-[#155eef] bg-[#155eef] px-2.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#0040c1] focus-visible:ring-2 focus-visible:ring-[#155eef]/40 disabled:cursor-not-allowed disabled:border-[#d0d5dd] disabled:bg-[#eaecf0] disabled:text-[#98a2b3] disabled:shadow-none"
             >
               Apply
             </button>
@@ -1613,14 +1708,28 @@ function PlaceholderSelect({
   value,
   placeholder,
   options,
+  onChange,
 }: {
   value?: string
   placeholder?: string
   /** When provided, the control opens a HighRise dropdown of choices. */
   options?: readonly string[]
+  /**
+   * When provided, the select is controlled: `value` is the source of truth and
+   * every pick is reported here (no internal copy), so a parent can persist it.
+   */
+  onChange?: (next: string) => void
 }) {
-  const [selected, setSelected] = useState<string | undefined>(value)
-  const display = selected ?? value
+  const [internal, setInternal] = useState<string | undefined>(value)
+  // Controlled when a parent owns the value via onChange; uncontrolled otherwise.
+  const display = onChange ? value : (internal ?? value)
+  const choose = (next: string) => {
+    if (onChange) {
+      onChange(next)
+    } else {
+      setInternal(next)
+    }
+  }
 
   const trigger = (
     <button
@@ -1658,7 +1767,7 @@ function PlaceholderSelect({
           return (
             <DropdownMenuItem
               key={option}
-              onSelect={() => setSelected(option)}
+              onSelect={() => choose(option)}
               className={cn(
                 "flex items-center justify-between gap-2 rounded-[4px] px-2 py-1.5 text-sm leading-5",
                 isActive

@@ -31,6 +31,27 @@ export type BuilderSelection = {
 export type BuilderLayerKind = "text" | "container"
 
 /**
+ * The Advanced tab's conditional-logic cards. "condition" is the show/hide rule;
+ * "repeat" and "wrap" bind a field for repetition / wrapping.
+ */
+export type BuilderRuleKind = "condition" | "repeat" | "wrap"
+
+/**
+ * A saved Advanced-tab rule for a layer. `mode` and `operator` only apply to the
+ * "condition" card; "repeat" / "wrap" use `field` alone.
+ */
+export type BuilderConditionRule = {
+  mode?: "show" | "hide"
+  field?: string
+  operator?: string
+}
+
+/** All Advanced-tab rules configured for a single layer, keyed by card. */
+export type BuilderLayerRules = Partial<
+  Record<BuilderRuleKind, BuilderConditionRule>
+>
+
+/**
  * Per-layer style overrides set from the "Visual edits" inspector. Applied as
  * inline styles on the layer so they win over the layout's base Tailwind
  * classes. Keyed by the layer label in the builder context.
@@ -118,12 +139,6 @@ export type LayoutBuilderEditSeed = {
   mediumId: string
   /** Stable derivation seed (the layout's numeric index) for the design. */
   seed: number
-  /**
-   * The layout was never built out (no design yet). Editing it opens the
-   * builder on the blank empty state — AI welcome panel + canvas CTAs — rather
-   * than reconstructing a generated document.
-   */
-  isBlank?: boolean
 }
 
 import type { AiTodoItem } from "@/components/ai/ai-todo-list"

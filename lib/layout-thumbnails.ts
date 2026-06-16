@@ -22,7 +22,10 @@ export function getLayoutThumbnail(
   clonedFromId?: string
 ): string {
   const sourceId = clonedFromId ?? layoutId
-  const match = sourceId.match(/layout-(\d+)/)
+  // Use the trailing number in the id so every id form maps to a thumbnail —
+  // including recent drafts ("layout-draft-3"), where matching "layout-(\d+)"
+  // would miss the number and collapse every card onto template-01.
+  const match = sourceId.match(/(\d+)\s*$/)
   const index = match ? Number.parseInt(match[1], 10) - 1 : 0
 
   if (index === 1) {
