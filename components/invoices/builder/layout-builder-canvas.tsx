@@ -1034,8 +1034,9 @@ function DocumentSurface() {
     (sum, item) => sum + item.qty * item.rate,
     0
   )
-  const tax = layout.sections.taxes ? subtotal * layout.taxRate : 0
-  const total = subtotal + tax
+  const discount = layout.sections.discount ? subtotal * layout.discountRate : 0
+  const tax = layout.sections.taxes ? (subtotal - discount) * layout.taxRate : 0
+  const total = subtotal - discount + tax
   const money = (value: number) => formatMoney(layout.currencySymbol, value)
   const isClassic = layout.style === "classic"
 
@@ -1276,6 +1277,12 @@ function DocumentSurface() {
               </span>
               <span className="text-[#101828]">{money(subtotal)}</span>
             </div>
+            {layout.sections.discount ? (
+              <div className="flex justify-between text-sm text-[#667085]">
+                <span>Discount ({Math.round(layout.discountRate * 100)}%)</span>
+                <span className="text-[#101828]">-{money(discount)}</span>
+              </div>
+            ) : null}
             {layout.sections.taxes ? (
               <div className="flex justify-between text-sm text-[#667085]">
                 <span>Tax ({Math.round(layout.taxRate * 100)}%)</span>
@@ -1296,9 +1303,22 @@ function DocumentSurface() {
           </div>
         </SelectableSection>
 
+        {layout.sections.onlinePayment ? (
+          <SelectableSection label="Pay online" className="flex justify-end">
+            <div
+              className="inline-flex h-10 items-center justify-center rounded-lg px-5 text-sm font-semibold text-white"
+              style={{ backgroundColor: layout.accent }}
+            >
+              <EditableText value="Pay online" label="Pay online button" />
+            </div>
+          </SelectableSection>
+        ) : null}
+
         <ElementDropZone zone="after-totals" />
 
-        {layout.sections.notes || layout.sections.terms ? (
+        {layout.sections.notes ||
+        layout.sections.terms ||
+        layout.sections.paymentDetails ? (
           <SelectableSection
             label="Notes & terms"
             className="mt-auto flex flex-col gap-4 border-t border-[#eaecf0] pt-6"
@@ -1331,6 +1351,26 @@ function DocumentSurface() {
                     label="Payment terms body"
                   />
                 </p>
+              </div>
+            ) : null}
+            {layout.sections.paymentDetails ? (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#98a2b3]">
+                  <EditableText
+                    value="Payment details"
+                    label="Payment details heading"
+                  />
+                </p>
+                <div className="mt-1 flex flex-col gap-0.5 text-sm text-[#667085]">
+                  <EditableText
+                    value={`Bank: ${layout.businessName} · Acct 0042 1188`}
+                    label="Payment details account"
+                  />
+                  <EditableText
+                    value="Routing 110000000 · SWIFT NWBKUS33"
+                    label="Payment details routing"
+                  />
+                </div>
               </div>
             ) : null}
           </SelectableSection>
@@ -1389,8 +1429,9 @@ function buildCode(
     (sum, item) => sum + item.qty * item.rate,
     0
   )
-  const tax = layout.sections.taxes ? subtotal * layout.taxRate : 0
-  const total = subtotal + tax
+  const discount = layout.sections.discount ? subtotal * layout.discountRate : 0
+  const tax = layout.sections.taxes ? (subtotal - discount) * layout.taxRate : 0
+  const total = subtotal - discount + tax
 
   const add = (text: string) => {
     lines.push(text)
@@ -1429,6 +1470,7 @@ function buildCode(
   add(`      td, th { padding: 8px 0; }`)
   add(`      .num { text-align: right; }`)
   add(`      .total { color: var(--accent); font-weight: 700; }`)
+  add(`      .pay-online { display: inline-block; background: var(--accent); color: #fff; font-weight: 600; padding: 10px 20px; border-radius: 8px; text-decoration: none; }`)
   add(`    </style>`)
   add(`  </head>`)
   add(`  <body>`)
@@ -1567,6 +1609,9 @@ function buildCode(
         "Subtotal"
       )}</span> <span class="num">${money(subtotal)}</span></p>`
     )
+    if (layout.sections.discount) {
+      add(`      <p>Discount (${Math.round(layout.discountRate * 100)}%) <span class="num">-${money(discount)}</span></p>`)
+    }
     if (layout.sections.taxes) {
       add(`      <p>Tax (${Math.round(layout.taxRate * 100)}%) <span class="num">${money(tax)}</span></p>`)
     }
@@ -1580,7 +1625,24 @@ function buildCode(
     add(`    </section>`)
   })
 
-  if (layout.sections.notes || layout.sections.terms) {
+  if (layout.sections.onlinePayment) {
+    add(`    <!-- Pay online -->`)
+    block("Pay online", () => {
+      tag(
+        "Pay online button",
+        `    <a class="pay-online" href="#" data-el="Pay online button">${ov(
+          "Pay online button",
+          "Pay online"
+        )}</a>`
+      )
+    })
+  }
+
+  if (
+    layout.sections.notes ||
+    layout.sections.terms ||
+    layout.sections.paymentDetails
+  ) {
     add(`    <!-- Notes & terms -->`)
     block("Notes & terms", () => {
       add(`    <section data-el="Notes &amp; terms">`)
@@ -1612,6 +1674,29 @@ function buildCode(
           `      <p class="muted" data-el="Payment terms body">${ov(
             "Payment terms body",
             "Payment due within 14 days. Late payments may incur a 1.5% monthly fee."
+          )}</p>`
+        )
+      }
+      if (layout.sections.paymentDetails) {
+        tag(
+          "Payment details heading",
+          `      <h3 data-el="Payment details heading">${ov(
+            "Payment details heading",
+            "Payment details"
+          )}</h3>`
+        )
+        tag(
+          "Payment details account",
+          `      <p class="muted" data-el="Payment details account">${ov(
+            "Payment details account",
+            `Bank: ${layout.businessName} · Acct 0042 1188`
+          )}</p>`
+        )
+        tag(
+          "Payment details routing",
+          `      <p class="muted" data-el="Payment details routing">${ov(
+            "Payment details routing",
+            "Routing 110000000 · SWIFT NWBKUS33"
           )}</p>`
         )
       }
@@ -2488,6 +2573,21 @@ function CanvasWorkingEdge() {
   )
 }
 
+/**
+ * Companion to the working edge: a soft light band sweeps across the canvas
+ * while the AI is acting on existing content, layering a "live" shimmer over the
+ * layout for the duration of the action. Pointer-events-none so content stays
+ * inert; pairs with the traveling edge beam.
+ */
+function CanvasWorkingShimmer() {
+  return (
+    <div
+      aria-hidden
+      className="canvas-working-shimmer pointer-events-none absolute inset-0 z-10"
+    />
+  )
+}
+
 export function LayoutBuilderCanvas() {
   const {
     status,
@@ -2698,6 +2798,7 @@ export function LayoutBuilderCanvas() {
           </div>
         )}
 
+        {showWorkingEdge ? <CanvasWorkingShimmer /> : null}
         {showWorkingEdge ? <CanvasWorkingEdge /> : null}
       </div>
     </div>

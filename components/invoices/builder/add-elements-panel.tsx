@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 
 import { Input } from "@/components/highrise/input-text"
+import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { ELEMENT_DRAG_MIME } from "@/lib/layout-builder-types"
 import { cn } from "@/lib/utils"
 
@@ -82,27 +83,31 @@ const SECTIONS: AddSection[] = [
 ]
 
 /**
- * Quick-Add tile (Figma 118:20190). Drag-only — drops onto the invoice canvas;
- * no click action. States map to design tokens:
+ * Quick-Add tile (Figma 118:20190 / 118:20187). Two ways to insert: drag onto
+ * the canvas, or click/press to drop it at the end of the document. States map
+ * to design tokens:
  * - Default: gray/300 border, white, 4px radius, no shadow
  * - Hover: blue/300 border, white, 8px radius, Shadow/md
- * - Active (dragging): blue/700 border, gray/25, 8px radius, Shadow/md
+ * - Active (pressing / dragging): blue/700 border, gray/25, 8px radius, Shadow/md
  * - Disabled: gray/200 border, gray/25, 4px radius, gray/400 text
  */
 function ElementTile({
   item,
   disabled = false,
+  onAdd,
 }: {
   item: AddElement
   disabled?: boolean
+  onAdd: (item: AddElement) => void
 }) {
   const [dragging, setDragging] = useState(false)
 
   return (
-    <div
-      role="listitem"
-      aria-label={`Drag ${item.label} onto the layout`}
+    <button
+      type="button"
+      aria-label={`Add ${item.label} — drag onto the layout, or press to insert`}
       aria-grabbed={dragging}
+      disabled={disabled}
       draggable={!disabled}
       data-dragging={dragging ? "true" : undefined}
       onDragStart={(event) => {
@@ -119,14 +124,21 @@ function ElementTile({
         setDragging(true)
       }}
       onDragEnd={() => setDragging(false)}
+      onClick={() => {
+        if (!disabled) {
+          onAdd(item)
+        }
+      }}
       className={cn(
         "flex select-none flex-col items-center justify-center gap-1 border bg-white px-3 py-4 text-[#101828] outline-none",
         "transition-[color,background-color,border-color,box-shadow,border-radius]",
         // Default
         "rounded-[4px] border-[#d0d5dd]",
         !disabled &&
-          "cursor-grab active:cursor-grabbing hover:rounded-[8px] hover:border-[#84adff] hover:shadow-[0_4px_8px_-2px_rgba(16,24,40,0.1),0_2px_4px_-2px_rgba(16,24,40,0.06)]",
-        // Dragging — same visual as Active
+          "cursor-pointer hover:rounded-[8px] hover:border-[#84adff] hover:shadow-[0_4px_8px_-2px_rgba(16,24,40,0.1),0_2px_4px_-2px_rgba(16,24,40,0.06)] focus-visible:rounded-[8px] focus-visible:border-[#84adff] focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
+        // Active (mouse press) + Dragging share the pressed visual.
+        !disabled &&
+          "active:rounded-[8px] active:border-[#004eeb] active:bg-[#fcfcfd] active:shadow-[0_4px_8px_-2px_rgba(16,24,40,0.1),0_2px_4px_-2px_rgba(16,24,40,0.06)]",
         "data-[dragging=true]:rounded-[8px] data-[dragging=true]:border-[#004eeb] data-[dragging=true]:bg-[#fcfcfd] data-[dragging=true]:shadow-[0_4px_8px_-2px_rgba(16,24,40,0.1),0_2px_4px_-2px_rgba(16,24,40,0.06)]",
         disabled &&
           "cursor-not-allowed rounded-[4px] border-[#eaecf0] bg-[#fcfcfd] text-[#98a2b3] shadow-none"
@@ -138,7 +150,7 @@ function ElementTile({
       <span className="w-full truncate text-center font-[family-name:var(--font-inter)] text-sm leading-5">
         {item.label}
       </span>
-    </div>
+    </button>
   )
 }
 
@@ -149,6 +161,13 @@ function ElementTile({
  */
 export function AddElementsPanel() {
   const [query, setQuery] = useState("")
+  const { addPlacedElement } = useLayoutBuilder()
+
+  // Click/press inserts the element at the end of the document — the keyboard-
+  // and quick-action equivalent of dragging it onto the canvas.
+  const handleAdd = (item: AddElement) => {
+    addPlacedElement({ kind: item.id, label: item.label, zone: "end" })
+  }
 
   const sections = useMemo(() => {
     const term = query.trim().toLowerCase()
@@ -197,11 +216,12 @@ export function AddElementsPanel() {
                 {section.label}
               </p>
               <div
-                role="list"
+                role="group"
+                aria-label={section.label}
                 className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,100px),1fr))] gap-3"
               >
                 {section.items.map((item) => (
-                  <ElementTile key={item.id} item={item} />
+                  <ElementTile key={item.id} item={item} onAdd={handleAdd} />
                 ))}
               </div>
             </div>

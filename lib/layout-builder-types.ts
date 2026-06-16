@@ -150,6 +150,11 @@ export type BuilderAssistantMessage = {
   durationSec: number
   todos: AiTodoItem[]
   summary: string
+  /**
+   * Follow-up prompts the assistant offers after a layout settles — rendered as
+   * clickable badges under the answer. Clicking one sends it as the next prompt.
+   */
+  recommendations: string[]
 }
 
 export type BuilderMessage = BuilderUserMessage | BuilderAssistantMessage
@@ -202,9 +207,17 @@ export type GeneratedLayout = {
     taxes: boolean
     notes: boolean
     terms: boolean
+    /** Discount line in the totals block. */
+    discount: boolean
+    /** "Pay online" call-to-action button. */
+    onlinePayment: boolean
+    /** Bank / payment details block. */
+    paymentDetails: boolean
   }
   lineItems: GeneratedLineItem[]
   taxRate: number
+  /** Fraction (0–1) discounted off the subtotal when `sections.discount`. */
+  discountRate: number
   documentNumber: string
   issueDate: string
   dueDate: string

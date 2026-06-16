@@ -60,10 +60,15 @@ type AiTodoListProps = {
 export function AiTodoList({
   items,
   title = "To-dos",
-  defaultCollapsed = false,
+  defaultCollapsed,
   className,
 }: AiTodoListProps) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  const doneCount = items.filter((item) => item.status === "done").length
+  const allDone = items.length > 0 && doneCount === items.length
+  // Once every step is done the plan auto-collapses to a summary row, since the
+  // detail is no longer the focus (Figma 7027:256006). A live, in-progress plan
+  // stays open. An explicit `defaultCollapsed` always wins.
+  const [collapsed, setCollapsed] = useState(defaultCollapsed ?? allDone)
 
   if (items.length === 0) {
     return null
@@ -72,7 +77,7 @@ export function AiTodoList({
   return (
     <div
       className={cn(
-        "flex w-full max-w-[480px] flex-col gap-3 rounded-lg border border-[#d9d6fe] bg-[#fafaff] p-2 font-[family-name:var(--font-inter)]",
+        "flex w-fit max-w-full flex-col gap-3 rounded-lg border border-[#d9d6fe] bg-[#fafaff] p-2 font-[family-name:var(--font-inter)]",
         className
       )}
     >
@@ -87,8 +92,8 @@ export function AiTodoList({
           <span className="truncate text-sm font-semibold leading-5 text-[#101828]">
             {title}
           </span>
-          <span className="flex shrink-0 items-center justify-center rounded-[2px] bg-[#ebe9fe] px-[5px] text-xs font-medium leading-[17px] text-[#475467]">
-            {items.length}
+          <span className="flex shrink-0 items-center justify-center rounded-[2px] bg-[#ebe9fe] px-[5px] text-xs font-medium leading-[17px] text-[#344054]">
+            {allDone ? `${doneCount}/${items.length} completed` : items.length}
           </span>
         </span>
         <ChevronDown

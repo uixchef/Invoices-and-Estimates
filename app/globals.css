@@ -321,6 +321,49 @@ nextjs-portal:has([role="dialog"]) > * {
   }
 }
 
+/* Companion shimmer to the working edge: a soft, slightly diagonal light band
+   sweeps across the layout while the AI acts on existing content, reinforcing
+   that a change is in flight without obscuring the work underneath. */
+@keyframes canvas-working-shimmer {
+  0% {
+    transform: translateX(-130%);
+  }
+
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+@layer utilities {
+  .canvas-working-shimmer {
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .canvas-working-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: -25% -45%;
+    background: linear-gradient(
+      105deg,
+      rgba(255, 255, 255, 0) 40%,
+      rgba(199, 184, 255, 0.06) 48%,
+      rgba(255, 255, 255, 0.16) 50%,
+      rgba(199, 184, 255, 0.06) 52%,
+      rgba(255, 255, 255, 0) 60%
+    );
+    transform: translateX(-130%);
+    animation: canvas-working-shimmer 2.6s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .canvas-working-shimmer::after {
+      animation: none;
+      opacity: 0;
+    }
+  }
+}
+
 /* Progressive disclosure for the AI welcome state — each section rises and
    fades in, staggered by inline animation-delay (Ask AI 7992:334497/560/435/466
    show the staged reveal: greeting → copy → suggestions → prompt input). */

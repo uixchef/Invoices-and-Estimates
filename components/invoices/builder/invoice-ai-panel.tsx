@@ -2,15 +2,17 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
-  AlertCircle,
   AtSign,
+  Check,
+  CheckCircle2,
   ChevronDown,
+  Copy,
+  Eye,
   ImageIcon,
   Link2,
   MousePointerClick,
   Palette,
   Paperclip,
-  RotateCcw,
   Send,
   Settings2,
   Square,
@@ -34,7 +36,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { AI_MODELS } from "@/lib/ai-models"
-import { buildPostReasoning, buildReasoning } from "@/lib/builder-narrative"
+import {
+  buildPostReasoning,
+  buildReasoning,
+  buildRecommendations,
+} from "@/lib/builder-narrative"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import type {
   BuilderAssistantMessage,
@@ -61,6 +67,8 @@ function UserMessageBubble({
 }) {
   const clampRef = useRef<HTMLDivElement>(null)
   const [overflowing, setOverflowing] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const copyTimer = useRef<number | null>(null)
 
   useLayoutEffect(() => {
     const node = clampRef.current
@@ -70,31 +78,81 @@ function UserMessageBubble({
     setOverflowing(node.scrollHeight > node.clientHeight + 1)
   }, [text])
 
+  useEffect(() => {
+    return () => {
+      if (copyTimer.current) {
+        window.clearTimeout(copyTimer.current)
+      }
+    }
+  }, [])
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      if (copyTimer.current) {
+        window.clearTimeout(copyTimer.current)
+      }
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard can be blocked (permissions / insecure context); ignore.
+    }
+  }, [text])
+
   return (
-    <div
-      className={cn(
-        "relative overflow-hidden rounded-lg border p-2 transition-colors",
-        active
-          ? "border-[#bdb4fe] bg-white shadow-[0px_4px_8px_-2px_rgba(16,24,40,0.1),0px_2px_4px_-2px_rgba(16,24,40,0.06)]"
-          : "border-[#d0d5dd] bg-[#fcfcfd]"
-      )}
-    >
-      {/* Hugs content, then locks to exactly 3 lines (3 × 20px) once it
-          overflows — Figma "Sent" bubble (32:448013). */}
-      <div ref={clampRef} className="max-h-[60px] overflow-hidden">
-        <p className="whitespace-pre-wrap font-[family-name:var(--font-inter)] text-base font-normal leading-5 text-[#101828]">
-          {text}
-        </p>
+    // Hovering (or focusing the copy control) lifts the bubble and reveals the
+    // copy affordance below it — Figma "Sent" hover state. The bubble hugs its
+    // content and stays left-aligned rather than spanning the panel width.
+    <div className="group/bubble flex w-fit max-w-full flex-col">
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-lg border p-2 transition-all duration-150",
+          "group-hover/bubble:-translate-y-0.5 group-focus-within/bubble:-translate-y-0.5",
+          active
+            ? "border-[#bdb4fe] bg-white shadow-[0px_4px_8px_-2px_rgba(16,24,40,0.1),0px_2px_4px_-2px_rgba(16,24,40,0.06)] group-hover/bubble:shadow-[0px_8px_16px_-4px_rgba(16,24,40,0.12),0px_4px_8px_-2px_rgba(16,24,40,0.08)]"
+            : "border-[#d0d5dd] bg-[#fcfcfd] group-hover/bubble:border-[#bdb4fe] group-hover/bubble:shadow-[0px_4px_8px_-2px_rgba(16,24,40,0.1),0px_2px_4px_-2px_rgba(16,24,40,0.06)]"
+        )}
+      >
+        {/* Hugs content, then locks to exactly 3 lines (3 × 20px) once it
+            overflows — Figma "Sent" bubble (32:448013). */}
+        <div ref={clampRef} className="max-h-[60px] overflow-hidden">
+          <p className="whitespace-pre-wrap font-[family-name:var(--font-inter)] text-sm font-normal leading-5 text-[#101828]">
+            {text}
+          </p>
+        </div>
+        {overflowing ? (
+          <div
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-b from-transparent",
+              active ? "to-white" : "to-[#fcfcfd]"
+            )}
+          />
+        ) : null}
       </div>
-      {overflowing ? (
-        <div
-          aria-hidden
-          className={cn(
-            "pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-b from-transparent",
-            active ? "to-white" : "to-[#fcfcfd]"
-          )}
-        />
-      ) : null}
+      {/* No reserved height at rest — the row collapses (0fr) so the bubble
+          doesn't carry dead whitespace, and expands on hover/focus to reveal the
+          copy control. */}
+      <div className="grid grid-rows-[0fr] transition-[grid-template-rows] duration-150 group-hover/bubble:grid-rows-[1fr] group-focus-within/bubble:grid-rows-[1fr]">
+        <div className="overflow-hidden">
+          <div className="flex justify-end pt-1 opacity-0 transition-opacity duration-150 group-hover/bubble:opacity-100 group-focus-within/bubble:opacity-100">
+            <button
+              type="button"
+              aria-label={copied ? "Copied" : "Copy prompt"}
+              onClick={handleCopy}
+              className={cn(
+                "inline-flex size-6 items-center justify-center rounded-[4px] outline-none transition-colors",
+                "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-3.5",
+                copied
+                  ? "text-[#5925dc]"
+                  : "text-[#667085] hover:bg-[#f2f4f7] hover:text-[#101828]"
+              )}
+            >
+              {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -222,9 +280,34 @@ function ReceivedAnswers({ items }: { items: BuilderReceivedAnswer[] }) {
  * and the streamed closing response — so the full context stays on screen after
  * the to-dos finish.
  */
-function AssistantTurn({ message }: { message: BuilderAssistantMessage }) {
+function AssistantTurn({
+  message,
+  isCurrent,
+}: {
+  message: BuilderAssistantMessage
+  isCurrent: boolean
+}) {
+  const {
+    sendMessage,
+    status,
+    generatedLayout,
+    previewVersionId,
+    previewVersion,
+    exitVersionPreview,
+    restoreVersion,
+    hasVersionSnapshot,
+    showFeedbackToast,
+  } = useLayoutBuilder()
   const hasAnswers =
     message.receivedAnswers && message.receivedAnswers.length > 0
+  const isPreviewing = previewVersionId === message.id
+  const canPreviewVersion = hasVersionSnapshot(message.id)
+  // The current turn's chips are derived live from the document so a suggestion
+  // that's already been applied (e.g. notes added) never lingers; older turns
+  // keep their frozen list (and don't render chips anyway).
+  const recommendations = isCurrent
+    ? buildRecommendations(generatedLayout)
+    : (message.recommendations ?? [])
 
   return (
     <div className="flex flex-col gap-3">
@@ -240,7 +323,58 @@ function AssistantTurn({ message }: { message: BuilderAssistantMessage }) {
         <StreamingText text={message.reasoning} />
       </AiInAction>
       <AiTodoList items={message.todos} />
-      <AiAnswer text={message.summary} streaming />
+      {/* Next-step suggestion tags render inside the answer, between the body
+          and the toolbar (Figma 3312:63712) — only on the latest settled turn so
+          stale suggestions from earlier turns don't linger. */}
+      <AiAnswer
+        text={message.summary}
+        streaming
+        isCurrentVersion={isCurrent}
+        isPreviewing={isPreviewing}
+        canPreviewVersion={canPreviewVersion}
+        onPreviewVersion={() => previewVersion(message.id)}
+        onExitPreview={exitVersionPreview}
+        onRestoreVersion={() => restoreVersion(message.id)}
+        onFeedback={showFeedbackToast}
+        recommendations={
+          isCurrent && status === "ready" ? recommendations : undefined
+        }
+        onSelectRecommendation={sendMessage}
+      />
+    </div>
+  )
+}
+
+/**
+ * Inline generation-failure notice (Figma error state). A muted, low-alarm
+ * message — the layout on the canvas is untouched — with a single Retry that
+ * re-runs the last prompt. Sits in the thread where the response would have been.
+ */
+function ThreadErrorNotice({
+  message,
+  onRetry,
+}: {
+  message: string | null
+  onRetry: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-2" role="alert">
+      <p className="flex items-center gap-1.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#475467]">
+        <span aria-hidden>😕</span>
+        That didn&rsquo;t work
+      </p>
+      <p className="font-[family-name:var(--font-inter)] text-sm font-normal leading-5 text-[#475467]">
+        {message ?? "Looks like something went off track. Give it another try."}
+      </p>
+      <div>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex h-7 items-center justify-center rounded-[6px] border border-[#d6bbfb] bg-white px-2.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#5925dc] outline-none transition-colors hover:border-[#6938ef] hover:bg-[#6938ef] hover:text-white focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+        >
+          Retry
+        </button>
+      </div>
     </div>
   )
 }
@@ -249,9 +383,6 @@ function AiComposer() {
   const {
     sendMessage,
     status,
-    errorMessage,
-    retryGeneration,
-    dismissError,
     stopGeneration,
     questions,
     submitAnswers,
@@ -266,6 +397,8 @@ function AiComposer() {
     removeSelection,
     clearSelections,
     isBlankSession,
+    previewVersionId,
+    exitVersionPreview,
   } = useLayoutBuilder()
   const [value, setValue] = useState("")
   const [modelId, setModelId] = useState(AI_MODELS[0].id)
@@ -319,6 +452,14 @@ function AiComposer() {
         {/* Questions stencil docks as a narrower panel resting on the wider
             composer (Figma: Prompt Stencil / User Input Form, 5620:8702). */}
         <div className="flex w-full flex-col">
+          {/* Version-preview banner stacks just above the prompt input, sharing
+              the composer's 16px gutter so it aligns with the input width
+              (Figma 3247:62513 — "pending changes" bar). */}
+          {previewVersionId && status === "ready" ? (
+            <div className="mb-1 w-full">
+              <PreviewVersionBanner onExit={exitVersionPreview} />
+            </div>
+          ) : null}
           {isAsking ? (
             <div className="w-full px-2">
               <AiQuestions
@@ -331,39 +472,6 @@ function AiComposer() {
             </div>
           ) : null}
 
-          {status === "error" ? (
-            <div
-              role="alert"
-              className="mb-2 flex w-full items-start gap-2.5 rounded-lg border border-[#fda29b] bg-[#fffbfa] p-3"
-            >
-              <AlertCircle
-                className="mt-px size-4 shrink-0 text-[#d92d20]"
-                aria-hidden
-              />
-              <div className="flex min-w-0 flex-1 flex-col gap-2">
-                <p className="font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#b42318]">
-                  {errorMessage ?? "Something went wrong. Please try again."}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={retryGeneration}
-                    className="inline-flex h-7 items-center justify-center gap-1 rounded-[6px] border border-[#d92d20] bg-[#d92d20] px-2.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-[17px] text-white outline-none transition-colors hover:bg-[#b42318] focus-visible:ring-2 focus-visible:ring-[#d92d20]/40"
-                  >
-                    <RotateCcw className="size-3.5" aria-hidden />
-                    Try again
-                  </button>
-                  <button
-                    type="button"
-                    onClick={dismissError}
-                    className="inline-flex h-7 items-center justify-center rounded-[6px] px-2.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-[17px] text-[#667085] outline-none transition-colors hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
           <div
             className={cn(
               "flex w-full flex-col gap-2.5 rounded-lg border p-2 transition-colors",
@@ -636,6 +744,9 @@ export function InvoiceAiPanel({
     messages,
     todos,
     status,
+    errorMessage,
+    retryGeneration,
+    feedbackToast,
     preThoughtDurationSec,
     preReasoning,
     receivedAnswers,
@@ -753,7 +864,7 @@ export function InvoiceAiPanel({
             <EditsTab
               active={editsTab === "advanced"}
               icon={<Settings2 className="size-3.5" aria-hidden />}
-              label="Advance"
+              label="Advanced"
               onClick={() => setEditsTab("advanced")}
             />
           </div>
@@ -814,7 +925,16 @@ export function InvoiceAiPanel({
               ) : null}
 
               {turn.assistant ? (
-                <AssistantTurn message={turn.assistant} />
+                <AssistantTurn message={turn.assistant} isCurrent={isLast} />
+              ) : null}
+
+              {/* Generation failure (Figma error state): friendly inline notice
+                  with a retry, shown in place of the response on the last turn. */}
+              {isLast && status === "error" ? (
+                <ThreadErrorNotice
+                  message={errorMessage}
+                  onRetry={retryGeneration}
+                />
               ) : null}
 
               {isActiveTurn ? (
@@ -846,8 +966,55 @@ export function InvoiceAiPanel({
       {/* The docked composer is a chat affordance — hidden in the Add elements
           palette (a drag-and-drop surface) and in the blank welcome state, which
           carries its own prompt input. */}
-      {adding || blankWelcome ? null : <AiComposer />}
+      {adding || blankWelcome ? null : (
+        <div className="relative flex flex-col gap-2">
+          {feedbackToast ? <FeedbackToast message={feedbackToast} /> : null}
+          <AiComposer />
+        </div>
+      )}
     </aside>
+  )
+}
+
+/**
+ * Transient confirmation pill floating just above the composer (Figma feedback
+ * toast). Green success treatment; auto-dismissed by the context timer.
+ */
+function FeedbackToast({ message }: { message: string }) {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-full z-20 flex justify-center px-4 pb-2">
+      <div className="animate-in fade-in-0 slide-in-from-bottom-1 flex items-center gap-1.5 rounded-full border border-[#a6f4c5] bg-[#ecfdf3] py-1.5 pl-2.5 pr-3 shadow-[0_8px_16px_-4px_rgba(16,24,40,0.12),0_4px_8px_-2px_rgba(16,24,40,0.08)]">
+        <CheckCircle2 className="size-4 shrink-0 text-[#039855]" aria-hidden />
+        <span className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#027a48]">
+          {message}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Read-only "previewing an earlier version" bar, docked directly above the
+ * composer the same way the pending-changes bar sits over the prompt input
+ * (Figma 3247:62513). One tap on "Back to current" returns to the live document.
+ */
+function PreviewVersionBanner({ onExit }: { onExit: () => void }) {
+  return (
+    <div className="flex items-center gap-1 rounded-[8px] border border-[#9b8afb] bg-white p-2 shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)]">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <Eye className="size-3.5 shrink-0 text-[#6938ef]" aria-hidden />
+        <span className="truncate font-[family-name:var(--font-inter)] text-xs font-medium leading-[18px] text-[#475467]">
+          Previewing an earlier version
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onExit}
+        className="inline-flex h-6 shrink-0 items-center justify-center rounded-[4px] bg-[#6938ef] px-1.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-[18px] text-white outline-none transition-colors hover:bg-[#5925dc] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+      >
+        Back to current
+      </button>
+    </div>
   )
 }
 

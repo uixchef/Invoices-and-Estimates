@@ -101,3 +101,45 @@ export function buildCompletionSummary(layout: GeneratedLayout): string {
     "It's print-ready and fully editable. Tell me what to change — colours, spacing, sections, or copy — and I'll update the layout.",
   ].join("\n")
 }
+
+/**
+ * Next-step suggestions surfaced as clickable badges beneath the answer. Leads
+ * with the sections the layout is missing (so a click meaningfully extends the
+ * document), then rounds out with common refinements. Capped at four so the
+ * badge stack stays scannable.
+ */
+export function buildRecommendations(layout: GeneratedLayout): string[] {
+  const recs: string[] = []
+
+  if (!layout.sections.logo) {
+    recs.push("Add a logo to the header")
+  }
+  if (!layout.sections.taxes) {
+    recs.push("Add a tax line to the totals")
+  }
+  if (!layout.sections.notes) {
+    recs.push("Add a notes or thank-you message")
+  }
+  if (!layout.sections.terms) {
+    recs.push("Include payment terms")
+  }
+  if (!layout.sections.discount) {
+    recs.push("Add a discount row")
+  }
+  if (!layout.sections.onlinePayment) {
+    recs.push("Add a 'Pay online' button")
+  }
+  if (!layout.sections.paymentDetails) {
+    recs.push("Add bank and payment details")
+  }
+
+  // Generic enhancements backfill so there are always a few suggestions, even
+  // when the layout already has every section.
+  recs.push(
+    "Switch to a bold, branded color scheme",
+    "Add another line item",
+    "Make it minimal and clean"
+  )
+
+  return recs.slice(0, 4)
+}

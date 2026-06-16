@@ -30,6 +30,7 @@ import {
   buildCompletionSummary,
   buildPostReasoning,
   buildReasoning,
+  buildRecommendations,
 } from "@/lib/builder-narrative"
 import { getDefaultPlacedContent } from "@/lib/placed-element-defaults"
 import { getDefaultBuilderMediumId } from "@/lib/mediums-data"
@@ -95,6 +96,8 @@ type PersistedBuilderSession = {
   layerDuplicates: Record<string, number>
   placedElements: PlacedElement[]
   codeOverride: string | null
+  /** Per-turn version snapshots so eye/undo stay functional after a reload. */
+  versionSnapshots: Record<string, VersionSnapshot>
 }
 
 /** Undo/redo captures document-editing state only (not panel chrome or chat). */
@@ -114,6 +117,16 @@ function cloneHistorySnapshot(
   snapshot: BuilderHistorySnapshot
 ): BuilderHistorySnapshot {
   return structuredClone(snapshot)
+}
+
+/**
+ * Frozen document state captured when an assistant turn settles, keyed by that
+ * turn's message id. Lets the user preview the canvas "as of that prompt" (eye
+ * control) or revert to it (undo control). Carries the resolved layout too so
+ * the preview is faithful even if answers / document type change later.
+ */
+type VersionSnapshot = BuilderHistorySnapshot & {
+  generatedLayout: GeneratedLayout
 }
 
 /** Short "thinking" pass shown (with streaming reasoning) before questions. */
@@ -478,6 +491,10 @@ function deriveLayout(
     taxes: selectedSections ? selectedSections.includes("taxes") : true,
     notes: selectedSections ? selectedSections.includes("notes") : true,
     terms: selectedSections ? selectedSections.includes("terms") : true,
+    // Optional add-ons surfaced via follow-up prompts / recommendations.
+    discount: false,
+    onlinePayment: false,
+    paymentDetails: false,
   }
 
   const countAnswer =
@@ -509,6 +526,7 @@ function deriveLayout(
     sections,
     lineItems: SAMPLE_LINE_ITEMS.slice(0, itemCount),
     taxRate: 0.1,
+    discountRate: 0.1,
     documentNumber: `${DOC_PREFIX[documentType]}-${now.getFullYear()}-${pad(
       142,
       4
@@ -516,6 +534,179 @@ function deriveLayout(
     issueDate: formatDate(now),
     dueDate: formatDate(due),
   }
+}
+
+/** Named accent colours an edit prompt can request explicitly. */
+const ACCENT_BY_COLOR: Record<string, string> = {
+  purple: "#6938ef",
+  violet: "#6938ef",
+  indigo: "#444ce7",
+  blue: "#155eef",
+  green: "#039855",
+  emerald: "#039855",
+  red: "#d92d20",
+  orange: "#e04f16",
+  amber: "#dc6803",
+  teal: "#0e9384",
+  pink: "#dd2590",
+  rose: "#e31b54",
+  black: "#101828",
+  gray: "#475467",
+  grey: "#475467",
+}
+
+/** Currency words an edit prompt can switch to. */
+const CURRENCY_BY_WORD: Record<string, string> = {
+  dollar: "usd",
+  dollars: "usd",
+  usd: "usd",
+  euro: "eur",
+  euros: "eur",
+  eur: "eur",
+  pound: "gbp",
+  pounds: "gbp",
+  sterling: "gbp",
+  gbp: "gbp",
+  rupee: "inr",
+  rupees: "inr",
+  inr: "inr",
+}
+
+/** Optional sections in the order we backfill them for an unmatched "add" prompt. */
+const ADDABLE_SECTIONS: (keyof GeneratedLayout["sections"])[] = [
+  "logo",
+  "taxes",
+  "notes",
+  "terms",
+  "discount",
+  "onlinePayment",
+  "paymentDetails",
+]
+
+/**
+ * Interprets a follow-up prompt as a concrete edit to the layout — the stand-in
+ * for the editing API. Maps natural-language requests (and the recommendation
+ * chips) to section toggles, style/accent, currency, and line-item changes so a
+ * prompt visibly changes the document. Returns the same layout unchanged when
+ * nothing recognisable is requested.
+ */
+function applyPromptEdit(
+  layout: GeneratedLayout,
+  rawPrompt: string
+): GeneratedLayout {
+  // Element-scoped prompts arrive as "Item 2: <text>"; the edit still applies.
+  const text = rawPrompt.toLowerCase().replace(/^[^:]{0,40}:\s*/, "")
+  if (!text.trim()) {
+    return layout
+  }
+
+  const remove =
+    /\b(remove|hide|delete|drop|without|no longer|take out|get rid of)\b/.test(
+      text
+    )
+  const on = !remove
+
+  const next: GeneratedLayout = {
+    ...layout,
+    sections: { ...layout.sections },
+    lineItems: [...layout.lineItems],
+  }
+  let changed = false
+
+  const setSection = (
+    key: keyof GeneratedLayout["sections"],
+    matcher: RegExp
+  ) => {
+    if (matcher.test(text)) {
+      next.sections[key] = on
+      changed = true
+    }
+  }
+
+  setSection("logo", /\b(logo|brand mark|branding|brand header)\b/)
+  setSection("taxes", /\b(tax|taxes|vat|gst|sales tax)\b/)
+  setSection("notes", /\b(notes?|thank[\s-]?you|memo|message)\b/)
+  setSection("terms", /\b(terms|conditions|policy)\b/)
+  setSection("discount", /\b(discount|coupon|promo|markdown|rebate)\b/)
+  setSection(
+    "onlinePayment",
+    /\b(pay online|pay now|online payment|payment button|pay link|payment link|checkout button)\b/
+  )
+  setSection(
+    "paymentDetails",
+    /\b(bank|payment details|account number|wire|iban|swift|remittance|ach)\b/
+  )
+
+  // Visual style + accent.
+  const styleWord = (
+    ["minimal", "modern", "classic", "bold"] as BuilderVisualStyle[]
+  ).find((style) => new RegExp(`\\b${style}\\b`).test(text))
+  if (styleWord) {
+    next.style = styleWord
+    next.accent = STYLE_ACCENT[styleWord]
+    changed = true
+  }
+  for (const [name, hex] of Object.entries(ACCENT_BY_COLOR)) {
+    if (new RegExp(`\\b${name}\\b`).test(text)) {
+      next.accent = hex
+      changed = true
+      break
+    }
+  }
+
+  // Line items.
+  const mentionsItem = /\b(item|line item|row|service|product)s?\b/.test(text)
+  if (mentionsItem && !remove && /\b(add|insert|another|extra|more)\b/.test(text)) {
+    const pick = SAMPLE_LINE_ITEMS[next.lineItems.length % SAMPLE_LINE_ITEMS.length]
+    next.lineItems = [...next.lineItems, { ...pick }]
+    changed = true
+  } else if (mentionsItem && remove && next.lineItems.length > 1) {
+    next.lineItems = next.lineItems.slice(0, -1)
+    changed = true
+  }
+
+  // Currency.
+  for (const [word, id] of Object.entries(CURRENCY_BY_WORD)) {
+    if (new RegExp(`\\b${word}\\b`).test(text)) {
+      const currency = CURRENCY_BY_ID[id]
+      next.currencyCode = currency.code
+      next.currencySymbol = currency.symbol
+      changed = true
+      break
+    }
+  }
+
+  // Fallback: an additive prompt we couldn't map exactly still produces a
+  // visible change by enabling the next missing optional section.
+  if (!changed && /\b(add|include|insert|create|put|show|with)\b/.test(text)) {
+    const missing = ADDABLE_SECTIONS.find((key) => !next.sections[key])
+    if (missing) {
+      next.sections[missing] = true
+      changed = true
+    }
+  }
+
+  return changed ? next : layout
+}
+
+/**
+ * Composes the rendered layout from the conversation: the first prompt sets the
+ * base, then up to `maxFollowUps` settled follow-up prompts fold in as edits,
+ * and manual visual edits win last. A pure function of the transcript so the
+ * same conversation always renders the same document.
+ */
+function composeLayout(
+  userPrompts: string[],
+  maxFollowUps: number,
+  answers: AiAnswers | null,
+  documentType: BuilderDocumentType,
+  layoutEdits: Partial<GeneratedLayout>
+): GeneratedLayout {
+  let composed = deriveLayout(userPrompts[0] ?? "", answers, documentType)
+  for (let i = 1; i < userPrompts.length && i <= maxFollowUps; i++) {
+    composed = applyPromptEdit(composed, userPrompts[i])
+  }
+  return { ...composed, ...layoutEdits }
 }
 
 /**
@@ -858,6 +1049,22 @@ type LayoutBuilderContextValue = {
   redo: () => void
 
   /**
+   * Per-turn version controls (the eye / undo on each assistant answer). Each
+   * settled turn freezes a document snapshot; `previewVersion` renders it on the
+   * canvas read-only, `restoreVersion` rolls the live document back to it.
+   */
+  previewVersionId: string | null
+  previewVersion: (messageId: string) => void
+  exitVersionPreview: () => void
+  restoreVersion: (messageId: string) => void
+  hasVersionSnapshot: (messageId: string) => boolean
+
+  /** Transient confirmation toast above the composer; null when hidden. */
+  feedbackToast: string | null
+  /** Shows a toast above the composer for a few seconds (answer feedback, etc.). */
+  showFeedbackToast: (message: string) => void
+
+  /**
    * True once the session has edits that haven't been persisted — drives the
    * "Unsaved changes?" guard when leaving the builder. Set by any document
    * mutation, a generation, or a rename; cleared by Save / Publish.
@@ -911,6 +1118,19 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [editsTab, setEditsTab] = useState<"style" | "advanced">("style")
   const [addingElement, setAddingElement] = useState(false)
   const [placedElements, setPlacedElements] = useState<PlacedElement[]>([])
+
+  // Per-turn document snapshots (message id → frozen state) and the turn the
+  // user is currently previewing on the canvas (null = live/current version).
+  const versionSnapshotsRef = useRef<Record<string, VersionSnapshot>>({})
+  // Bumped whenever the snapshot map changes (capture or restore) so the persist
+  // effect re-runs and consumers re-evaluate `hasVersionSnapshot`.
+  const [snapshotVersion, setSnapshotVersion] = useState(0)
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
+
+  // Transient confirmation toast shown just above the composer (e.g. after
+  // submitting answer feedback). Auto-clears.
+  const [feedbackToast, setFeedbackToast] = useState<string | null>(null)
+  const feedbackToastTimerRef = useRef<number | null>(null)
 
   const placedElementCounterRef = useRef(0)
   const historyPastRef = useRef<BuilderHistorySnapshot[]>([])
@@ -1239,6 +1459,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setPlacedElements(saved.placedElements ?? [])
       setCodeOverrideState(saved.codeOverride ?? null)
       setHasUnsavedChanges(saved.hasUnsavedChanges ?? false)
+      // Restore per-turn snapshots so the eye/undo controls on earlier turns
+      // keep working after a reload (they live in a ref, lost on refresh).
+      versionSnapshotsRef.current = saved.versionSnapshots ?? {}
+      setSnapshotVersion((value) => value + 1)
 
       if (saved.hasGeneratedOnce) {
         setHasGeneratedOnce(true)
@@ -1335,6 +1559,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
           durationSec: session.durationSec,
           todos: completedTodos,
           summary: buildCompletionSummary(restoredLayout),
+          recommendations: buildRecommendations(restoredLayout),
         },
       ])
       setHasGeneratedOnce(true)
@@ -1422,6 +1647,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       layerDuplicates,
       placedElements,
       codeOverride,
+      versionSnapshots: versionSnapshotsRef.current,
     }
     try {
       window.sessionStorage.setItem(
@@ -1452,6 +1678,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     layerDuplicates,
     placedElements,
     codeOverride,
+    snapshotVersion,
   ])
 
   const focusPrompt = useCallback(() => {
@@ -1876,6 +2103,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       // The first prompt ends the blank empty state; the generate flow takes over.
       setIsBlankSession(false)
 
+      // Leaving a version preview — a new turn always acts on the live document.
+      setPreviewVersionId(null)
+
       // A new turn supersedes any prior failure.
       setErrorMessage(null)
 
@@ -1938,12 +2168,149 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   }, [hasGeneratedOnce])
 
   const generatedLayout = useMemo<GeneratedLayout>(() => {
-    const firstUser = messages.find((message) => message.role === "user")
-    const prompt = firstUser?.text ?? ""
-    const base = deriveLayout(prompt, answers, documentType)
-    // Manual visual edits win over the derived layout.
-    return { ...base, ...layoutEdits }
+    const userPrompts = messages
+      .filter((message) => message.role === "user")
+      .map((message) => message.text)
+    const settledTurns = messages.filter(
+      (message) => message.role === "assistant"
+    ).length
+    // The first prompt → assistant #1 → base layout; each later prompt folds in
+    // once its assistant turn has settled (so the change lands on completion,
+    // not the instant the user hits send). Manual edits still win last.
+    return composeLayout(
+      userPrompts,
+      settledTurns - 1,
+      answers,
+      documentType,
+      layoutEdits
+    )
   }, [messages, answers, documentType, layoutEdits])
+
+  // Freeze a snapshot of the document the first time each assistant turn
+  // appears, so its eye/undo controls can preview or revert to that exact state
+  // later. Write-once per id keeps earlier versions frozen as edits accumulate.
+  useEffect(() => {
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((message) => message.role === "assistant")
+    if (!lastAssistant || versionSnapshotsRef.current[lastAssistant.id]) {
+      return
+    }
+    versionSnapshotsRef.current[lastAssistant.id] = {
+      ...cloneHistorySnapshot(documentStateRef.current),
+      generatedLayout,
+    }
+    // Surface the new snapshot to consumers (hasVersionSnapshot reads the ref)
+    // and trigger a persist so it survives a reload.
+    setSnapshotVersion((value) => value + 1)
+  }, [messages, generatedLayout])
+
+  const previewVersion = useCallback((messageId: string) => {
+    if (!versionSnapshotsRef.current[messageId]) {
+      return
+    }
+    setPreviewVersionId(messageId)
+  }, [])
+
+  const exitVersionPreview = useCallback(() => {
+    setPreviewVersionId(null)
+  }, [])
+
+  const restoreVersion = useCallback(
+    (messageId: string) => {
+      const snapshot = versionSnapshotsRef.current[messageId]
+      if (!snapshot) {
+        return
+      }
+      // Record the current state for undo, then roll the document back.
+      pushHistory()
+      applyHistorySnapshot({
+        layoutEdits: snapshot.layoutEdits,
+        layerText: snapshot.layerText,
+        layerStyles: snapshot.layerStyles,
+        hiddenLayers: snapshot.hiddenLayers,
+        layerDuplicates: snapshot.layerDuplicates,
+        placedElements: snapshot.placedElements,
+        codeOverride: snapshot.codeOverride,
+      })
+      setPreviewVersionId(null)
+    },
+    [pushHistory, applyHistorySnapshot]
+  )
+
+  const hasVersionSnapshot = useCallback(
+    (messageId: string) => Boolean(versionSnapshotsRef.current[messageId]),
+    []
+  )
+
+  const showFeedbackToast = useCallback((message: string) => {
+    setFeedbackToast(message)
+    if (feedbackToastTimerRef.current) {
+      window.clearTimeout(feedbackToastTimerRef.current)
+    }
+    feedbackToastTimerRef.current = window.setTimeout(
+      () => setFeedbackToast(null),
+      2600
+    )
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (feedbackToastTimerRef.current) {
+        window.clearTimeout(feedbackToastTimerRef.current)
+      }
+    }
+  }, [])
+
+  // The snapshot currently being previewed (if any) drives read-only canvas
+  // overrides below.
+  const previewSnapshot = previewVersionId
+    ? (versionSnapshotsRef.current[previewVersionId] ?? null)
+    : null
+
+  // While previewing a past version the canvas renders that frozen snapshot and
+  // editing is suppressed (read-only). Otherwise everything reads live state.
+  const effective = useMemo(() => {
+    if (!previewSnapshot) {
+      return {
+        generatedLayout,
+        layerText,
+        layerStyles,
+        placedElements,
+        codeOverride,
+        isCodeDetached: codeOverride !== null,
+        editMode,
+        inspectingLayer,
+        isLayerHidden,
+        layerDuplicateCount,
+      }
+    }
+    return {
+      generatedLayout: previewSnapshot.generatedLayout,
+      layerText: previewSnapshot.layerText,
+      layerStyles: previewSnapshot.layerStyles,
+      placedElements: previewSnapshot.placedElements,
+      codeOverride: previewSnapshot.codeOverride,
+      isCodeDetached: previewSnapshot.codeOverride !== null,
+      editMode: false,
+      inspectingLayer: null,
+      isLayerHidden: (label: string) =>
+        previewSnapshot.hiddenLayers.includes(label),
+      layerDuplicateCount: (label: string) =>
+        previewSnapshot.layerDuplicates[label] ?? 0,
+    }
+  }, [
+    previewSnapshot,
+    generatedLayout,
+    layerText,
+    layerStyles,
+    placedElements,
+    codeOverride,
+    editMode,
+    inspectingLayer,
+    isLayerHidden,
+    layerDuplicateCount,
+  ])
 
   // Latch once the first generation settles; follow-up prompts then keep the
   // existing layout visible instead of re-showing the generating animation.
@@ -2002,6 +2369,24 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         .find((message) => message.role === "user")
       const prompt = lastUser?.text ?? ""
 
+      // The layout this turn produces — fold every prompt up to and including
+      // the one being answered (this assistant message isn't appended yet, so
+      // the live `generatedLayout` memo still trails by one turn). Keeps the
+      // recap and recommendations consistent with what lands on the canvas.
+      const userPrompts = current
+        .filter((message) => message.role === "user")
+        .map((message) => message.text)
+      const settledTurns = current.filter(
+        (message) => message.role === "assistant"
+      ).length
+      const turnLayout = composeLayout(
+        userPrompts,
+        settledTurns,
+        answers,
+        documentType,
+        layoutEdits
+      )
+
       const completedTodos: AiTodoItem[] = BUILDER_TODO_LABELS.map(
         (label, index) => ({
           id: `builder-todo-${index}`,
@@ -2025,7 +2410,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
             : buildReasoning(prompt),
           durationSec: thoughtDurationSec ?? 0,
           todos: completedTodos,
-          summary: buildCompletionSummary(generatedLayout),
+          summary: buildCompletionSummary(turnLayout),
+          recommendations: buildRecommendations(turnLayout),
         },
       ]
     })
@@ -2034,7 +2420,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     thoughtDurationSec,
     preThoughtDurationSec,
     preReasoning,
-    generatedLayout,
+    answers,
+    documentType,
+    layoutEdits,
     receivedAnswers,
   ])
 
@@ -2072,8 +2460,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       previewOpen,
       toggleCode,
       togglePreview,
-      codeOverride,
-      isCodeDetached: codeOverride !== null,
+      codeOverride: effective.codeOverride,
+      isCodeDetached: effective.isCodeDetached,
       detachCode,
       updateCodeOverride,
       reattachCode,
@@ -2083,22 +2471,22 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setPanelWidth,
       panelMinWidth: PANEL_MIN_WIDTH,
       panelMaxWidth: PANEL_MAX_WIDTH,
-      editMode,
+      editMode: effective.editMode,
       toggleEditMode,
       updateLayout,
       selections,
       addSelection,
       removeSelection,
       clearSelections,
-      layerText,
+      layerText: effective.layerText,
       setLayerText,
-      layerStyles,
+      layerStyles: effective.layerStyles,
       setLayerStyle,
-      isLayerHidden,
-      layerDuplicateCount,
+      isLayerHidden: effective.isLayerHidden,
+      layerDuplicateCount: effective.layerDuplicateCount,
       duplicateLayer,
       requestDeleteLayer,
-      inspectingLayer,
+      inspectingLayer: effective.inspectingLayer,
       inspectLayer,
       editsTab,
       setEditsTab,
@@ -2107,7 +2495,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       addingElement,
       openAddElements,
       closeAddElements,
-      placedElements,
+      placedElements: effective.placedElements,
       addPlacedElement,
       updatePlacedElementContent,
       removePlacedElement,
@@ -2127,7 +2515,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       todos,
       questions,
       receivedAnswers,
-      generatedLayout,
+      generatedLayout: effective.generatedLayout,
       sendMessage,
       submitAnswers,
       skipQuestions,
@@ -2136,6 +2524,13 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       canRedo,
       undo,
       redo,
+      previewVersionId,
+      previewVersion,
+      exitVersionPreview,
+      restoreVersion,
+      hasVersionSnapshot,
+      feedbackToast,
+      showFeedbackToast,
       hasUnsavedChanges,
       markSaved,
     }),
@@ -2212,6 +2607,15 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       canRedo,
       undo,
       redo,
+      effective,
+      previewVersionId,
+      previewVersion,
+      exitVersionPreview,
+      restoreVersion,
+      hasVersionSnapshot,
+      snapshotVersion,
+      feedbackToast,
+      showFeedbackToast,
       hasUnsavedChanges,
       markSaved,
     ]
