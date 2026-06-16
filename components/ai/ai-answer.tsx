@@ -76,6 +76,7 @@ export function AiAnswer({
   onPreviewVersion,
   onExitPreview,
   onRestoreVersion,
+  onFeedback,
   recommendations,
   onSelectRecommendation,
 }: {
