@@ -331,7 +331,12 @@ export function LayoutBuilderToolbar() {
       {/* Absolutely centred on the toolbar so it lines up with the page-centred
           "New layout" title above, independent of the asymmetric side zones. */}
       <div className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1">
-        <ToolbarTag icon={<Ruler aria-hidden />} selected tooltip="Page size">
+        <ToolbarTag
+          icon={<Ruler aria-hidden />}
+          selected
+          tooltip="Page size"
+          className="cursor-not-allowed"
+        >
           {mediumName}
         </ToolbarTag>
 
