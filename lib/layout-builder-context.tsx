@@ -34,6 +34,7 @@ import {
 } from "@/lib/builder-narrative"
 import { getDefaultPlacedContent } from "@/lib/placed-element-defaults"
 import { getDefaultBuilderMediumId } from "@/lib/mediums-data"
+import { findDocumentSource } from "@/lib/invoice-sources"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import {
   BUILDER_DOCUMENT_TYPES,
@@ -906,6 +907,14 @@ type LayoutBuilderContextValue = {
   setDocumentType: (value: BuilderDocumentType) => void
 
   /**
+   * Data source the document preview is rendered against — a built-in sample or
+   * an actual invoice (or null for the layout's own generated content). Selecting
+   * one overlays its content onto the live layout; manual edits still win.
+   */
+  previewSourceId: string | null
+  setPreviewSourceId: (value: string | null) => void
+
+  /**
    * Code editor and live preview are independent toggles. Both can be open at
    * once (split view); toggling one never changes the other. At least one panel
    * is always visible, so turning off the last open panel is a no-op.
@@ -1160,6 +1169,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [documentType, setDocumentType] = useState<BuilderDocumentType>(
     BUILDER_DOCUMENT_TYPES[0]
   )
+  // Null = preview the layout's own generated content. A non-null id overlays a
+  // sample / actual-invoice dataset onto the document (see `generatedLayout`).
+  const [previewSourceId, setPreviewSourceId] = useState<string | null>(null)
   const [codeOpen, setCodeOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(true)
   const [codeOverride, setCodeOverrideState] = useState<string | null>(null)
@@ -2309,22 +2321,30 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     const settledTurns = messages.filter(
       (message) => message.role === "assistant"
     ).length
+
+    // A selected preview source overlays its content (business, client,
+    // currency, line items, dates…) onto the generated structure/style. Applied
+    // before manual edits so hand edits always win, and after the base so the
+    // template still reflects AI/structure changes.
+    const sourceOverlay = findDocumentSource(previewSourceId)?.data ?? {}
+
     // Reverted to an earlier version: that frozen layout is the base, so the
     // rendered document matches the version exactly. Manual edits still win last.
     if (baseLayout) {
-      return { ...baseLayout, ...layoutEdits }
+      return { ...baseLayout, ...sourceOverlay, ...layoutEdits }
     }
     // The first prompt → assistant #1 → base layout; each later prompt folds in
     // once its assistant turn has settled (so the change lands on completion,
     // not the instant the user hits send). Manual edits still win last.
-    return composeLayout(
+    const composed = composeLayout(
       userPrompts,
       settledTurns - 1,
       answers,
       documentType,
       layoutEdits
     )
-  }, [messages, answers, documentType, layoutEdits, baseLayout])
+    return { ...composed, ...sourceOverlay, ...layoutEdits }
+  }, [messages, answers, documentType, layoutEdits, baseLayout, previewSourceId])
 
   // Freeze a snapshot of the document the first time each assistant turn
   // appears, so its eye/undo controls can preview or revert to that exact state
@@ -2619,6 +2639,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       modelId,
       documentType,
       setDocumentType,
+      previewSourceId,
+      setPreviewSourceId,
       codeOpen,
       previewOpen,
       toggleCode,
@@ -2716,6 +2738,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       mediumId,
       modelId,
       documentType,
+      previewSourceId,
       codeOpen,
       previewOpen,
       toggleCode,

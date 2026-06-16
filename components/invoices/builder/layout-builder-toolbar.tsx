@@ -1,10 +1,8 @@
 "use client"
 
 import {
-  ChevronDown,
   Code2,
   Download,
-  FileText,
   Globe,
   History,
   PanelLeft,
@@ -17,19 +15,13 @@ import {
 } from "lucide-react"
 
 import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { DocumentSourcePicker } from "@/components/invoices/builder/document-source-picker"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
-import { BUILDER_DOCUMENT_TYPES } from "@/lib/layout-builder-types"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { cn } from "@/lib/utils"
 
@@ -203,8 +195,6 @@ export function LayoutBuilderToolbar() {
   const { getMediumName } = useMediumsStore()
   const {
     mediumId,
-    documentType,
-    setDocumentType,
     codeOpen,
     previewOpen,
     toggleCode,
@@ -340,28 +330,7 @@ export function LayoutBuilderToolbar() {
           {mediumName}
         </ToolbarTag>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <ToolbarTag
-              icon={<FileText aria-hidden />}
-              aria-label="Document type"
-            >
-              {documentType}
-              <ChevronDown className="size-4 opacity-50" aria-hidden />
-            </ToolbarTag>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="center" className="min-w-[200px] rounded">
-            {BUILDER_DOCUMENT_TYPES.map((type) => (
-              <DropdownMenuItem
-                key={type}
-                onSelect={() => setDocumentType(type)}
-                className={cn(documentType === type && "bg-[#eff4ff]")}
-              >
-                {type}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <DocumentSourcePicker />
       </div>
 
       <div className="flex min-w-px flex-1 items-center justify-end gap-1">
