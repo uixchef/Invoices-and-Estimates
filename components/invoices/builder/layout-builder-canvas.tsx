@@ -18,13 +18,17 @@ import {
   Copy,
   GripVertical,
   ImageIcon,
+  Move,
   Plus,
   RotateCcw,
   Trash2,
 } from "lucide-react"
 
 import { GeneratingCarousel } from "@/components/invoices/builder/generating-carousel"
-import { VisualEditSelector } from "@/components/invoices/builder/visual-edit-selector"
+import {
+  VisualEditSelector,
+  type SelectorAction,
+} from "@/components/invoices/builder/visual-edit-selector"
 import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
 import {
@@ -43,8 +47,20 @@ import type {
   PlacedElementZone,
 } from "@/lib/layout-builder-types"
 import { ELEMENT_DRAG_MIME } from "@/lib/layout-builder-types"
-import { isMultilinePlacedKind } from "@/lib/placed-element-defaults"
+import {
+  isMultilinePlacedKind,
+  isTextPlacedKind,
+} from "@/lib/placed-element-defaults"
 import { cn } from "@/lib/utils"
+
+/** DnD payload type for reordering top-level document sections via the grip. */
+const SECTION_REORDER_MIME = "application/x-invoice-section-reorder"
+
+/** Reorderable top-level body sections, in their default top-to-bottom order. */
+const DEFAULT_SECTION_ORDER = ["billing", "items", "totals", "notes"] as const
+type SectionUnit = (typeof DEFAULT_SECTION_ORDER)[number]
+const isSectionUnit = (value: string): value is SectionUnit =>
+  (DEFAULT_SECTION_ORDER as readonly string[]).includes(value)
 
 /** Maps a layer's style overrides to an inline style object. */
 function styleFromLayer(style?: BuilderLayerStyle): CSSProperties | undefined {
@@ -186,7 +202,8 @@ function EditableText({
   const {
     editMode,
     selections,
-    sendMessage,
+    sendScopedEdit,
+    isLayerEditing,
     layerText,
     setLayerText,
     layerStyles,
@@ -198,6 +215,28 @@ function EditableText({
     requestDeleteLayer,
   } = useLayoutBuilder()
   const spanRef = useRef<HTMLSpanElement>(null)
+  // Bare leaves (inside a section selector) rest as plain text so a click
+  // selects the whole enclosing section; a double-click flips this on to edit
+  // the text in place.
+  const [inlineEditing, setInlineEditing] = useState(false)
+
+  // When inline editing turns on, focus the field and drop the caret at the end.
+  useEffect(() => {
+    if (!inlineEditing) {
+      return
+    }
+    const node = spanRef.current
+    if (!node) {
+      return
+    }
+    node.focus()
+    const range = document.createRange()
+    range.selectNodeContents(node)
+    range.collapse(false)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+  }, [inlineEditing])
 
   // Overrides win for display so inspector / inline edits show immediately;
   // structured fields also stay in sync via onCommit (for the code view).
@@ -248,7 +287,7 @@ function EditableText({
         },
       })
     }
-    selectLayer(label)
+    selectLayer(label, "text")
   }
 
   const editable = (ringClass: string) => (
@@ -293,10 +332,63 @@ function EditableText({
     </span>
   )
 
-  // Bare editing (selection chrome is provided by an enclosing selector).
+  // Bare leaf: selection chrome is owned by the enclosing SelectableSection.
+  // A single click bubbles up so the *whole section* is picked (consistent
+  // with how BILL TO / Totals are selected); a double-click drops into inline
+  // text editing for that one field.
   if (!showBadge) {
-    return editable(
-      "ring-1 ring-transparent hover:ring-[#9b8afb] focus:ring-2 focus:ring-[#6938ef]"
+    if (inlineEditing) {
+      return (
+        <span
+          ref={spanRef}
+          contentEditable
+          suppressContentEditableWarning
+          spellCheck={false}
+          role="textbox"
+          tabIndex={0}
+          style={appliedStyle}
+          // Don't let caret clicks bubble up and re-select the section.
+          onClick={(event) => event.stopPropagation()}
+          onBlur={(event) => {
+            const next = (event.currentTarget.textContent ?? "").trim()
+            if (next && next !== current) {
+              commit(next)
+            } else {
+              event.currentTarget.textContent = current
+            }
+            setInlineEditing(false)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault()
+              event.currentTarget.blur()
+            }
+            if (event.key === "Escape") {
+              event.currentTarget.textContent = current
+              event.currentTarget.blur()
+            }
+          }}
+          className={cn(
+            "cursor-text rounded-[3px] outline-none ring-2 ring-[#6938ef] transition-shadow",
+            className
+          )}
+        >
+          {current}
+        </span>
+      )
+    }
+    return (
+      <span
+        ref={spanRef}
+        style={appliedStyle}
+        onDoubleClick={(event) => {
+          event.stopPropagation()
+          setInlineEditing(true)
+        }}
+        className={cn("cursor-pointer rounded-[3px]", className)}
+      >
+        {current}
+      </span>
     )
   }
 
@@ -309,8 +401,9 @@ function EditableText({
       <VisualEditSelector
         label={label}
         selected={isSelected}
-        onSelect={() => selectLayer(label)}
-        onSubmitPrompt={(text) => sendMessage(`${label}: ${text}`)}
+        working={isLayerEditing(label)}
+        onSelect={openInspector}
+        onSubmitPrompt={(text) => sendScopedEdit(label, text)}
         rightActions={[
           {
             icon: <Copy />,
@@ -484,31 +577,136 @@ function DocumentHeader({
  * Outside edit mode it renders transparently (only adding a wrapper element when
  * a layout class needs to ride along).
  */
+/** Drag/keyboard reorder wiring for a movable top-level document section. */
+type SectionMove = {
+  /** Stable key for the reorderable unit this section belongs to. */
+  unit: string
+  /** Whether this unit can move further up / down in the current order. */
+  canUp: boolean
+  canDown: boolean
+  onUp: () => void
+  onDown: () => void
+  /** Drops a dragged section before this one. */
+  onDrop: (draggedUnit: string) => void
+}
+
 function SelectableSection({
   label,
   className,
   children,
+  move,
 }: {
   label: string
   className?: string
   children: ReactNode
+  move?: SectionMove
 }) {
-  const { editMode, selections, addSelection, sendMessage } = useLayoutBuilder()
+  const {
+    editMode,
+    selections,
+    selectLayer,
+    sendScopedEdit,
+    isLayerEditing,
+    isLayerHidden,
+    layerDuplicateCount,
+    duplicateLayer,
+    requestDeleteLayer,
+  } = useLayoutBuilder()
 
   if (!editMode) {
     return className ? <div className={className}>{children}</div> : <>{children}</>
   }
 
+  if (isLayerHidden(label)) {
+    return null
+  }
+
+  const duplicateCount = layerDuplicateCount(label)
+
+  // Left toolbar mirrors Figma 3197:71570: a "move" drag grip followed by the
+  // move-up / move-down arrows. Only sections that opt into reordering get it.
+  const leftActions: SelectorAction[] = move
+    ? [
+        {
+          icon: <Move />,
+          label: `Drag to move ${label}`,
+          onClick: () => {},
+          draggable: true,
+          onDragStart: (event) => {
+            event.dataTransfer.setData(SECTION_REORDER_MIME, move.unit)
+            event.dataTransfer.effectAllowed = "move"
+          },
+        },
+        {
+          icon: <ArrowUp />,
+          label: `Move ${label} up`,
+          onClick: move.onUp,
+          disabled: !move.canUp,
+        },
+        {
+          icon: <ArrowDown />,
+          label: `Move ${label} down`,
+          onClick: move.onDown,
+          disabled: !move.canDown,
+        },
+      ]
+    : []
+
   return (
-    <VisualEditSelector
-      label={label}
-      selected={selections.some((selection) => selection.label === label)}
-      onSelect={() => addSelection(label)}
-      onSubmitPrompt={(text) => sendMessage(`${label}: ${text}`)}
-      className={className}
-    >
-      {children}
-    </VisualEditSelector>
+    <>
+      <VisualEditSelector
+        label={label}
+        selected={selections.some((selection) => selection.label === label)}
+        working={isLayerEditing(label)}
+        onSelect={() => selectLayer(label)}
+        onSubmitPrompt={(text) => sendScopedEdit(label, text)}
+        leftActions={leftActions}
+        rightActions={[
+          {
+            icon: <Copy />,
+            label: `Duplicate ${label}`,
+            onClick: () => duplicateLayer(label),
+          },
+          {
+            icon: <Trash2 />,
+            label: `Delete ${label}`,
+            onClick: () => requestDeleteLayer(label),
+          },
+        ]}
+        onReorderDragOver={
+          move
+            ? (event) => {
+                if (event.dataTransfer.types.includes(SECTION_REORDER_MIME)) {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = "move"
+                }
+              }
+            : undefined
+        }
+        onReorderDrop={
+          move
+            ? (event) => {
+                const dragged = event.dataTransfer.getData(SECTION_REORDER_MIME)
+                if (dragged) {
+                  event.preventDefault()
+                  move.onDrop(dragged)
+                }
+              }
+            : undefined
+        }
+        className={className}
+      >
+        {children}
+      </VisualEditSelector>
+      {Array.from({ length: duplicateCount }, (_, index) => {
+        const copyLabel = `${label} copy ${index + 1}`
+        return (
+          <div key={copyLabel} className={className}>
+            {children}
+          </div>
+        )
+      })}
+    </>
   )
 }
 
@@ -1019,7 +1217,8 @@ function DocumentSurface() {
     editMode,
     selections,
     addSelection,
-    sendMessage,
+    sendScopedEdit,
+    isLayerEditing,
     mediumId,
   } = useLayoutBuilder()
 
@@ -1070,6 +1269,47 @@ function DocumentSurface() {
     setItems(items)
   }
 
+  // Order of the reorderable top-level body sections. The grip drag + move
+  // up/down arrows on each section selector rewrite this list, and the body is
+  // rendered in this order. Header is pinned and never enters the list.
+  const [sectionOrder, setSectionOrder] = useState<SectionUnit[]>([
+    ...DEFAULT_SECTION_ORDER,
+  ])
+  const moveUnit = (unit: SectionUnit, direction: -1 | 1) => {
+    setSectionOrder((order) => {
+      const index = order.indexOf(unit)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= order.length) {
+        return order
+      }
+      const next = [...order]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+  const dropUnitBefore = (target: SectionUnit, dragged: string) => {
+    if (!isSectionUnit(dragged) || dragged === target) {
+      return
+    }
+    setSectionOrder((order) => {
+      const next = order.filter((unit) => unit !== dragged)
+      const targetIndex = next.indexOf(target)
+      next.splice(targetIndex < 0 ? next.length : targetIndex, 0, dragged)
+      return next
+    })
+  }
+  const moveProps = (unit: SectionUnit): SectionMove => {
+    const index = sectionOrder.indexOf(unit)
+    return {
+      unit,
+      canUp: index > 0,
+      canDown: index >= 0 && index < sectionOrder.length - 1,
+      onUp: () => moveUnit(unit, -1),
+      onDown: () => moveUnit(unit, 1),
+      onDrop: (dragged) => dropUnitBefore(unit, dragged),
+    }
+  }
+
   const paperClassName = isClassic
     ? "font-serif"
     : "font-[family-name:var(--font-inter)]"
@@ -1095,7 +1335,15 @@ function DocumentSurface() {
             paddingRight: safePadding.right,
           }}
         >
-        <SelectableSection label="Billing details" className="flex justify-between gap-6">
+        {(() => {
+          const unitNodes: Record<SectionUnit, ReactNode> = {
+            billing: (
+              <Fragment key="billing">
+        <SelectableSection
+          label="Billing details"
+          className="flex justify-between gap-6"
+          move={moveProps("billing")}
+        >
           <div className="flex flex-col gap-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-[#98a2b3]">
               <EditableText value="Bill to" label="Bill to label" />
@@ -1156,12 +1404,14 @@ function DocumentSurface() {
             </div>
           </div>
         </SelectableSection>
-
         <ElementDropZone zone="after-billing" />
-
+              </Fragment>
+            ),
+            items: (
+              <Fragment key="items">
         {layout.sections.items ? (
           <div className="flex flex-col">
-            <SelectableSection label="Table header">
+            <SelectableSection label="Table header" move={moveProps("items")}>
               <div
                 className="flex items-center gap-4 border-b-2 py-2 text-xs font-semibold uppercase tracking-wide text-[#98a2b3]"
                 style={{ borderColor: layout.accent }}
@@ -1223,10 +1473,9 @@ function DocumentSurface() {
                   selected={selections.some(
                     (selection) => selection.label === itemLabel
                   )}
+                  working={isLayerEditing(itemLabel)}
                   onSelect={() => addSelection(itemLabel)}
-                  onSubmitPrompt={(text) =>
-                    sendMessage(`${itemLabel}: ${text}`)
-                  }
+                  onSubmitPrompt={(text) => sendScopedEdit(itemLabel, text)}
                   leftActions={[
                     {
                       icon: <ArrowUp />,
@@ -1266,10 +1515,16 @@ function DocumentSurface() {
             })}
           </div>
         ) : null}
-
         <ElementDropZone zone="after-items" />
-
-        <SelectableSection label="Totals" className="flex justify-end">
+              </Fragment>
+            ),
+            totals: (
+              <Fragment key="totals">
+        <SelectableSection
+          label="Totals"
+          className="flex justify-end"
+          move={moveProps("totals")}
+        >
           <div className="flex w-60 flex-col gap-2">
             <div className="flex justify-between text-sm text-[#667085]">
               <span>
@@ -1315,13 +1570,17 @@ function DocumentSurface() {
         ) : null}
 
         <ElementDropZone zone="after-totals" />
-
+              </Fragment>
+            ),
+            notes: (
+              <Fragment key="notes">
         {layout.sections.notes ||
         layout.sections.terms ||
         layout.sections.paymentDetails ? (
           <SelectableSection
             label="Notes & terms"
             className="mt-auto flex flex-col gap-4 border-t border-[#eaecf0] pt-6"
+            move={moveProps("notes")}
           >
             {layout.sections.notes ? (
               <div>
@@ -1377,6 +1636,11 @@ function DocumentSurface() {
         ) : null}
 
         <ElementDropZone zone="after-notes" />
+              </Fragment>
+            ),
+          }
+          return sectionOrder.map((unit) => unitNodes[unit])
+        })()}
         <ElementDropZone zone="end" />
         </div>
       </div>
@@ -2312,7 +2576,8 @@ function BlankPlacedElement({ element }: { element: PlacedElement }) {
     inspectingLayer,
     inspectLayer,
     seedLayer,
-    sendMessage,
+    sendScopedEdit,
+    isLayerEditing,
     layerText,
     layerStyles,
     updatePlacedElementContent,
@@ -2352,7 +2617,7 @@ function BlankPlacedElement({ element }: { element: PlacedElement }) {
         },
       })
     }
-    inspectLayer(label)
+    inspectLayer(label, isTextPlacedKind(element.kind) ? "text" : "container")
   }
 
   return (
@@ -2360,8 +2625,9 @@ function BlankPlacedElement({ element }: { element: PlacedElement }) {
       <VisualEditSelector
         label={label}
         selected={isSelected}
+        working={isLayerEditing(label)}
         onSelect={openInspector}
-        onSubmitPrompt={(text) => sendMessage(`${label}: ${text}`)}
+        onSubmitPrompt={(text) => sendScopedEdit(label, text)}
         rightActions={[
           {
             icon: <Copy />,
@@ -2592,6 +2858,7 @@ export function LayoutBuilderCanvas() {
   const {
     status,
     hasGeneratedOnce,
+    aiEditingLayer,
     placedElements,
     codeOpen,
     previewOpen,
@@ -2627,8 +2894,13 @@ export function LayoutBuilderCanvas() {
   // prompts keep the canvas visible instead.
   const showCarousel =
     aiWorking && !hasGeneratedOnce && !blankMode && !customizingPlaced
+  // A scoped prompt-box edit owns the working glow inside its own container, so
+  // the canvas-wide beam stands down — the change reads as local, not a
+  // full-invoice regeneration.
   const showWorkingEdge =
-    aiWorking && (placedElements.length > 0 || hasGeneratedOnce)
+    aiWorking &&
+    (placedElements.length > 0 || hasGeneratedOnce) &&
+    !aiEditingLayer
   const showCode = isReady && codeOpen
   const showPreview = isReady && previewOpen
   const showSplit = showCode && showPreview

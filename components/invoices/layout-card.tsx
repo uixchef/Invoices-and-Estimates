@@ -76,33 +76,6 @@ function ThumbnailSkeleton() {
   )
 }
 
-/**
- * Empty-thumbnail illustration for blank layouts (Figma 3082:30384 default /
- * 3082:30369 hover). Two stacked 240px illustrations crossfade on hover: the
- * gray paper stack rests on the gray thumbnail, the blue one fades in to match
- * the card's blue hover surface.
- */
-function EmptyThumbnailIllustration() {
-  return (
-    <>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/layouts/empty-thumbnail-default.png"
-        alt=""
-        aria-hidden
-        className="absolute left-1/2 top-1/2 size-60 -translate-x-1/2 -translate-y-1/2 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
-      />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/layouts/empty-thumbnail-hover.png"
-        alt=""
-        aria-hidden
-        className="absolute left-1/2 top-1/2 size-60 -translate-x-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-      />
-    </>
-  )
-}
-
 function LayoutCardActions({ item }: { item: LayoutRow }) {
   const { open } = useLayoutPreview()
   const { cloneLayout } = useLayoutClone()
@@ -192,17 +165,14 @@ export function LayoutCard({ item }: { item: LayoutRow }) {
   const [imageReady, setImageReady] = useState(false)
   const delayElapsed = usePreviewReveal(item.id)
   const imgRef = useRef<HTMLImageElement>(null)
-  const isBlank = Boolean(item.isBlank)
-  const ready = isBlank
-    ? delayElapsed
-    : imageReady && delayElapsed
+  const ready = imageReady && delayElapsed
 
   // Cached/SSR-complete images may never fire onLoad after hydration.
   useEffect(() => {
-    if (!isBlank && imgRef.current?.complete) {
+    if (imgRef.current?.complete) {
       setImageReady(true)
     }
-  }, [isBlank])
+  }, [])
 
   return (
     <article
@@ -217,31 +187,26 @@ export function LayoutCard({ item }: { item: LayoutRow }) {
         aria-busy={!ready}
         className={cn(
           "relative h-[292px] w-full shrink-0 overflow-hidden rounded border transition-colors",
-          ready && !isBlank
+          ready
             ? "bg-gradient-to-b border-[#f2f4f7] from-[#f2f4f7] to-[#eaecf0] group-hover:border-[#eff4ff] group-hover:from-[#eff4ff] group-hover:to-[#84adff] group-focus-within:border-[#eff4ff] group-focus-within:from-[#eff4ff] group-focus-within:to-[#84adff]"
-            : ready && isBlank
-              ? "border-transparent bg-[#f2f4f7] group-hover:bg-transparent group-focus-within:bg-transparent"
-              : "border-[#f2f4f7] bg-white"
+            : "border-[#f2f4f7] bg-white"
         )}
       >
         {!ready ? <ThumbnailSkeleton /> : null}
-        {ready && isBlank ? <EmptyThumbnailIllustration /> : null}
 
-        {!isBlank ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            ref={imgRef}
-            src={getLayoutThumbnail(item.id, item.clonedFromId)}
-            alt=""
-            onLoad={() => setImageReady(true)}
-            onError={() => setImageReady(true)}
-            className={cn(
-              "absolute inset-0 size-full object-cover object-top transition-opacity duration-300",
-              ready ? "opacity-100" : "opacity-0"
-            )}
-            aria-hidden
-          />
-        ) : null}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          ref={imgRef}
+          src={getLayoutThumbnail(item.id, item.clonedFromId)}
+          alt=""
+          onLoad={() => setImageReady(true)}
+          onError={() => setImageReady(true)}
+          className={cn(
+            "absolute inset-0 size-full object-cover object-top transition-opacity duration-300",
+            ready ? "opacity-100" : "opacity-0"
+          )}
+          aria-hidden
+        />
 
         <div
           className="absolute right-2 top-2 z-[2] flex items-center gap-1.5"

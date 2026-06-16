@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   AlignCenter,
   AlignJustify,
@@ -29,6 +29,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { ColorPicker } from "@/components/invoices/builder/color-picker"
 import {
   Tooltip,
   TooltipContent,
@@ -127,26 +133,111 @@ const ALIGNMENTS: {
   { value: "justify", icon: AlignJustify, label: "Justify" },
 ]
 
-/** Connected-field options shown when binding a layer to invoice data. */
+/**
+ * Full catalog of invoice data fields a layer can bind to (PM-defined). Shown in
+ * both the "Change" and "Add field" pickers. Hierarchical labels disambiguate
+ * the repeated leaves (e.g. Business vs Contact "Phone"); the underlying data
+ * path is intentionally omitted per product direction.
+ */
 const CONNECTABLE_FIELDS = [
   "Invoice number",
   "Invoice number prefix",
   "Title",
   "Internal name",
   "Status",
-  "Currency",
+  "Currency (ISO 4217)",
+  "Issue date",
   "Due date",
+  "Sent at",
+  "Last paid at",
+  "Business details › Business name",
+  "Business details › Phone",
+  "Business details › Website",
+  "Business details › Logo",
+  "Business details › Address › Address line 1",
+  "Business details › Address › Address line 2",
+  "Business details › Address › City",
+  "Business details › Address › State / Region",
+  "Business details › Address › Country code",
+  "Business details › Address › Postal code",
+  "Contact details › Contact ID",
+  "Contact details › Name",
+  "Contact details › Email",
+  "Contact details › Phone",
+  "Contact details › Company",
+  "Contact details › Address › Address line 1",
+  "Contact details › Address › Address line 2",
+  "Contact details › Address › City",
+  "Contact details › Address › State / Region",
+  "Contact details › Address › Country code",
+  "Contact details › Address › Postal code",
+  "Sent from › Sender name",
+  "Sent from › Sender email",
+  "Sent by",
+  "Discount › Discount value",
+  "Discount › Discount type",
+  "Subtotal",
+  "Total tax",
+  "Total discount",
+  "Total",
+  "Invoice total",
+  "Amount paid",
+  "Amount due",
+  "Automatic taxes enabled",
+  "Automatic taxes calculated",
+  "Tax address type",
+  "Payment schedule › Schedule type",
+  "Tips › Tips enabled",
+  "Payment methods › Stripe › Bank debit only",
+  "Payment methods › NMI › Bank debit only",
 ]
 
-const CONNECTED_FIELDS = [
-  "Address line 1",
-  "Address line 2",
-  "State",
-  "Postal code",
-  "Country code",
-  "Phone no.",
-  "Website",
-]
+/**
+ * Data fields bound to a given layer. A container (section) exposes every field
+ * it contains; a single text leaf binds to exactly one. Keyed by the canvas's
+ * selectable labels so the Advanced panel reflects the real selection.
+ */
+const CONNECTED_FIELDS_BY_LAYER: Record<string, string[]> = {
+  // Containers
+  Header: ["Company name", "Business address", "Document type", "Invoice number"],
+  "Billing details": [
+    "Client name",
+    "Address line 1",
+    "Address line 2",
+    "Issue date",
+    "Due date",
+    "Currency",
+  ],
+  Totals: ["Subtotal", "Tax total", "Grand total"],
+  "Table header": ["Item description", "Quantity", "Unit price", "Line total"],
+  "Pay online": ["Online payment link", "Grand total"],
+  // Single leaves
+  "Business name": ["Company name"],
+  "Business address": ["Business address"],
+  "Document type": ["Document type"],
+  "Document number": ["Invoice number"],
+  "Client name": ["Client name"],
+  "Client address line 1": ["Address line 1"],
+  "Client address line 2": ["Address line 2"],
+  "Issue date": ["Issue date"],
+  "Due date": ["Due date"],
+  "Currency code": ["Currency"],
+}
+
+/** Resolves the connected fields for whichever layer is selected on the canvas. */
+function connectedFieldsFor(label: string | null): string[] {
+  if (!label) {
+    return []
+  }
+  if (label in CONNECTED_FIELDS_BY_LAYER) {
+    return CONNECTED_FIELDS_BY_LAYER[label]
+  }
+  // Line-item rows are labelled "Item 1", "Item 2", … and share a binding set.
+  if (label.startsWith("Item ")) {
+    return ["Item description", "Quantity", "Unit price", "Line total"]
+  }
+  return []
+}
 
 /** Conditional-logic accordion items — all share the same show/hide form. */
 const CONDITION_ACCORDIONS: {
@@ -385,27 +476,28 @@ function ColorField({
   onChange: (next: string) => void
 }) {
   return (
-    <div className={INPUT_SHELL}>
-      <label
-        className="relative size-6 shrink-0 cursor-pointer overflow-hidden rounded-[4px] border border-[#d0d5dd]"
-        style={{ backgroundColor: value || "#ffffff" }}
+    <Popover>
+      <PopoverTrigger
+        className={cn(INPUT_SHELL, "cursor-pointer text-left outline-none")}
       >
-        <input
-          type="color"
-          value={toHex(value)}
-          onChange={(event) => onChange(event.target.value)}
-          className="absolute inset-0 size-full cursor-pointer opacity-0"
+        <span
+          className="size-6 shrink-0 overflow-hidden rounded-[4px] border border-[#d0d5dd]"
+          style={{ backgroundColor: value || "#ffffff" }}
+          aria-hidden
         />
-      </label>
-      <span
-        className={cn(
-          "truncate font-[family-name:var(--font-inter)] text-sm leading-5",
-          value ? "text-[#101828]" : "text-[#98a2b3]"
-        )}
-      >
-        {value || "Select color"}
-      </span>
-    </div>
+        <span
+          className={cn(
+            "truncate font-[family-name:var(--font-inter)] text-sm uppercase leading-5",
+            value ? "text-[#101828]" : "normal-case text-[#98a2b3]"
+          )}
+        >
+          {value ? toHex(value) : "Select color"}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="p-3">
+        <ColorPicker value={value} onChange={onChange} />
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -418,8 +510,15 @@ function ColorField({
  *    scaffolding for forward-looking dynamic-content features.
  */
 export function VisualEditsPanel() {
-  const { inspectingLayer, editsTab, layerStyles, setLayerStyle } =
-    useLayoutBuilder()
+  const {
+    inspectingLayer,
+    inspectingLayerKind,
+    editsTab,
+    layerStyles,
+    setLayerStyle,
+    layerText,
+    setLayerText,
+  } = useLayoutBuilder()
 
   if (!inspectingLayer) {
     return null
@@ -434,6 +533,14 @@ export function VisualEditsPanel() {
       label={inspectingLayer}
       style={layerStyles[inspectingLayer] ?? {}}
       setLayerStyle={setLayerStyle}
+      // "Content" only applies to individual text layers, not sections /
+      // containers, which have no single editable string of their own.
+      content={
+        inspectingLayerKind === "text"
+          ? (layerText[inspectingLayer] ?? "")
+          : null
+      }
+      setContent={(next) => setLayerText(inspectingLayer, next)}
     />
   )
 }
@@ -442,10 +549,18 @@ function StyleTab({
   label,
   style,
   setLayerStyle,
+  content,
+  setContent,
 }: {
   label: string
   style: BuilderLayerStyle
   setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
+  /**
+   * Editable text for an individual text layer; null for sections / containers
+   * (which hide the "Content" field entirely).
+   */
+  content: string | null
+  setContent: (next: string) => void
 }) {
   // Padding & margin start collapsed (uniform H/V); the maximize toggle expands
   // each to per-side editing, matching the medium builder's safe-area control.
@@ -543,6 +658,31 @@ function StyleTab({
 
   return (
     <div className="flex flex-col gap-6 pb-4">
+      {/* Content — individual text layers only (Figma 3245:35444). Edits the
+          layer's text live, mirroring inline editing on the canvas. Hidden for
+          sections / containers, which have no single editable string. */}
+      {content !== null ? (
+        <>
+          <section className="flex flex-col gap-1">
+            <FieldLabel>Content</FieldLabel>
+            <textarea
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              rows={2}
+              aria-label={`Content for ${label}`}
+              className={cn(
+                "min-h-[56px] w-full resize-y rounded-[4px] border border-[#d0d5dd] bg-white p-1.5",
+                "font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828]",
+                "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-shadow",
+                "placeholder:text-[#98a2b3]",
+                "focus-visible:border-[#84adff] focus-visible:shadow-[0_0_0_4px_#eff4ff,0_1px_2px_rgba(16,24,40,0.05)]"
+              )}
+            />
+          </section>
+          <PanelDivider />
+        </>
+      ) : null}
+
       {/* Typography */}
       <section className="flex flex-col gap-3">
         <SectionLabel>Typography</SectionLabel>
@@ -1019,19 +1159,104 @@ function RadiusMatrix({
 /* Advanced tab                                                        */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Searchable field picker body shared by the "Change" (rebind) and "Add field"
+ * flows so both stay visually and behaviourally identical.
+ */
+function FieldSearchList({
+  search,
+  onSearchChange,
+  selected,
+  onSelect,
+}: {
+  search: string
+  onSearchChange: (value: string) => void
+  /** Currently bound field, highlighted with a check (rebind flow only). */
+  selected?: string
+  onSelect: (field: string) => void
+}) {
+  const matches = CONNECTABLE_FIELDS.filter((field) =>
+    field.toLowerCase().includes(search.trim().toLowerCase())
+  )
+
+  return (
+    <div className="flex flex-col gap-1 bg-white px-4 pb-3 pt-3">
+      <div className="flex h-7 items-center gap-2 rounded-[4px] border border-[#d0d5dd] bg-white px-2 shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] transition-shadow focus-within:border-[#84adff] focus-within:shadow-[0_0_0_4px_#eff4ff,0_1px_2px_rgba(16,24,40,0.05)]">
+        <Search className="size-4 shrink-0 text-[#667085]" aria-hidden />
+        <input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search fields"
+          autoFocus
+          className="min-w-0 flex-1 border-0 bg-transparent p-0 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none placeholder:text-[#667085]"
+        />
+      </div>
+      <ul role="listbox" className="flex max-h-[220px] flex-col overflow-y-auto">
+        {matches.length === 0 ? (
+          <li className="px-2 py-1 font-[family-name:var(--font-inter)] text-sm text-[#98a2b3]">
+            No matching fields
+          </li>
+        ) : (
+          matches.map((option) => {
+            const isSelected = option === selected
+            return (
+              <li key={option}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  onClick={() => onSelect(option)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-[4px] px-2 py-1 text-left font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none transition-colors hover:bg-[#f9fafb] focus-visible:bg-[#f4f3ff]",
+                    isSelected && "bg-[#f5f8ff] font-medium"
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{option}</span>
+                  {isSelected ? (
+                    <Check className="size-4 shrink-0 text-[#155eef]" aria-hidden />
+                  ) : null}
+                </button>
+              </li>
+            )
+          })
+        )}
+      </ul>
+    </div>
+  )
+}
+
 function AdvancedTab() {
+  const { inspectingLayer } = useLayoutBuilder()
   const [openCard, setOpenCard] = useState<"condition" | "repeat" | "wrap" | null>(
     null
   )
   const [condition, setCondition] = useState<"show" | "hide">("show")
-  const [editingField, setEditingField] = useState(false)
+  // Index of the row whose binding is being changed (its picker is open).
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  // Whether the "Add field" accordion is open at the top of the list.
+  const [addingField, setAddingField] = useState(false)
   const [search, setSearch] = useState("")
-  // The field currently bound to this slot — highlighted as selected in the picker.
-  const [selectedField, setSelectedField] = useState(CONNECTABLE_FIELDS[0])
 
-  const matches = CONNECTABLE_FIELDS.filter((field) =>
-    field.toLowerCase().includes(search.trim().toLowerCase())
+  // The connected fields follow the layer selected on the canvas. A local copy
+  // lets Add / Change / Disconnect edit the list; it resets when the selection
+  // moves.
+  const baseFields = useMemo(
+    () => connectedFieldsFor(inspectingLayer),
+    [inspectingLayer]
   )
+  const [fields, setFields] = useState<string[]>(baseFields)
+  useEffect(() => {
+    setFields(baseFields)
+    setEditingIndex(null)
+    setAddingField(false)
+    setSearch("")
+  }, [baseFields])
+
+  const openAddField = () => {
+    setAddingField(true)
+    setEditingIndex(null)
+    setSearch("")
+  }
 
   return (
     <div className="flex flex-col gap-6 pb-4">
@@ -1060,140 +1285,144 @@ function AdvancedTab() {
 
       <PanelDivider />
 
-      {/* Connected fields */}
+      {/* Connected fields — mirrors the layer selected on the canvas. A
+          container lists every data field it contains; a single leaf shows just
+          its one binding. */}
       <section className="flex flex-col gap-3">
-        <SectionLabel>Connected fields</SectionLabel>
-
-        <div className="overflow-hidden rounded-[8px] border border-[#d0d5dd]">
-          {/* Active / connected field (Name) */}
-          <div
-            className={cn(
-              "relative",
-              // Only the accordion being edited is outlined in primary — the
-              // surrounding group stays neutral (Figma 3246:56729 active state).
-              editingField && "z-10 rounded-[8px] ring-1 ring-inset ring-[#84adff]"
-            )}
+        <div className="flex items-center justify-between gap-3">
+          <SectionLabel>Connected fields</SectionLabel>
+          <button
+            type="button"
+            onClick={openAddField}
+            className="inline-flex shrink-0 items-center gap-1 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#004eeb] outline-none focus-visible:underline"
           >
-            <div
-              className={cn(
-                "flex h-14 items-center gap-3 px-4",
-                editingField
-                  ? "border-b border-[#84adff] bg-[#eff4ff]"
-                  : "bg-white"
-              )}
-            >
-              <AccordionIcon active={editingField}>
-                <Link2 className="size-3.5" aria-hidden />
-              </AccordionIcon>
-              <span className="min-w-0 flex-1 truncate font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#101828]">
-                Name
-              </span>
-              {editingField ? (
-                <button
-                  type="button"
-                  onClick={() => setEditingField(false)}
-                  className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#004eeb] outline-none focus-visible:underline"
-                >
-                  Cancel
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setEditingField(true)}
-                  className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#344054] outline-none focus-visible:underline"
-                >
-                  Change
-                </button>
-              )}
-              <button
-                type="button"
-                aria-label="Disconnect Name"
-                className="inline-flex size-[18px] items-center justify-center rounded text-[#475467] outline-none transition-colors hover:text-[#b42318] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-              >
-                <Trash2 className="size-[18px]" aria-hidden />
-              </button>
-            </div>
+            <Plus className="size-4" aria-hidden />
+            Add field
+          </button>
+        </div>
 
-            {editingField ? (
-              <div className="flex flex-col gap-1 bg-white px-4 pb-3 pt-3">
-                <div className="flex h-7 items-center gap-2 rounded-[4px] border border-[#d0d5dd] bg-white px-2 shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] transition-shadow focus-within:border-[#84adff] focus-within:shadow-[0_0_0_4px_#eff4ff,0_1px_2px_rgba(16,24,40,0.05)]">
-                  <Search className="size-4 shrink-0 text-[#667085]" aria-hidden />
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search fields"
-                    className="min-w-0 flex-1 border-0 bg-transparent p-0 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none placeholder:text-[#667085]"
-                  />
+        {fields.length === 0 && !addingField ? (
+          <p className="rounded-[8px] border border-dashed border-[#d0d5dd] px-4 py-3 text-center font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]">
+            This layer has no connected fields.
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-[8px] border border-[#d0d5dd]">
+            {/* Active "Add field" accordion — sits at the top until a field is
+                chosen. It carries a Cancel (not Delete) since nothing is bound
+                yet; picking a field promotes it to a normal connected row. */}
+            {addingField ? (
+              <div className="relative z-10 rounded-[8px] ring-1 ring-inset ring-[#84adff]">
+                <div className="flex h-14 items-center gap-3 border-b border-[#84adff] bg-[#eff4ff] px-4">
+                  <AccordionIcon active>
+                    <Link2 className="size-3.5" aria-hidden />
+                  </AccordionIcon>
+                  <span className="min-w-0 flex-1 truncate font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#667085]">
+                    Select a field
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddingField(false)
+                      setSearch("")
+                    }}
+                    className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#004eeb] outline-none focus-visible:underline"
+                  >
+                    Cancel
+                  </button>
                 </div>
-                <ul role="listbox" className="flex max-h-[220px] flex-col overflow-y-auto">
-                  {matches.length === 0 ? (
-                    <li className="px-2 py-1 font-[family-name:var(--font-inter)] text-sm text-[#98a2b3]">
-                      No matching fields
-                    </li>
-                  ) : (
-                    matches.map((field) => {
-                      const isSelected = field === selectedField
-                      return (
-                        <li key={field}>
-                          <button
-                            type="button"
-                            role="option"
-                            aria-selected={isSelected}
-                            onClick={() => {
-                              setSelectedField(field)
-                              setEditingField(false)
-                              setSearch("")
-                            }}
-                            className={cn(
-                              "flex w-full items-center gap-2 rounded-[4px] px-2 py-1 text-left font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none transition-colors hover:bg-[#f9fafb] focus-visible:bg-[#f4f3ff]",
-                              isSelected && "bg-[#f5f8ff] font-medium"
-                            )}
-                          >
-                            <span className="min-w-0 flex-1 truncate">{field}</span>
-                            {isSelected ? (
-                              <Check
-                                className="size-4 shrink-0 text-[#155eef]"
-                                aria-hidden
-                              />
-                            ) : null}
-                          </button>
-                        </li>
-                      )
-                    })
-                  )}
-                </ul>
+                <FieldSearchList
+                  search={search}
+                  onSearchChange={setSearch}
+                  onSelect={(option) => {
+                    setFields((prev) => [option, ...prev])
+                    setAddingField(false)
+                    setSearch("")
+                  }}
+                />
               </div>
             ) : null}
-          </div>
 
-          {/* Other connected fields */}
-          {CONNECTED_FIELDS.map((field) => (
-            <div
-              key={field}
-              className="flex h-14 items-center gap-3 border-t border-[#d0d5dd] bg-white px-4"
-            >
-              <AccordionIcon>
-                <Link2 className="size-3.5" aria-hidden />
-              </AccordionIcon>
-              <span className="min-w-0 flex-1 truncate font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#101828]">
-                {field}
-              </span>
-              <button
-                type="button"
-                className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#344054] outline-none focus-visible:underline"
-              >
-                Change
-              </button>
-              <button
-                type="button"
-                aria-label={`Disconnect ${field}`}
-                className="inline-flex size-[18px] items-center justify-center rounded text-[#475467] outline-none transition-colors hover:text-[#b42318] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-              >
-                <Trash2 className="size-[18px]" aria-hidden />
-              </button>
-            </div>
-          ))}
-        </div>
+            {fields.map((field, index) => {
+              const editing = editingIndex === index
+              return (
+                <div
+                  key={`${field}-${index}`}
+                  className={cn(
+                    "relative",
+                    (addingField || index > 0) && "border-t border-[#d0d5dd]",
+                    // Only the row being changed is outlined in primary
+                    // (Figma 3246:56729 active state).
+                    editing && "z-10 rounded-[8px] ring-1 ring-inset ring-[#84adff]"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex h-14 items-center gap-3 px-4",
+                      editing ? "border-b border-[#84adff] bg-[#eff4ff]" : "bg-white"
+                    )}
+                  >
+                    <AccordionIcon active={editing}>
+                      <Link2 className="size-3.5" aria-hidden />
+                    </AccordionIcon>
+                    <span className="min-w-0 flex-1 truncate font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#101828]">
+                      {field}
+                    </span>
+                    {editing ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingIndex(null)
+                          setSearch("")
+                        }}
+                        className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#004eeb] outline-none focus-visible:underline"
+                      >
+                        Cancel
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingIndex(index)
+                          setAddingField(false)
+                          setSearch("")
+                        }}
+                        className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#344054] outline-none focus-visible:underline"
+                      >
+                        Change
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={`Disconnect ${field}`}
+                      onClick={() => {
+                        setFields((prev) => prev.filter((_, i) => i !== index))
+                        setEditingIndex(null)
+                      }}
+                      className="inline-flex size-[18px] items-center justify-center rounded text-[#475467] outline-none transition-colors hover:text-[#b42318] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+                    >
+                      <Trash2 className="size-[18px]" aria-hidden />
+                    </button>
+                  </div>
+
+                  {editing ? (
+                    <FieldSearchList
+                      search={search}
+                      onSearchChange={setSearch}
+                      selected={field}
+                      onSelect={(option) => {
+                        setFields((prev) =>
+                          prev.map((value, i) => (i === index ? option : value))
+                        )
+                        setEditingIndex(null)
+                        setSearch("")
+                      }}
+                    />
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </section>
     </div>
   )

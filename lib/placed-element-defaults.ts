@@ -29,3 +29,22 @@ export function isMultilinePlacedKind(kind: string): boolean {
     kind.startsWith("columns-")
   )
 }
+
+/**
+ * Whether a placed element is an individual text layer (editable copy) vs a
+ * structural / container block. Drives text-only inspector controls like the
+ * Style tab's "Content" field. Structural kinds — divider, spacer, image,
+ * table, and the generic "container" wrapper — return false.
+ */
+export function isTextPlacedKind(kind: string): boolean {
+  if (kind.startsWith("columns-")) {
+    return true
+  }
+  return (
+    kind === "heading" ||
+    kind === "paragraph" ||
+    kind === "list" ||
+    kind === "quote" ||
+    kind === "button"
+  )
+}

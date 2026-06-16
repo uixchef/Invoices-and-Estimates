@@ -456,7 +456,7 @@ function AiComposer() {
               the composer's 16px gutter so it aligns with the input width
               (Figma 3247:62513 — "pending changes" bar). */}
           {previewVersionId && status === "ready" ? (
-            <div className="mb-1 w-full">
+            <div className="mb-1.5 w-full">
               <PreviewVersionBanner onExit={exitVersionPreview} />
             </div>
           ) : null}

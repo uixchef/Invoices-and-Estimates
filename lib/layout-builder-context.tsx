@@ -39,6 +39,7 @@ import {
   BUILDER_DOCUMENT_TYPES,
   DEFAULT_LAYOUT_NAME,
   type BuilderDocumentType,
+  type BuilderLayerKind,
   type BuilderLayerStyle,
   type BuilderMessage,
   type BuilderReferenceImage,
@@ -958,14 +959,22 @@ type LayoutBuilderContextValue = {
    * shows the normal AI conversation.
    */
   inspectingLayer: string | null
-  inspectLayer: (label: string | null) => void
+  inspectLayer: (label: string | null, kind?: BuilderLayerKind) => void
+
+  /**
+   * Whether the inspected layer is an individual text layer or a
+   * section/container. Drives text-only controls (e.g. the Style tab's
+   * "Content" field, which only applies to editable text). Null when nothing is
+   * inspected.
+   */
+  inspectingLayerKind: BuilderLayerKind | null
 
   /** Which Edits sub-tab the inspector shows. */
   editsTab: "style" | "advanced"
   setEditsTab: (tab: "style" | "advanced") => void
 
   /** Selects a layer for inspection — opens its Visual edits panel + chip. */
-  selectLayer: (label: string) => void
+  selectLayer: (label: string, kind?: BuilderLayerKind) => void
 
   /** Seeds a layer's content/style overrides from the DOM on first inspect. */
   seedLayer: (
@@ -1035,6 +1044,16 @@ type LayoutBuilderContextValue = {
   /** Resolved layout to render once `status === "ready"`. */
   generatedLayout: GeneratedLayout
   sendMessage: (text: string, references?: BuilderReferenceImage[]) => void
+  /**
+   * Sends a prompt-box ("Describe your edit") request scoped to a layer/section.
+   * The named container shows the working glow for the turn instead of the whole
+   * canvas, so an AI change reads as local to what the user selected.
+   */
+  sendScopedEdit: (label: string, text: string) => void
+  /** True while the AI is acting on `label` from a scoped prompt-box edit. */
+  isLayerEditing: (label: string) => boolean
+  /** Layer/section a scoped prompt-box edit is currently targeting (else null). */
+  aiEditingLayer: string | null
   /** Records the answers and kicks off generation. */
   submitAnswers: (answers: AiAnswers) => void
   /** Skips the clarifying questions and kicks off generation. */
@@ -1112,6 +1131,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     Record<string, number>
   >({})
   const [inspectingLayer, setInspectingLayer] = useState<string | null>(null)
+  const [inspectingLayerKind, setInspectingLayerKind] =
+    useState<BuilderLayerKind | null>(null)
   const [pendingDeleteLayer, setPendingDeleteLayer] = useState<string | null>(
     null
   )
@@ -1873,19 +1894,24 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     [layerDuplicates]
   )
 
-  const inspectLayer = useCallback((label: string | null) => {
-    setInspectingLayer(label)
-    if (label !== null) {
-      // Fresh inspect session always opens on the Style tab.
-      setEditsTab("style")
-      setAddingElement(false)
-    }
-  }, [])
+  const inspectLayer = useCallback(
+    (label: string | null, kind: BuilderLayerKind = "text") => {
+      setInspectingLayer(label)
+      setInspectingLayerKind(label === null ? null : kind)
+      if (label !== null) {
+        // Fresh inspect session always opens on the Style tab.
+        setEditsTab("style")
+        setAddingElement(false)
+      }
+    },
+    []
+  )
 
   const selectLayer = useCallback(
-    (label: string) => {
+    (label: string, kind: BuilderLayerKind = "container") => {
       addSelection(label)
       setInspectingLayer(label)
+      setInspectingLayerKind(kind)
       setEditsTab("style")
       setAddingElement(false)
     },
@@ -2089,6 +2115,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     setStatus("error")
   }, [])
 
+  // The layer/section a prompt-box ("Describe your edit") request is scoped to.
+  // While the AI works on that turn, only this container shows the working glow
+  // (the canvas-wide beam is suppressed), so the change reads as local.
+  const [aiEditingLayer, setAiEditingLayer] = useState<string | null>(null)
+
   const sendMessage = useCallback(
     (text: string, references: BuilderReferenceImage[] = []) => {
       const trimmed = text.trim()
@@ -2143,6 +2174,32 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       startReasoning(buildFollowUpQuestions(trimmed))
     },
     [startReasoning, failGeneration]
+  )
+
+  // Prompt-box edit scoped to a specific layer/section: tag the active turn so
+  // the working glow renders inside that container only, then hand off to the
+  // normal turn pipeline (prefixing the layer keeps the transcript readable).
+  const sendScopedEdit = useCallback(
+    (label: string, text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed) {
+        return
+      }
+      setAiEditingLayer(label)
+      sendMessage(`${label}: ${trimmed}`)
+    },
+    [sendMessage]
+  )
+
+  // True while the AI is acting on `label` from a scoped prompt-box edit — drives
+  // the in-container working animation (same beam/shimmer as the canvas).
+  const isLayerEditing = useCallback(
+    (label: string) =>
+      aiEditingLayer === label &&
+      (status === "thinking" ||
+        status === "reasoning" ||
+        status === "asking"),
+    [aiEditingLayer, status]
   )
 
   const retryGeneration = useCallback(() => {
@@ -2318,6 +2375,12 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     if (status === "ready") {
       setHasGeneratedOnce(true)
     }
+    // A scoped prompt-box edit only owns the working glow while the turn is
+    // actively running; once it settles (ready / error / idle) release it so the
+    // container returns to its resting state.
+    if (status !== "thinking" && status !== "reasoning" && status !== "asking") {
+      setAiEditingLayer(null)
+    }
   }, [status])
 
   // Play a soft completion cue whenever a turn finishes generating a layout.
@@ -2488,6 +2551,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       requestDeleteLayer,
       inspectingLayer: effective.inspectingLayer,
       inspectLayer,
+      inspectingLayerKind,
       editsTab,
       setEditsTab,
       selectLayer,
@@ -2517,6 +2581,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       receivedAnswers,
       generatedLayout: effective.generatedLayout,
       sendMessage,
+      sendScopedEdit,
+      isLayerEditing,
+      aiEditingLayer,
       submitAnswers,
       skipQuestions,
       stopGeneration,
@@ -2571,6 +2638,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       requestDeleteLayer,
       inspectingLayer,
       inspectLayer,
+      inspectingLayerKind,
       editsTab,
       setEditsTab,
       selectLayer,
@@ -2600,6 +2668,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       receivedAnswers,
       generatedLayout,
       sendMessage,
+      sendScopedEdit,
+      isLayerEditing,
+      aiEditingLayer,
       submitAnswers,
       skipQuestions,
       stopGeneration,

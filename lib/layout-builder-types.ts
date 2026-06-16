@@ -23,6 +23,14 @@ export type BuilderSelection = {
 }
 
 /**
+ * What kind of layer the Visual edits inspector is pointed at. Text layers are
+ * individually editable strings (e.g. "Business name"); containers are
+ * sections / structural blocks (e.g. "Totals", "Billing details"). Text-only
+ * controls — like the Style tab's "Content" field — key off this.
+ */
+export type BuilderLayerKind = "text" | "container"
+
+/**
  * Per-layer style overrides set from the "Visual edits" inspector. Applied as
  * inline styles on the layer so they win over the layout's base Tailwind
  * classes. Keyed by the layer label in the builder context.

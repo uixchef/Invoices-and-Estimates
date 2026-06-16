@@ -183,27 +183,18 @@ function StatusBadge({ status }: { status: LayoutRow["status"] }) {
 
 /**
  * Compact portrait preview shown in the Name column. Mirrors the card's
- * thumbnail source so the list and grid views stay visually consistent; blank
- * layouts fall back to a quiet document glyph instead of an image.
+ * thumbnail source so the list and grid views stay visually consistent.
  */
 function RowThumbnail({ item }: { item: LayoutRow }) {
-  const isBlank = Boolean(item.isBlank)
-
   return (
     <div className="relative h-9 w-[26px] shrink-0 overflow-hidden rounded-[3px] border border-[#e4e7ec] bg-[#f9fafb]">
-      {isBlank ? (
-        <div className="flex size-full items-center justify-center">
-          <FileText className="size-3.5 text-[#98a2b3]" aria-hidden />
-        </div>
-      ) : (
-        /* eslint-disable-next-line @next/next/no-img-element */
-        <img
-          src={getLayoutThumbnail(item.id, item.clonedFromId)}
-          alt=""
-          className="absolute inset-0 size-full object-cover object-top"
-          aria-hidden
-        />
-      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={getLayoutThumbnail(item.id, item.clonedFromId)}
+        alt=""
+        className="absolute inset-0 size-full object-cover object-top"
+        aria-hidden
+      />
     </div>
   )
 }

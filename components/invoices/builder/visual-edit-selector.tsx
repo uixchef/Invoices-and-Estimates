@@ -23,6 +23,9 @@ export type SelectorAction = {
   label: string
   onClick: () => void
   disabled?: boolean
+  /** Turns the button into a drag handle (e.g. the section "move" grip). */
+  draggable?: boolean
+  onDragStart?: (event: React.DragEvent) => void
 }
 
 const TOOLBAR_BASE =
@@ -33,6 +36,9 @@ function ToolbarButton({ action }: { action: SelectorAction }) {
     <button
       type="button"
       aria-label={action.label}
+      title={action.label}
+      draggable={action.draggable}
+      onDragStart={action.onDragStart}
       onClick={(event) => {
         event.stopPropagation()
         action.onClick()
@@ -41,7 +47,8 @@ function ToolbarButton({ action }: { action: SelectorAction }) {
       className={cn(
         "inline-flex size-4 items-center justify-center rounded-[4px] text-white outline-none transition-colors",
         "hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white/60",
-        "disabled:opacity-40 disabled:hover:bg-transparent [&_svg]:size-4"
+        "disabled:opacity-40 disabled:hover:bg-transparent [&_svg]:size-4",
+        action.draggable && "cursor-grab active:cursor-grabbing"
       )}
     >
       {action.icon}
@@ -52,21 +59,33 @@ function ToolbarButton({ action }: { action: SelectorAction }) {
 export function VisualEditSelector({
   label,
   selected = false,
+  working = false,
   onSelect,
   onSubmitPrompt,
   leftActions = [],
   rightActions = [],
+  onReorderDragOver,
+  onReorderDrop,
   className,
   children,
 }: {
   label: string
   selected?: boolean
+  /**
+   * AI is acting on this container from a scoped prompt-box edit — renders the
+   * same traveling beam + shimmer as the canvas, confined to this element so the
+   * change reads as local (no full-invoice animation).
+   */
+  working?: boolean
   /** Selects the layer (click anywhere on it), like Cursor's element pick. */
   onSelect?: () => void
   /** Submits the inline "Describe your edit" prompt scoped to this layer. */
   onSubmitPrompt?: (text: string) => void
   leftActions?: SelectorAction[]
   rightActions?: SelectorAction[]
+  /** Drag-reorder hooks: lets a section accept another section's "move" grip. */
+  onReorderDragOver?: (event: React.DragEvent) => void
+  onReorderDrop?: (event: React.DragEvent) => void
   className?: string
   children: ReactNode
 }) {
@@ -164,7 +183,8 @@ export function VisualEditSelector({
         8,
         Math.min(rect.left, window.innerWidth - PROMPT_WIDTH - 8)
       )
-      setPromptAnchor({ left, top: rect.bottom + 8 })
+      // Dock the prompt 2px below the element.
+      setPromptAnchor({ left, top: rect.bottom + 2 })
     }
     update()
     window.addEventListener("scroll", update, true)
@@ -187,6 +207,8 @@ export function VisualEditSelector({
         event.stopPropagation()
         onSelect?.()
       }}
+      onDragOver={onReorderDragOver}
+      onDrop={onReorderDrop}
       className={cn(
         "group/sel relative rounded-[4px] ring-1 transition-shadow",
         // Selected always shows the solid ring. Otherwise hover shows the soft
@@ -199,6 +221,24 @@ export function VisualEditSelector({
       )}
     >
       {children}
+
+      {/* AI working on this container (scoped prompt-box edit): the same beam +
+          shimmer as the canvas, confined here so the change reads as local. The
+          edge ring matches the selector's 4px radius; both overlays are inert. */}
+      {working ? (
+        <>
+          <div
+            aria-hidden
+            className="canvas-working-shimmer pointer-events-none absolute inset-0 z-[15]"
+            style={{ borderRadius: 4 }}
+          />
+          <div
+            aria-hidden
+            className="canvas-working-edge pointer-events-none absolute inset-0 z-[15]"
+            style={{ borderRadius: 4, padding: 2 }}
+          />
+        </>
+      ) : null}
 
       {showChrome && mergeToolbars ? (
         // Narrow element: a single combined bar (arrange + clipboard) so the

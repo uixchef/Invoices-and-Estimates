@@ -109,7 +109,7 @@ export function FeedbackDialog({
               onChange={(event) => setDetails(event.target.value)}
               placeholder="What was unsatisfying about the response?"
               rows={5}
-              className="w-full resize-y rounded-[4px] border border-[#d0d5dd] px-3 py-2.5 font-[family-name:var(--font-inter)] text-base leading-5 text-[#101828] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors placeholder:text-[#667085] focus:border-[#9b8afb] focus:ring-2 focus:ring-[#155eef]/20"
+              className="w-full resize-y rounded-[4px] border border-[#d0d5dd] px-3 py-2.5 font-[family-name:var(--font-inter)] text-base leading-5 text-[#101828] shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors placeholder:text-[#667085] focus:border-[#9b8afb] focus:ring-2 focus:ring-[#9b8afb]/40"
             />
           </div>
         </div>
@@ -155,7 +155,7 @@ function IssueSelect({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="group flex h-9 w-full items-center gap-2 rounded-[4px] border border-[#d0d5dd] bg-white px-3 shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#f9fafb] focus-visible:ring-2 focus-visible:ring-[#155eef]/40 data-[state=open]:border-[#84adff] data-[state=open]:ring-2 data-[state=open]:ring-[#155eef]/40"
+          className="group flex h-9 w-full items-center gap-2 rounded-[4px] border border-[#d0d5dd] bg-white px-3 shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#f9fafb] focus-visible:border-[#9b8afb] focus-visible:ring-2 focus-visible:ring-[#9b8afb]/40 data-[state=open]:border-[#9b8afb] data-[state=open]:ring-2 data-[state=open]:ring-[#9b8afb]/40"
         >
           <span className="min-w-0 flex-1 truncate text-left font-[family-name:var(--font-inter)] text-base leading-5 text-[#101828]">
             {value}
@@ -181,13 +181,13 @@ function IssueSelect({
               className={cn(
                 "flex items-center justify-between gap-2 rounded-[4px] px-2 py-2 text-base leading-5",
                 isActive
-                  ? "bg-[#eff4ff] text-[#004eeb] focus:bg-[#eff4ff] focus:text-[#004eeb]"
+                  ? "bg-[#f4f3ff] text-[#5925dc] focus:bg-[#f4f3ff] focus:text-[#5925dc]"
                   : "text-[#475467]"
               )}
             >
               <span className="truncate">{option}</span>
               {isActive ? (
-                <Check className="size-4 shrink-0 text-[#004eeb]" aria-hidden />
+                <Check className="size-4 shrink-0 text-[#5925dc]" aria-hidden />
               ) : null}
             </DropdownMenuItem>
           )
