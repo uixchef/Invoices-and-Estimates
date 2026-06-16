@@ -40,6 +40,28 @@ function getContext(): AudioContext | null {
   return sharedCtx
 }
 
+/**
+ * Runs `play` with a *running* context. Web Audio schedules against
+ * `ctx.currentTime`, which only advances while the context is running — so
+ * scheduling on a still-suspended context (e.g. right after the first gesture
+ * resumes it, or after the browser auto-suspends a backgrounded tab) produces
+ * silence. Resuming first and playing on resolve guarantees the cue is audible.
+ */
+function withRunningContext(play: (ctx: AudioContext) => void): void {
+  const ctx = getContext()
+  if (!ctx) {
+    return
+  }
+  if (ctx.state === "running") {
+    play(ctx)
+    return
+  }
+  void ctx
+    .resume()
+    .then(() => play(ctx))
+    .catch(() => {})
+}
+
 function getNoiseBuffer(ctx: AudioContext): AudioBuffer {
   if (!sharedNoise) {
     sharedNoise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate)
@@ -67,37 +89,34 @@ export function primeCompletionSound(): void {
  * so it's safe to call on every generation.
  */
 export function playCompletionSound(volume = DEFAULT_VOLUME): void {
-  const ctx = getContext()
-  if (!ctx) {
-    return
-  }
-
   const now = Date.now()
   if (now - lastPlayed < MIN_INTERVAL_MS) {
     return
   }
   lastPlayed = now
 
-  const t = ctx.currentTime
-  const source = ctx.createBufferSource()
-  source.buffer = getNoiseBuffer(ctx)
+  withRunningContext((ctx) => {
+    const t = ctx.currentTime
+    const source = ctx.createBufferSource()
+    source.buffer = getNoiseBuffer(ctx)
 
-  const filter = ctx.createBiquadFilter()
-  filter.type = "highpass"
-  filter.frequency.setValueAtTime(900, t)
-  filter.frequency.exponentialRampToValueAtTime(4200, t + 0.1)
+    const filter = ctx.createBiquadFilter()
+    filter.type = "highpass"
+    filter.frequency.setValueAtTime(900, t)
+    filter.frequency.exponentialRampToValueAtTime(4200, t + 0.1)
 
-  const gain = ctx.createGain()
-  gain.gain.setValueAtTime(0, t)
-  gain.gain.linearRampToValueAtTime(volume, t + 0.008)
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12)
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0, t)
+    gain.gain.linearRampToValueAtTime(volume, t + 0.008)
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12)
 
-  source.connect(filter)
-  filter.connect(gain)
-  gain.connect(ctx.destination)
+    source.connect(filter)
+    filter.connect(gain)
+    gain.connect(ctx.destination)
 
-  source.start(t)
-  source.stop(t + 0.15)
+    source.start(t)
+    source.stop(t + 0.15)
+  })
 }
 
 const QUESTION_VOLUME = 0.4
@@ -109,41 +128,38 @@ const QUESTION_VOLUME = 0.4
  * so it's safe to call on the status transition.
  */
 export function playQuestionSound(volume = QUESTION_VOLUME): void {
-  const ctx = getContext()
-  if (!ctx) {
-    return
-  }
-
   const now = Date.now()
   if (now - lastPlayed < MIN_INTERVAL_MS) {
     return
   }
   lastPlayed = now
 
-  const t = ctx.currentTime
-  // Rising two-note prompt: E5 then B5, each a soft triangle "mallet" tone.
-  const notes: { freq: number; at: number }[] = [
-    { freq: 659.25, at: 0 },
-    { freq: 987.77, at: 0.11 },
-  ]
+  withRunningContext((ctx) => {
+    const t = ctx.currentTime
+    // Rising two-note prompt: E5 then B5, each a soft triangle "mallet" tone.
+    const notes: { freq: number; at: number }[] = [
+      { freq: 659.25, at: 0 },
+      { freq: 987.77, at: 0.11 },
+    ]
 
-  for (const { freq, at } of notes) {
-    const start = t + at
-    const osc = ctx.createOscillator()
-    osc.type = "triangle"
-    osc.frequency.setValueAtTime(freq, start)
+    for (const { freq, at } of notes) {
+      const start = t + at
+      const osc = ctx.createOscillator()
+      osc.type = "triangle"
+      osc.frequency.setValueAtTime(freq, start)
 
-    const gain = ctx.createGain()
-    gain.gain.setValueAtTime(0, start)
-    gain.gain.linearRampToValueAtTime(volume, start + 0.012)
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22)
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0, start)
+      gain.gain.linearRampToValueAtTime(volume, start + 0.012)
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22)
 
-    osc.connect(gain)
-    gain.connect(ctx.destination)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
 
-    osc.start(start)
-    osc.stop(start + 0.26)
-  }
+      osc.start(start)
+      osc.stop(start + 0.26)
+    }
+  })
 }
 
 const ERROR_VOLUME = 0.45
@@ -155,46 +171,43 @@ const ERROR_VOLUME = 0.45
  * no-op without Web Audio, so it's safe to call on the status transition.
  */
 export function playErrorSound(volume = ERROR_VOLUME): void {
-  const ctx = getContext()
-  if (!ctx) {
-    return
-  }
-
   const now = Date.now()
   if (now - lastPlayed < MIN_INTERVAL_MS) {
     return
   }
   lastPlayed = now
 
-  const t = ctx.currentTime
-  // Falling two-note cue: A3 then E3, a descending interval that reads as a
-  // gentle "uh-oh" without being harsh.
-  const notes: { freq: number; at: number }[] = [
-    { freq: 220, at: 0 },
-    { freq: 164.81, at: 0.13 },
-  ]
+  withRunningContext((ctx) => {
+    const t = ctx.currentTime
+    // Falling two-note cue: A3 then E3, a descending interval that reads as a
+    // gentle "uh-oh" without being harsh.
+    const notes: { freq: number; at: number }[] = [
+      { freq: 220, at: 0 },
+      { freq: 164.81, at: 0.13 },
+    ]
 
-  for (const { freq, at } of notes) {
-    const start = t + at
-    const osc = ctx.createOscillator()
-    osc.type = "sawtooth"
-    osc.frequency.setValueAtTime(freq, start)
+    for (const { freq, at } of notes) {
+      const start = t + at
+      const osc = ctx.createOscillator()
+      osc.type = "sawtooth"
+      osc.frequency.setValueAtTime(freq, start)
 
-    // Tame the sawtooth's edge so it reads soft rather than buzzy.
-    const filter = ctx.createBiquadFilter()
-    filter.type = "lowpass"
-    filter.frequency.setValueAtTime(1200, start)
+      // Tame the sawtooth's edge so it reads soft rather than buzzy.
+      const filter = ctx.createBiquadFilter()
+      filter.type = "lowpass"
+      filter.frequency.setValueAtTime(1200, start)
 
-    const gain = ctx.createGain()
-    gain.gain.setValueAtTime(0, start)
-    gain.gain.linearRampToValueAtTime(volume, start + 0.014)
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.3)
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0, start)
+      gain.gain.linearRampToValueAtTime(volume, start + 0.014)
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.3)
 
-    osc.connect(filter)
-    filter.connect(gain)
-    gain.connect(ctx.destination)
+      osc.connect(filter)
+      filter.connect(gain)
+      gain.connect(ctx.destination)
 
-    osc.start(start)
-    osc.stop(start + 0.34)
-  }
+      osc.start(start)
+      osc.stop(start + 0.34)
+    }
+  })
 }

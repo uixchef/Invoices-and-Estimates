@@ -297,6 +297,7 @@ function AssistantTurn({
     restoreVersion,
     hasVersionSnapshot,
     showFeedbackToast,
+    showCanvasToast,
   } = useLayoutBuilder()
   const hasAnswers =
     message.receivedAnswers && message.receivedAnswers.length > 0
@@ -334,7 +335,10 @@ function AssistantTurn({
         canPreviewVersion={canPreviewVersion}
         onPreviewVersion={() => previewVersion(message.id)}
         onExitPreview={exitVersionPreview}
-        onRestoreVersion={() => restoreVersion(message.id)}
+        onRestoreVersion={() => {
+          restoreVersion(message.id)
+          showCanvasToast("Reverted to this version")
+        }}
         onFeedback={showFeedbackToast}
         recommendations={
           isCurrent && status === "ready" ? recommendations : undefined
