@@ -904,7 +904,7 @@ export function InvoiceAiPanel({
                 // Sticky prompt header — stays at the top of the viewport while
                 // its response streams below (Cursor's per-turn pinning). The
                 // opaque band masks content scrolling underneath.
-                <div className="sticky top-0 z-10 -mx-4 flex flex-col gap-3 bg-white px-4 pb-1 pt-4">
+                <div className="sticky top-0 z-10 -mx-4 flex flex-col items-end gap-3 bg-white px-4 pb-1 pt-4">
                   {user.references.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {user.references.map((reference) => (
@@ -983,8 +983,8 @@ export function InvoiceAiPanel({
 function FeedbackToast({ message }: { message: string }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-full z-20 flex justify-center px-4 pb-2">
-      <div className="animate-in fade-in-0 slide-in-from-bottom-1 flex items-center gap-1.5 rounded-full border border-[#a6f4c5] bg-[#ecfdf3] py-1.5 pl-2.5 pr-3 shadow-[0_8px_16px_-4px_rgba(16,24,40,0.12),0_4px_8px_-2px_rgba(16,24,40,0.08)]">
-        <CheckCircle2 className="size-4 shrink-0 text-[#039855]" aria-hidden />
+      <div className="animate-in fade-in-0 slide-in-from-bottom-1 flex items-center gap-1.5 rounded-[8px] border border-[#6ce9a6] bg-[#ecfdf3] py-1.5 pl-2.5 pr-3 shadow-[0px_4px_8px_-2px_rgba(16,24,40,0.1),0px_2px_4px_-2px_rgba(16,24,40,0.06)]">
+        <CheckCircle2 className="size-4 shrink-0 text-[#027a48]" aria-hidden />
         <span className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#027a48]">
           {message}
         </span>
