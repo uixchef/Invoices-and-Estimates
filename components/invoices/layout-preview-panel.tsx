@@ -10,7 +10,9 @@ import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { useLayoutPreview } from "@/lib/layout-preview-context"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import { layoutEditSeedFromRow } from "@/lib/layout-edit-seed"
-import { getLayoutThumbnail } from "@/lib/layout-thumbnails"
+import { layoutFromRow } from "@/lib/layout-builder-context"
+import { LayoutThumbnail } from "@/components/invoices/builder/layout-document"
+import { getDocumentPageProfile } from "@/lib/mediums-data"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { Button } from "@/components/highrise/button"
 import { cn } from "@/lib/utils"
@@ -154,11 +156,11 @@ export function LayoutPreviewPanel() {
 
             <div className="mb-4 min-h-0 flex-1 overflow-hidden rounded-lg border border-[#eaecf0] bg-white">
               <div className="h-full overflow-y-auto overflow-x-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={getLayoutThumbnail(layout.id, layout.clonedFromId)}
-                  alt={`Preview of ${layout.name}`}
-                  className="block h-auto w-full"
+                <LayoutThumbnail
+                  layout={layoutFromRow(layout)}
+                  pageProfile={getDocumentPageProfile(layout.mediumId)}
+                  flow
+                  className="w-full"
                 />
               </div>
             </div>

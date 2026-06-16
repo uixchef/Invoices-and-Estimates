@@ -32,7 +32,9 @@ import type { FilterDefinition, LayoutFilterType } from "@/lib/layout-filters"
 import { FILTER_DEFINITIONS } from "@/lib/layout-filters"
 import type { LayoutFilterSelections } from "@/lib/filter-layouts"
 import type { LayoutRow } from "@/lib/layouts-data"
-import { getLayoutThumbnail } from "@/lib/layout-thumbnails"
+import { LayoutThumbnail } from "@/components/invoices/builder/layout-document"
+import { layoutFromRow } from "@/lib/layout-builder-context"
+import { getDocumentPageProfile } from "@/lib/mediums-data"
 import { useLayoutClone } from "@/lib/layout-clone-context"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import { layoutEditSeedFromRow } from "@/lib/layout-edit-seed"
@@ -187,13 +189,14 @@ function StatusBadge({ status }: { status: LayoutRow["status"] }) {
  */
 function RowThumbnail({ item }: { item: LayoutRow }) {
   return (
-    <div className="relative h-9 w-[26px] shrink-0 overflow-hidden rounded-[3px] border border-[#e4e7ec] bg-[#f9fafb]">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={getLayoutThumbnail(item.id, item.clonedFromId)}
-        alt=""
-        className="absolute inset-0 size-full object-cover object-top"
-        aria-hidden
+    <div
+      className="relative h-9 w-[26px] shrink-0 overflow-hidden rounded-[3px] border border-[#e4e7ec] bg-[#f9fafb]"
+      aria-hidden
+    >
+      <LayoutThumbnail
+        layout={layoutFromRow(item)}
+        pageProfile={getDocumentPageProfile(item.mediumId)}
+        className="absolute inset-0 size-full"
       />
     </div>
   )

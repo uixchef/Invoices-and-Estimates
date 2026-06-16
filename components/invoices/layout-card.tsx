@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useMemo, useState } from "react"
 import { Copy, Eye, MoreVertical, Pencil, Trash2 } from "lucide-react"
 import {
   DropdownMenu,
@@ -11,7 +11,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import type { LayoutRow } from "@/lib/layouts-data"
 import { useMediumsStore } from "@/lib/mediums-store"
-import { getLayoutThumbnail } from "@/lib/layout-thumbnails"
+import { LayoutThumbnail } from "@/components/invoices/builder/layout-document"
+import { layoutFromRow } from "@/lib/layout-builder-context"
+import { getDocumentPageProfile } from "@/lib/mediums-data"
 import { useLayoutClone } from "@/lib/layout-clone-context"
 import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { useLayoutPreview } from "@/lib/layout-preview-context"
@@ -162,17 +164,14 @@ function LayoutCardActions({ item }: { item: LayoutRow }) {
 
 export function LayoutCard({ item }: { item: LayoutRow }) {
   const { getMediumName } = useMediumsStore()
-  const [imageReady, setImageReady] = useState(false)
-  const delayElapsed = usePreviewReveal(item.id)
-  const imgRef = useRef<HTMLImageElement>(null)
-  const ready = imageReady && delayElapsed
-
-  // Cached/SSR-complete images may never fire onLoad after hydration.
-  useEffect(() => {
-    if (imgRef.current?.complete) {
-      setImageReady(true)
-    }
-  }, [])
+  const ready = usePreviewReveal(item.id)
+  // The exact layout the builder reconstructs for this row — the card depicts
+  // what the user will land on when they edit it.
+  const layout = useMemo(() => layoutFromRow(item), [item])
+  const pageProfile = useMemo(
+    () => getDocumentPageProfile(item.mediumId),
+    [item.mediumId]
+  )
 
   return (
     <article
@@ -194,19 +193,13 @@ export function LayoutCard({ item }: { item: LayoutRow }) {
       >
         {!ready ? <ThumbnailSkeleton /> : null}
 
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          ref={imgRef}
-          src={getLayoutThumbnail(item.id, item.clonedFromId)}
-          alt=""
-          onLoad={() => setImageReady(true)}
-          onError={() => setImageReady(true)}
-          className={cn(
-            "absolute inset-0 size-full object-cover object-top transition-opacity duration-300",
-            ready ? "opacity-100" : "opacity-0"
-          )}
-          aria-hidden
-        />
+        {ready ? (
+          <LayoutThumbnail
+            layout={layout}
+            pageProfile={pageProfile}
+            className="absolute inset-0 size-full animate-in fade-in-0 duration-300"
+          />
+        ) : null}
 
         <div
           className="absolute right-2 top-2 z-[2] flex items-center gap-1.5"

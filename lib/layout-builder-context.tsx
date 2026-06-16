@@ -56,6 +56,8 @@ import {
   type PlacedElement,
   type PlacedElementZone,
 } from "@/lib/layout-builder-types"
+import type { LayoutRow } from "@/lib/layouts-data"
+import { layoutEditSeedFromRow } from "@/lib/layout-edit-seed"
 
 /** Simulated generation latency until the layout-generation API is wired in. */
 const SIMULATED_THINKING_MS = 7000
@@ -115,6 +117,12 @@ type BuilderHistorySnapshot = {
   layerDuplicates: Record<string, number>
   placedElements: PlacedElement[]
   codeOverride: string | null
+  /**
+   * Frozen base document set when reverting to an earlier version. When non-null
+   * it replaces the message-composed base, so reverting rolls the rendered
+   * layout back (not just the manual-edit overlays). Cleared by the next prompt.
+   */
+  baseLayout: GeneratedLayout | null
 }
 
 function cloneHistorySnapshot(
@@ -757,6 +765,24 @@ function indefiniteArticle(noun: string): string {
 }
 
 /**
+ * Resolves the exact `GeneratedLayout` the builder reconstructs when a dashboard
+ * row is opened via "Edit" — the single source of truth shared by the builder
+ * canvas and the dashboard card/preview thumbnails, so a card always depicts the
+ * layout the user will land on. Deterministic from the row's id (its seed).
+ */
+export function layoutFromRow(row: LayoutRow): GeneratedLayout {
+  const editSeed = layoutEditSeedFromRow(row)
+  const session = deriveEditSession(editSeed)
+  return composeLayout(
+    [session.prompt],
+    0,
+    session.answers,
+    editSeed.documentType,
+    { businessName: session.businessName }
+  )
+}
+
+/**
  * Reconstructs a believable creation session for an existing layout opened via
  * the dashboard "Edit" action. The layout's numeric `seed` deterministically
  * resolves the business, style, currency, sections, item count, and timings, so
@@ -1141,6 +1167,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH)
   const [editMode, setEditMode] = useState(false)
   const [layoutEdits, setLayoutEdits] = useState<Partial<GeneratedLayout>>({})
+  // Non-null after reverting to a version: replaces the message-composed base so
+  // the rendered layout matches that version. Cleared by the next prompt.
+  const [baseLayout, setBaseLayout] = useState<GeneratedLayout | null>(null)
   const [selections, setSelections] = useState<BuilderSelection[]>([])
   const [layerText, setLayerTextState] = useState<Record<string, string>>({})
   const [layerStyles, setLayerStyles] = useState<
@@ -1195,6 +1224,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     layerDuplicates: {},
     placedElements: [],
     codeOverride: null,
+    baseLayout: null,
   })
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
@@ -1234,6 +1264,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       layerDuplicates,
       placedElements,
       codeOverride,
+      baseLayout,
     }
   }, [
     layoutEdits,
@@ -1243,6 +1274,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     layerDuplicates,
     placedElements,
     codeOverride,
+    baseLayout,
   ])
 
   const syncHistoryFlags = useCallback(() => {
@@ -1271,6 +1303,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerDuplicates(snapshot.layerDuplicates)
       setPlacedElements(snapshot.placedElements)
       setCodeOverrideState(snapshot.codeOverride)
+      setBaseLayout(snapshot.baseLayout ?? null)
       applyingHistoryRef.current = false
     },
     []
@@ -2179,6 +2212,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
       // Leaving a version preview — a new turn always acts on the live document.
       setPreviewVersionId(null)
+      // A new turn recomposes from the full transcript, so drop any reverted base.
+      setBaseLayout(null)
 
       // A new turn supersedes any prior failure.
       setErrorMessage(null)
@@ -2274,6 +2309,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     const settledTurns = messages.filter(
       (message) => message.role === "assistant"
     ).length
+    // Reverted to an earlier version: that frozen layout is the base, so the
+    // rendered document matches the version exactly. Manual edits still win last.
+    if (baseLayout) {
+      return { ...baseLayout, ...layoutEdits }
+    }
     // The first prompt → assistant #1 → base layout; each later prompt folds in
     // once its assistant turn has settled (so the change lands on completion,
     // not the instant the user hits send). Manual edits still win last.
@@ -2284,7 +2324,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       documentType,
       layoutEdits
     )
-  }, [messages, answers, documentType, layoutEdits])
+  }, [messages, answers, documentType, layoutEdits, baseLayout])
 
   // Freeze a snapshot of the document the first time each assistant turn
   // appears, so its eye/undo controls can preview or revert to that exact state
@@ -2322,7 +2362,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       if (!snapshot) {
         return
       }
-      // Record the current state for undo, then roll the document back.
+      // Record the current state for undo, then roll the document back. The
+      // frozen layout becomes the base so prompt-driven changes from later turns
+      // are rolled back too (not just the manual-edit overlays).
       pushHistory()
       applyHistorySnapshot({
         layoutEdits: snapshot.layoutEdits,
@@ -2332,6 +2374,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         layerDuplicates: snapshot.layerDuplicates,
         placedElements: snapshot.placedElements,
         codeOverride: snapshot.codeOverride,
+        baseLayout: snapshot.generatedLayout,
       })
       setPreviewVersionId(null)
     },
