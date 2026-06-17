@@ -8,24 +8,15 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentType,
   type ReactNode,
 } from "react"
 import { createPortal } from "react-dom"
 import {
-  ArrowDown,
-  ArrowUp,
-  Code2,
-  Copy,
-  CopyPlus,
-  Layers,
   Maximize2,
   Minimize2,
   MoreVertical,
-  Repeat,
   RotateCcw,
   Send,
-  Trash2,
   X,
 } from "lucide-react"
 
@@ -46,6 +37,20 @@ import { AiQuestions } from "@/components/ai/ai-questions"
 import { VisualEditsPanel } from "@/components/invoices/builder/visual-edits-panel"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { cn } from "@/lib/utils"
+
+/** "More options" menu glyphs (Untitled UI). Pre-coloured PNGs served from
+ *  /public/icons/menu — the trash glyph already ships in the destructive red. */
+const MENU_ICONS = "/icons/menu"
+const MENU_ICON = {
+  copy: `${MENU_ICONS}/copy.png`,
+  duplicate: `${MENU_ICONS}/duplicate.png`,
+  pasteReplace: `${MENU_ICONS}/repeat.png`,
+  copyCode: `${MENU_ICONS}/code.png`,
+  selectParent: `${MENU_ICONS}/layers.png`,
+  moveUp: `${MENU_ICONS}/arrow-up.png`,
+  moveDown: `${MENU_ICONS}/arrow-down.png`,
+  delete: `${MENU_ICONS}/trash.png`,
+} as const
 
 /** Floating overlay width (anchored beside the selection). */
 const PANEL_WIDTH = 320
@@ -372,7 +377,8 @@ export function EditsOverlay() {
   type MoreMenuItem = {
     id: string
     label: string
-    icon?: ComponentType<{ className?: string }>
+    /** Path to a pre-coloured menu glyph in /public/icons/menu. */
+    icon?: string
     onSelect: () => void
     disabled?: boolean
     destructive?: boolean
@@ -392,7 +398,7 @@ export function EditsOverlay() {
       {
         id: "copy",
         label: "Copy",
-        icon: Copy,
+        icon: MENU_ICON.copy,
         onSelect: () => {
           copyLayer(inspectingLayer)
           showCanvasToast("Copied")
@@ -401,13 +407,13 @@ export function EditsOverlay() {
       {
         id: "duplicate",
         label: "Duplicate",
-        icon: CopyPlus,
+        icon: MENU_ICON.duplicate,
         onSelect: () => duplicateLayer(inspectingLayer),
       },
       {
         id: "paste-replace",
         label: "Paste to replace",
-        icon: Repeat,
+        icon: MENU_ICON.pasteReplace,
         onSelect: () => pasteToReplace(inspectingLayer),
         disabled: !canPasteLayer,
       },
@@ -420,7 +426,7 @@ export function EditsOverlay() {
       {
         id: "copy-code",
         label: "Copy code",
-        icon: Code2,
+        icon: MENU_ICON.copyCode,
         onSelect: copyCode,
       },
       {
@@ -442,7 +448,7 @@ export function EditsOverlay() {
       {
         id: "select-parent",
         label: "Select parent",
-        icon: Layers,
+        icon: MENU_ICON.selectParent,
         onSelect: () => {
           if (parentLabel) {
             selectLayer(parentLabel)
@@ -453,14 +459,14 @@ export function EditsOverlay() {
       {
         id: "move-up",
         label: "Move up",
-        icon: ArrowUp,
+        icon: MENU_ICON.moveUp,
         onSelect: () => moveLayer(inspectingLayer, "up"),
         disabled: !canMoveLayer(inspectingLayer, "up"),
       },
       {
         id: "move-down",
         label: "Move down",
-        icon: ArrowDown,
+        icon: MENU_ICON.moveDown,
         onSelect: () => moveLayer(inspectingLayer, "down"),
         disabled: !canMoveLayer(inspectingLayer, "down"),
       },
@@ -469,7 +475,7 @@ export function EditsOverlay() {
       {
         id: "delete",
         label: "Delete",
-        icon: Trash2,
+        icon: MENU_ICON.delete,
         onSelect: () => requestDeleteLayer(inspectingLayer),
         destructive: true,
       },
@@ -558,40 +564,39 @@ export function EditsOverlay() {
                   {groupIndex > 0 ? (
                     <DropdownMenuSeparator className="bg-[#eaecf0]" />
                   ) : null}
-                  {group.map((item) => {
-                    const Icon = item.icon
-                    return (
-                      <DropdownMenuItem
-                        key={item.id}
-                        disabled={item.disabled}
-                        onSelect={() => item.onSelect()}
-                        className={cn(
-                          "flex items-center gap-2 rounded-[4px] px-2 py-1 text-[14px] leading-5 text-[#344054]",
-                          "focus:bg-[#f9fafb] focus:text-[#101828]",
-                          item.destructive &&
-                            "text-[#d92d20] focus:bg-[#fef3f2] focus:text-[#d92d20]",
-                          item.disabled &&
-                            "data-[disabled]:bg-[#f9fafb] data-[disabled]:text-[#98a2b3] data-[disabled]:opacity-100"
-                        )}
-                      >
-                        <span className="min-w-0 flex-1 truncate">
-                          {item.label}
-                        </span>
-                        {Icon ? (
-                          <Icon
-                            className={cn(
-                              "size-3.5 shrink-0",
-                              item.disabled
-                                ? "text-[#98a2b3]"
-                                : item.destructive
-                                  ? "text-[#d92d20]"
-                                  : "text-[#344054]"
-                            )}
-                          />
-                        ) : null}
-                      </DropdownMenuItem>
-                    )
-                  })}
+                  {group.map((item) => (
+                    <DropdownMenuItem
+                      key={item.id}
+                      disabled={item.disabled}
+                      onSelect={() => item.onSelect()}
+                      className={cn(
+                        "flex items-center gap-2 rounded-[4px] px-2 py-1 text-[14px] leading-5 text-[#344054]",
+                        "focus:bg-[#f9fafb] focus:text-[#101828]",
+                        item.destructive &&
+                          "text-[#d92d20] focus:bg-[#fef3f2] focus:text-[#d92d20]",
+                        item.disabled &&
+                          "data-[disabled]:bg-[#f9fafb] data-[disabled]:text-[#98a2b3] data-[disabled]:opacity-100"
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {item.label}
+                      </span>
+                      {item.icon ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={item.icon}
+                          alt=""
+                          aria-hidden
+                          className={cn(
+                            "size-3.5 shrink-0 object-contain",
+                            // Glyphs ship pre-coloured; dim them when the action
+                            // is unavailable to match the greyed label.
+                            item.disabled && "opacity-40"
+                          )}
+                        />
+                      ) : null}
+                    </DropdownMenuItem>
+                  ))}
                 </Fragment>
               ))}
             </DropdownMenuContent>
@@ -646,7 +651,7 @@ export function EditsOverlay() {
   )
 
   const footer = (
-    <div className={cn("px-4 pt-4", editsDocked ? "pb-4" : "pb-3")}>
+    <div className={cn("px-4", editsDocked ? "pt-4 pb-4" : "pt-3 pb-3")}>
       <div
         className={cn(
           "flex items-center gap-2.5 rounded-lg border border-[#bdb4fe] bg-white p-2 transition-shadow",
@@ -705,7 +710,7 @@ export function EditsOverlay() {
           // The floating overlay uses a subtle off-white body to separate it
           // from the header/footer; the docked view stays white like the left
           // AI panel it mirrors.
-          editsDocked ? "bg-white" : "bg-[#fcfcfd]"
+          editsDocked ? "bg-white" : "bg-[#f9fafb]"
         )}
       >
         <VisualEditsPanel />

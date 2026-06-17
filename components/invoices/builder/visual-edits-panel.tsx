@@ -1819,7 +1819,7 @@ function ConditionAccordion({
               type="button"
               onClick={apply}
               disabled={!canApply}
-              className="inline-flex h-7 items-center justify-center rounded-[4px] border border-[#155eef] bg-[#155eef] px-2.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#0040c1] focus-visible:ring-2 focus-visible:ring-[#155eef]/40 disabled:cursor-not-allowed disabled:border-[#d0d5dd] disabled:bg-[#eaecf0] disabled:text-[#98a2b3] disabled:shadow-none"
+              className="inline-flex h-7 items-center justify-center rounded-[4px] border border-[#155eef] bg-[#155eef] px-2.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-colors hover:bg-[#0040c1] focus-visible:ring-2 focus-visible:ring-[#155eef]/40 disabled:cursor-not-allowed disabled:border-[#b2ccff] disabled:bg-[#b2ccff] disabled:text-white disabled:shadow-none disabled:opacity-100"
             >
               Apply
             </button>

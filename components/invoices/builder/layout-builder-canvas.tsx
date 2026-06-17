@@ -1800,6 +1800,7 @@ function DocumentSurface() {
     selections,
     selectLayer,
     isLayerEditing,
+    layerStyles,
     mediumId,
   } = useLayoutBuilder()
 
@@ -2013,6 +2014,9 @@ function DocumentSurface() {
             </SelectableSection>
             {layout.lineItems.map((item, index) => {
               const itemLabel = `Item ${index + 1}`
+              // Layer style edits (padding, colours, border, radius…) for this row
+              // are kept block-level so they don't collapse the flex row layout.
+              const itemStyle = styleFromLayer(layerStyles[itemLabel], false)
               const row = (
                 <div className="flex items-center gap-4 border-b border-[#eaecf0] py-3 text-sm text-[#101828]">
                   <span className="flex-1">
@@ -2044,7 +2048,11 @@ function DocumentSurface() {
               )
 
               if (!editMode) {
-                return <div key={index}>{row}</div>
+                return (
+                  <div key={index} style={itemStyle}>
+                    {row}
+                  </div>
+                )
               }
 
               return (
@@ -2056,6 +2064,8 @@ function DocumentSurface() {
                   )}
                   working={isLayerEditing(itemLabel)}
                   onSelect={() => selectLayer(itemLabel)}
+                  style={itemStyle}
+                  showAddElement={false}
                   leftActions={[
                     {
                       icon: <ArrowUp />,
@@ -3569,12 +3579,12 @@ export function LayoutBuilderCanvas() {
   )
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col p-4">
+    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-4">
       <div
         ref={splitRef}
         data-builder-surface
         className={cn(
-          "relative flex min-h-0 flex-1 overflow-hidden rounded-[12px] shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]",
+          "relative flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-[12px] shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]",
           showCode && !showPreview
             ? "bg-[#1c1917]"
             : showCarousel

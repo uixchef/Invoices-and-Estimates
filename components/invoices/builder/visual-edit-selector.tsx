@@ -69,6 +69,7 @@ export function VisualEditSelector({
   onSelect,
   leftActions = [],
   rightActions = [],
+  showAddElement = true,
   onReorderDragOver,
   onReorderDrop,
   className,
@@ -93,6 +94,12 @@ export function VisualEditSelector({
   onSelect?: () => void
   leftActions?: SelectorAction[]
   rightActions?: SelectorAction[]
+  /**
+   * Whether to append the default "add element near…" palette button to the
+   * left toolbar. Disable it for selectors that already expose their own
+   * contextual insert (e.g. a line item's "Add item below") to avoid two "+"s.
+   */
+  showAddElement?: boolean
   /** Drag-reorder hooks: lets a section accept another section's "move" grip. */
   onReorderDragOver?: (event: React.DragEvent) => void
   onReorderDrop?: (event: React.DragEvent) => void
@@ -107,17 +114,20 @@ export function VisualEditSelector({
   const rootRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(Number.POSITIVE_INFINITY)
 
-  // Every selector exposes a "+" that opens the add-elements palette, so
-  // inserting an element is reachable from any selection. It sits at the end of
-  // the left arrange toolbar — after the move up/down controls.
-  const effectiveLeftActions: SelectorAction[] = [
-    ...leftActions,
-    {
-      icon: <Plus />,
-      label: `Add element near ${label}`,
-      onClick: openAddElements,
-    },
-  ]
+  // Selectors expose a "+" that opens the add-elements palette, so inserting an
+  // element is reachable from any selection. It sits at the end of the left
+  // arrange toolbar — after the move up/down controls — and is suppressed when
+  // the caller already provides its own contextual insert action.
+  const effectiveLeftActions: SelectorAction[] = showAddElement
+    ? [
+        ...leftActions,
+        {
+          icon: <Plus />,
+          label: `Add element near ${label}`,
+          onClick: openAddElements,
+        },
+      ]
+    : leftActions
 
   // Track the element's rendered width so narrow elements can collapse their
   // left + right toolbars into one bar instead of letting them overlap.
