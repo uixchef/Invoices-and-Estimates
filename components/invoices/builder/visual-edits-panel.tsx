@@ -16,11 +16,13 @@ import {
   Italic,
   Link2,
   Minus,
+  Pencil,
   Plus,
   Repeat,
   Search,
   Trash2,
   Underline,
+  X,
 } from "lucide-react"
 
 import {
@@ -70,14 +72,16 @@ const MAXIMIZE_ICON_ACTIVE = `${SAFE_AREA}/maximize-02-blue.png`
 const EDIT_ICONS = "/icons/edits"
 const ROUNDED_CORNER_ICON = `${EDIT_ICONS}/rounded-corner.svg`
 const CORNER_RADIUS_ALL_ICON = `${EDIT_ICONS}/corner-radius.png`
-const LINE_WEIGHT_ICON = `${EDIT_ICONS}/line-weight.png`
-const BORDER_RADIUS_ICON = {
-  topLeft: `${EDIT_ICONS}/grid-dots-left.svg`,
-  topRight: `${EDIT_ICONS}/border-top.svg`,
-  bottomLeft: `${EDIT_ICONS}/border-right.svg`,
-  bottomRight: `${EDIT_ICONS}/border-bottom.svg`,
+/** Border-width glyphs (Figma 3245:42292): a uniform "line weight" collapsed
+ *  icon and per-side stroke glyphs in the matrix's [Left, Top, Right, Bottom]
+ *  cell order. */
+const BORDER_WIDTH_ICON = {
+  all: `${EDIT_ICONS}/line-weight.png`,
+  top: `${EDIT_ICONS}/border-top.svg`,
+  right: `${EDIT_ICONS}/border-right.svg`,
+  bottom: `${EDIT_ICONS}/border-bottom.svg`,
+  left: `${EDIT_ICONS}/grid-dots-left.svg`,
 } as const
-
 /** Renders a static (PNG/SVG) icon asset at the matrix-cell icon size. */
 function IconImg({
   src,
@@ -431,7 +435,7 @@ function SelectField({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="min-w-[var(--radix-dropdown-menu-trigger-width)] rounded-lg p-1.5 font-[family-name:var(--font-inter)]"
+        className="z-[80] min-w-[var(--radix-dropdown-menu-trigger-width)] font-[family-name:var(--font-inter)]"
       >
         {options.map((option) => {
           const isActive = option.value === value
@@ -440,7 +444,7 @@ function SelectField({
               key={option.value || option.label}
               onSelect={() => onChange(option.value)}
               className={cn(
-                "flex items-center justify-between gap-2 rounded-[4px] px-2 py-1.5 text-sm leading-5",
+                "flex items-center justify-between gap-2 rounded-none px-2 py-1.5 text-sm leading-5",
                 isActive
                   ? "bg-[#eff4ff] text-[#004eeb] focus:bg-[#eff4ff] focus:text-[#004eeb]"
                   : "text-[#475467]"
@@ -488,29 +492,58 @@ function MatrixCell({
   )
 }
 
-/** Link toggle that sits beside a matrix to switch uniform / per-side editing. */
-function LinkToggle({
-  linked,
+/**
+ * Per-side / per-corner expand toggle pinned to a field's label row (Figma
+ * 3350:51354). Collapsed shows the plain maximize-02 glyph; expanded fills with
+ * blue/200 to read as active. Replaces the old inline toggle that sat beside the
+ * matrix so the inputs can span the field's full width.
+ */
+function ExpandToggle({
+  expanded,
   onToggle,
+  label,
 }: {
-  linked: boolean
+  expanded: boolean
   onToggle: () => void
+  label: string
 }) {
   return (
     <button
       type="button"
-      aria-pressed={linked}
-      aria-label={linked ? "Edit sides together" : "Edit sides individually"}
+      aria-pressed={expanded}
+      aria-label={
+        expanded ? `Edit ${label} together` : `Edit ${label} individually`
+      }
       onClick={onToggle}
       className={cn(
-        "inline-flex size-8 shrink-0 items-center justify-center rounded-[4px] border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
-        linked
-          ? "border-[#84adff] bg-[#d1e0ff]"
-          : "border-[#d0d5dd] bg-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] hover:bg-[#f9fafb]"
+        "inline-flex size-[22px] shrink-0 items-center justify-center rounded-[4px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
+        expanded ? "bg-[#b2ccff]" : "text-[#475467] hover:bg-[#f2f4f7]"
       )}
     >
-      <IconImg src={linked ? MAXIMIZE_ICON_ACTIVE : MAXIMIZE_ICON} className="size-4" />
+      <IconImg src={expanded ? MAXIMIZE_ICON_ACTIVE : MAXIMIZE_ICON} className="size-[18px]" />
     </button>
+  )
+}
+
+/** Field label row with a right-aligned expand toggle (Figma 3350:51354). */
+function ExpandableFieldLabel({
+  children,
+  expanded,
+  onToggle,
+}: {
+  children: React.ReactNode
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="flex h-5 items-center justify-between gap-2">
+      <FieldLabel>{children}</FieldLabel>
+      <ExpandToggle
+        expanded={expanded}
+        onToggle={onToggle}
+        label={String(children)}
+      />
+    </div>
   )
 }
 
@@ -540,7 +573,7 @@ function ColorField({
           {value ? toHex(value) : "Select color"}
         </span>
       </PopoverTrigger>
-      <PopoverContent align="start" className="p-3">
+      <PopoverContent align="start" className="z-[80] p-3">
         <ColorPicker value={value} onChange={onChange} />
       </PopoverContent>
     </Popover>
@@ -574,33 +607,42 @@ export function VisualEditsPanel() {
     return <AdvancedTab />
   }
 
+  if (editsTab === "content") {
+    return (
+      <ContentTab
+        label={inspectingLayer}
+        // "Content" only applies to individual text layers, not sections /
+        // containers, which have no single editable string of their own.
+        content={
+          inspectingLayerKind === "text"
+            ? (layerText[inspectingLayer] ?? "")
+            : null
+        }
+        setContent={(next) => setLayerText(inspectingLayer, next)}
+      />
+    )
+  }
+
   return (
     <StyleTab
       label={inspectingLayer}
       style={layerStyles[inspectingLayer] ?? {}}
       setLayerStyle={setLayerStyle}
-      // "Content" only applies to individual text layers, not sections /
-      // containers, which have no single editable string of their own.
-      content={
-        inspectingLayerKind === "text"
-          ? (layerText[inspectingLayer] ?? "")
-          : null
-      }
-      setContent={(next) => setLayerText(inspectingLayer, next)}
     />
   )
 }
 
-function StyleTab({
+/**
+ * Content tab (Figma 3344:47420). Edits the layer's text (text leaves only) and
+ * manages the data fields bound to the layer. Connected-field management lives
+ * here now — the Advanced tab is reserved for conditional logic.
+ */
+function ContentTab({
   label,
-  style,
-  setLayerStyle,
   content,
   setContent,
 }: {
   label: string
-  style: BuilderLayerStyle
-  setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
   /**
    * Editable text for an individual text layer; null for sections / containers
    * (which hide the "Content" field entirely).
@@ -608,12 +650,46 @@ function StyleTab({
   content: string | null
   setContent: (next: string) => void
 }) {
+  return (
+    <div className="flex flex-col gap-6 pb-4">
+      {content !== null ? (
+        <section className="flex flex-col gap-1">
+          <textarea
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            rows={2}
+            aria-label={`Content for ${label}`}
+            className={cn(
+              "min-h-[56px] w-full resize-y rounded-[4px] border border-[#d0d5dd] bg-white p-1.5",
+              "font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828]",
+              "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-shadow",
+              "placeholder:text-[#98a2b3]",
+              "focus-visible:border-[#84adff] focus-visible:shadow-[0_0_0_4px_#eff4ff,0_1px_2px_rgba(16,24,40,0.05)]"
+            )}
+          />
+        </section>
+      ) : null}
+
+      <ConnectedFields label={label} />
+    </div>
+  )
+}
+
+function StyleTab({
+  label,
+  style,
+  setLayerStyle,
+}: {
+  label: string
+  style: BuilderLayerStyle
+  setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
+}) {
   // Padding & margin start collapsed (uniform H/V); the maximize toggle expands
   // each to per-side editing, matching the medium builder's safe-area control.
   const [paddingPerSide, setPaddingPerSide] = useState(false)
   const [marginPerSide, setMarginPerSide] = useState(false)
   const [radiusPerCorner, setRadiusPerCorner] = useState(false)
-  const [borderRadiusPerCorner, setBorderRadiusPerCorner] = useState(false)
+  const [borderWidthPerSide, setBorderWidthPerSide] = useState(false)
 
   const set = (patch: Partial<BuilderLayerStyle>) => setLayerStyle(label, patch)
 
@@ -695,40 +771,33 @@ function StyleTab({
     setRadiusPerCorner((prev) => !prev)
   }
 
-  const toggleBorderRadiusPerCorner = () => {
-    if (borderRadiusPerCorner) {
-      setRadiusUniform(style.radiusTopLeft)
+  // Border width mirrors the radius control: collapsed to a single uniform value,
+  // expanding to per-side editing (Figma 3245:42292).
+  const setBorderWidthSide = (
+    side: "Top" | "Right" | "Bottom" | "Left",
+    next: number | undefined
+  ) => {
+    set({ [`border${side}Width`]: next } as Partial<BuilderLayerStyle>)
+  }
+
+  const setBorderWidthUniform = (next: number | undefined) => {
+    set({
+      borderTopWidth: next,
+      borderRightWidth: next,
+      borderBottomWidth: next,
+      borderLeftWidth: next,
+    })
+  }
+
+  const toggleBorderWidthPerSide = () => {
+    if (borderWidthPerSide) {
+      setBorderWidthUniform(style.borderTopWidth)
     }
-    setBorderRadiusPerCorner((prev) => !prev)
+    setBorderWidthPerSide((prev) => !prev)
   }
 
   return (
     <div className="flex flex-col gap-6 pb-4">
-      {/* Content — individual text layers only (Figma 3245:35444). Edits the
-          layer's text live, mirroring inline editing on the canvas. Hidden for
-          sections / containers, which have no single editable string. */}
-      {content !== null ? (
-        <>
-          <section className="flex flex-col gap-1">
-            <FieldLabel>Content</FieldLabel>
-            <textarea
-              value={content}
-              onChange={(event) => setContent(event.target.value)}
-              rows={2}
-              aria-label={`Content for ${label}`}
-              className={cn(
-                "min-h-[56px] w-full resize-y rounded-[4px] border border-[#d0d5dd] bg-white p-1.5",
-                "font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828]",
-                "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] outline-none transition-shadow",
-                "placeholder:text-[#98a2b3]",
-                "focus-visible:border-[#84adff] focus-visible:shadow-[0_0_0_4px_#eff4ff,0_1px_2px_rgba(16,24,40,0.05)]"
-              )}
-            />
-          </section>
-          <PanelDivider />
-        </>
-      ) : null}
-
       {/* Typography */}
       <section className="flex flex-col gap-3">
         <SectionLabel>Typography</SectionLabel>
@@ -842,10 +911,14 @@ function StyleTab({
         <SectionLabel>Spacing</SectionLabel>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1">
-            <FieldLabel>Padding</FieldLabel>
+            <ExpandableFieldLabel
+              expanded={paddingPerSide}
+              onToggle={togglePaddingPerSide}
+            >
+              Padding
+            </ExpandableFieldLabel>
             <SpacingMatrix
               perSide={paddingPerSide}
-              onToggle={togglePaddingPerSide}
               values={{
                 top: style.paddingTop,
                 right: style.paddingRight,
@@ -857,10 +930,14 @@ function StyleTab({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <FieldLabel>Margin</FieldLabel>
+            <ExpandableFieldLabel
+              expanded={marginPerSide}
+              onToggle={toggleMarginPerSide}
+            >
+              Margin
+            </ExpandableFieldLabel>
             <SpacingMatrix
               perSide={marginPerSide}
-              onToggle={toggleMarginPerSide}
               values={{
                 top: style.marginTop,
                 right: style.marginRight,
@@ -911,7 +988,12 @@ function StyleTab({
             />
           </label>
           <div className="flex flex-col gap-1">
-            <FieldLabel>Corner radius</FieldLabel>
+            <ExpandableFieldLabel
+              expanded={radiusPerCorner}
+              onToggle={toggleRadiusPerCorner}
+            >
+              Corner radius
+            </ExpandableFieldLabel>
             <RadiusMatrix
               style={style}
               collapsedIcon={<IconImg src={CORNER_RADIUS_ALL_ICON} />}
@@ -928,7 +1010,6 @@ function StyleTab({
                 ),
               }}
               perCorner={radiusPerCorner}
-              onToggle={toggleRadiusPerCorner}
               onCornerChange={setRadiusCorner}
               onUniformChange={setRadiusUniform}
             />
@@ -938,19 +1019,29 @@ function StyleTab({
 
       <PanelDivider />
 
-      {/* Border */}
+      {/* Border (Figma 3245:42292) */}
       <section className="flex flex-col gap-3">
         <SectionLabel>Border</SectionLabel>
-        <div className="grid grid-cols-2 gap-4">
-          <label className="flex flex-col gap-1">
-            <FieldLabel>Width</FieldLabel>
-            <Stepper
-              value={style.borderWidth}
-              min={0}
-              placeholder="0"
-              onChange={(next) => set({ borderWidth: next })}
+        <div className="grid grid-cols-2 items-start gap-4">
+          <div className="flex flex-col gap-1">
+            <ExpandableFieldLabel
+              expanded={borderWidthPerSide}
+              onToggle={toggleBorderWidthPerSide}
+            >
+              Width
+            </ExpandableFieldLabel>
+            <BorderWidthMatrix
+              perSide={borderWidthPerSide}
+              values={{
+                top: style.borderTopWidth,
+                right: style.borderRightWidth,
+                bottom: style.borderBottomWidth,
+                left: style.borderLeftWidth,
+              }}
+              onSideChange={setBorderWidthSide}
+              onUniformChange={setBorderWidthUniform}
             />
-          </label>
+          </div>
           <label className="flex flex-col gap-1">
             <FieldLabel>Style</FieldLabel>
             <SelectField
@@ -970,23 +1061,6 @@ function StyleTab({
               onChange={(next) => set({ borderColor: next })}
             />
           </label>
-          <div className="flex flex-col gap-1">
-            <FieldLabel>Radius</FieldLabel>
-            <RadiusMatrix
-              style={style}
-              collapsedIcon={<IconImg src={LINE_WEIGHT_ICON} />}
-              icons={{
-                topLeft: <IconImg src={BORDER_RADIUS_ICON.topLeft} />,
-                topRight: <IconImg src={BORDER_RADIUS_ICON.topRight} />,
-                bottomLeft: <IconImg src={BORDER_RADIUS_ICON.bottomLeft} />,
-                bottomRight: <IconImg src={BORDER_RADIUS_ICON.bottomRight} />,
-              }}
-              perCorner={borderRadiusPerCorner}
-              onToggle={toggleBorderRadiusPerCorner}
-              onCornerChange={setRadiusCorner}
-              onUniformChange={setRadiusUniform}
-            />
-          </div>
         </div>
       </section>
     </div>
@@ -1067,13 +1141,11 @@ function SegmentToggle({
  */
 function SpacingMatrix({
   perSide,
-  onToggle,
   values,
   onAxisChange,
   onSideChange,
 }: {
   perSide: boolean
-  onToggle: () => void
   values: {
     top: number | undefined
     right: number | undefined
@@ -1086,46 +1158,41 @@ function SpacingMatrix({
     next: number | undefined
   ) => void
 }) {
-  return (
-    <div className="flex items-start gap-1.5">
-      {perSide ? (
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
-          <MatrixCell
-            icon={<IconImg src={PADDING_ICON.left} />}
-            value={values.left}
-            onChange={(next) => onSideChange("Left", next)}
-          />
-          <MatrixCell
-            icon={<IconImg src={PADDING_ICON.top} />}
-            value={values.top}
-            onChange={(next) => onSideChange("Top", next)}
-          />
-          <MatrixCell
-            icon={<IconImg src={PADDING_ICON.right} />}
-            value={values.right}
-            onChange={(next) => onSideChange("Right", next)}
-          />
-          <MatrixCell
-            icon={<IconImg src={PADDING_ICON.bottom} />}
-            value={values.bottom}
-            onChange={(next) => onSideChange("Bottom", next)}
-          />
-        </div>
-      ) : (
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
-          <MatrixCell
-            icon={<IconImg src={MARGIN_ICON.horizontal} />}
-            value={values.left}
-            onChange={(next) => onAxisChange("horizontal", next)}
-          />
-          <MatrixCell
-            icon={<IconImg src={MARGIN_ICON.vertical} />}
-            value={values.top}
-            onChange={(next) => onAxisChange("vertical", next)}
-          />
-        </div>
-      )}
-      <LinkToggle linked={perSide} onToggle={onToggle} />
+  return perSide ? (
+    <div className="grid grid-cols-2 gap-2">
+      <MatrixCell
+        icon={<IconImg src={PADDING_ICON.left} />}
+        value={values.left}
+        onChange={(next) => onSideChange("Left", next)}
+      />
+      <MatrixCell
+        icon={<IconImg src={PADDING_ICON.top} />}
+        value={values.top}
+        onChange={(next) => onSideChange("Top", next)}
+      />
+      <MatrixCell
+        icon={<IconImg src={PADDING_ICON.right} />}
+        value={values.right}
+        onChange={(next) => onSideChange("Right", next)}
+      />
+      <MatrixCell
+        icon={<IconImg src={PADDING_ICON.bottom} />}
+        value={values.bottom}
+        onChange={(next) => onSideChange("Bottom", next)}
+      />
+    </div>
+  ) : (
+    <div className="grid grid-cols-2 gap-2">
+      <MatrixCell
+        icon={<IconImg src={MARGIN_ICON.horizontal} />}
+        value={values.left}
+        onChange={(next) => onAxisChange("horizontal", next)}
+      />
+      <MatrixCell
+        icon={<IconImg src={MARGIN_ICON.vertical} />}
+        value={values.top}
+        onChange={(next) => onAxisChange("vertical", next)}
+      />
     </div>
   )
 }
@@ -1140,7 +1207,6 @@ function RadiusMatrix({
   collapsedIcon,
   icons,
   perCorner,
-  onToggle,
   onCornerChange,
   onUniformChange,
 }: {
@@ -1155,49 +1221,97 @@ function RadiusMatrix({
     bottomRight: React.ReactNode
   }
   perCorner: boolean
-  onToggle: () => void
   onCornerChange: (
     corner: "TopLeft" | "TopRight" | "BottomRight" | "BottomLeft",
     next: number | undefined
   ) => void
   onUniformChange: (next: number | undefined) => void
 }) {
-  return (
-    <div className="flex items-start gap-1.5">
-      {perCorner ? (
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
-          <MatrixCell
-            icon={icons.topLeft}
-            value={style.radiusTopLeft}
-            onChange={(next) => onCornerChange("TopLeft", next)}
-          />
-          <MatrixCell
-            icon={icons.topRight}
-            value={style.radiusTopRight}
-            onChange={(next) => onCornerChange("TopRight", next)}
-          />
-          <MatrixCell
-            icon={icons.bottomLeft}
-            value={style.radiusBottomLeft}
-            onChange={(next) => onCornerChange("BottomLeft", next)}
-          />
-          <MatrixCell
-            icon={icons.bottomRight}
-            value={style.radiusBottomRight}
-            onChange={(next) => onCornerChange("BottomRight", next)}
-          />
-        </div>
-      ) : (
-        <div className="min-w-0 flex-1">
-          <MatrixCell
-            icon={collapsedIcon}
-            value={style.radiusTopLeft}
-            onChange={onUniformChange}
-          />
-        </div>
-      )}
-      <LinkToggle linked={perCorner} onToggle={onToggle} />
+  return perCorner ? (
+    <div className="grid grid-cols-2 gap-2">
+      <MatrixCell
+        icon={icons.topLeft}
+        value={style.radiusTopLeft}
+        onChange={(next) => onCornerChange("TopLeft", next)}
+      />
+      <MatrixCell
+        icon={icons.topRight}
+        value={style.radiusTopRight}
+        onChange={(next) => onCornerChange("TopRight", next)}
+      />
+      <MatrixCell
+        icon={icons.bottomLeft}
+        value={style.radiusBottomLeft}
+        onChange={(next) => onCornerChange("BottomLeft", next)}
+      />
+      <MatrixCell
+        icon={icons.bottomRight}
+        value={style.radiusBottomRight}
+        onChange={(next) => onCornerChange("BottomRight", next)}
+      />
     </div>
+  ) : (
+    <MatrixCell
+      icon={collapsedIcon}
+      value={style.radiusTopLeft}
+      onChange={onUniformChange}
+    />
+  )
+}
+
+/**
+ * Border-width control (Figma 3245:42292). Mirrors `RadiusMatrix`: collapsed to a
+ * single uniform "line weight" input, expanding to per-side (top / right / bottom
+ * / left) editing in the matrix's [Left, Top, Right, Bottom] cell order.
+ */
+function BorderWidthMatrix({
+  perSide,
+  values,
+  onSideChange,
+  onUniformChange,
+}: {
+  perSide: boolean
+  values: {
+    top: number | undefined
+    right: number | undefined
+    bottom: number | undefined
+    left: number | undefined
+  }
+  onSideChange: (
+    side: "Top" | "Right" | "Bottom" | "Left",
+    next: number | undefined
+  ) => void
+  onUniformChange: (next: number | undefined) => void
+}) {
+  return perSide ? (
+    <div className="grid grid-cols-2 gap-2">
+      <MatrixCell
+        icon={<IconImg src={BORDER_WIDTH_ICON.left} />}
+        value={values.left}
+        onChange={(next) => onSideChange("Left", next)}
+      />
+      <MatrixCell
+        icon={<IconImg src={BORDER_WIDTH_ICON.top} />}
+        value={values.top}
+        onChange={(next) => onSideChange("Top", next)}
+      />
+      <MatrixCell
+        icon={<IconImg src={BORDER_WIDTH_ICON.right} />}
+        value={values.right}
+        onChange={(next) => onSideChange("Right", next)}
+      />
+      <MatrixCell
+        icon={<IconImg src={BORDER_WIDTH_ICON.bottom} />}
+        value={values.bottom}
+        onChange={(next) => onSideChange("Bottom", next)}
+      />
+    </div>
+  ) : (
+    <MatrixCell
+      icon={<IconImg src={BORDER_WIDTH_ICON.all} />}
+      value={values.top}
+      onChange={onUniformChange}
+    />
   )
 }
 
@@ -1284,37 +1398,11 @@ function AdvancedTab() {
   )
   // Applied rules for the inspected layer drive each card's saved state.
   const rules = inspectingLayer ? (layerRules[inspectingLayer] ?? {}) : {}
-  // Index of the row whose binding is being changed (its picker is open).
-  const [editingIndex, setEditingIndex] = useState<number | null>(null)
-  // Whether the "Add field" accordion is open at the top of the list.
-  const [addingField, setAddingField] = useState(false)
-  const [search, setSearch] = useState("")
-
-  // The connected fields follow the layer selected on the canvas. A local copy
-  // lets Add / Change / Disconnect edit the list; it resets when the selection
-  // moves.
-  const baseFields = useMemo(
-    () => connectedFieldsFor(inspectingLayer),
-    [inspectingLayer]
-  )
-  const [fields, setFields] = useState<string[]>(baseFields)
-  useEffect(() => {
-    setFields(baseFields)
-    setEditingIndex(null)
-    setAddingField(false)
-    setSearch("")
-  }, [baseFields])
-
-  const openAddField = () => {
-    setAddingField(true)
-    setEditingIndex(null)
-    setSearch("")
-  }
 
   return (
     <div className="flex flex-col gap-6 pb-4">
       {/* Conditional logic */}
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-1">
         <SectionLabel>Conditional logic</SectionLabel>
 
         <div className="flex flex-col gap-2">
@@ -1347,13 +1435,44 @@ function AdvancedTab() {
           ))}
         </div>
       </section>
+    </div>
+  )
+}
 
-      <PanelDivider />
+/**
+ * Connected-fields manager (Figma 3344:47420). Mirrors the layer selected on
+ * the canvas: a container lists every data field it contains; a single leaf
+ * shows just its one binding. Add / Change / Disconnect edit a local copy that
+ * resets when the selection moves. Lives in the Content tab.
+ */
+function ConnectedFields({ label }: { label: string }) {
+  // Index of the row whose binding is being changed (its picker is open).
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  // Whether the "Add field" accordion is open at the top of the list.
+  const [addingField, setAddingField] = useState(false)
+  const [search, setSearch] = useState("")
 
+  const baseFields = useMemo(() => connectedFieldsFor(label), [label])
+  const [fields, setFields] = useState<string[]>(baseFields)
+  useEffect(() => {
+    setFields(baseFields)
+    setEditingIndex(null)
+    setAddingField(false)
+    setSearch("")
+  }, [baseFields])
+
+  const openAddField = () => {
+    setAddingField(true)
+    setEditingIndex(null)
+    setSearch("")
+  }
+
+  return (
+    <>
       {/* Connected fields — mirrors the layer selected on the canvas. A
           container lists every data field it contains; a single leaf shows just
           its one binding. */}
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-1">
         <div className="flex items-center justify-between gap-3">
           <SectionLabel>Connected fields</SectionLabel>
           <button
@@ -1386,13 +1505,14 @@ function AdvancedTab() {
                   </span>
                   <button
                     type="button"
+                    aria-label="Cancel adding field"
                     onClick={() => {
                       setAddingField(false)
                       setSearch("")
                     }}
-                    className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#004eeb] outline-none focus-visible:underline"
+                    className="inline-flex size-[18px] items-center justify-center rounded text-[#475467] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
                   >
-                    Cancel
+                    <X className="size-[18px]" aria-hidden />
                   </button>
                 </div>
                 <FieldSearchList
@@ -1435,25 +1555,27 @@ function AdvancedTab() {
                     {editing ? (
                       <button
                         type="button"
+                        aria-label={`Cancel changing ${field}`}
                         onClick={() => {
                           setEditingIndex(null)
                           setSearch("")
                         }}
-                        className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#004eeb] outline-none focus-visible:underline"
+                        className="inline-flex size-[18px] items-center justify-center rounded text-[#475467] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
                       >
-                        Cancel
+                        <X className="size-[18px]" aria-hidden />
                       </button>
                     ) : (
                       <button
                         type="button"
+                        aria-label={`Change ${field}`}
                         onClick={() => {
                           setEditingIndex(index)
                           setAddingField(false)
                           setSearch("")
                         }}
-                        className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#344054] outline-none focus-visible:underline"
+                        className="inline-flex size-[18px] items-center justify-center rounded text-[#475467] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
                       >
-                        Change
+                        <Pencil className="size-[18px]" aria-hidden />
                       </button>
                     )}
                     <button
@@ -1489,7 +1611,7 @@ function AdvancedTab() {
           </div>
         )}
       </section>
-    </div>
+    </>
   )
 }
 
@@ -1623,7 +1745,7 @@ function ConditionAccordion({
               <Info className="size-[18px]" aria-hidden />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-[260px]">
+          <TooltipContent side="top" className="z-[80] max-w-[260px]">
             {tooltip}
           </TooltipContent>
         </Tooltip>
@@ -1790,7 +1912,7 @@ function PlaceholderSelect({
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[200px] rounded-lg p-1.5 font-[family-name:var(--font-inter)]"
+        className="z-[80] w-[var(--radix-dropdown-menu-trigger-width)] min-w-[200px] font-[family-name:var(--font-inter)]"
       >
         {options.map((option) => {
           const isActive = option === display
@@ -1799,7 +1921,7 @@ function PlaceholderSelect({
               key={option}
               onSelect={() => choose(option)}
               className={cn(
-                "flex items-center justify-between gap-2 rounded-[4px] px-2 py-1.5 text-sm leading-5",
+                "flex items-center justify-between gap-2 rounded-none px-2 py-1.5 text-sm leading-5",
                 isActive
                   ? "bg-[#eff4ff] text-[#004eeb] focus:bg-[#eff4ff] focus:text-[#004eeb]"
                   : "text-[#475467]"

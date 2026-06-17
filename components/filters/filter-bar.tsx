@@ -349,7 +349,7 @@ export function ConfigurableFilterBar<T extends string>({
               Add filter
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="z-[110] rounded">
+          <DropdownMenuContent align="start" className="z-[110]">
             {availableAddOptions.map((option) => (
               <DropdownMenuItem
                 key={option.id}

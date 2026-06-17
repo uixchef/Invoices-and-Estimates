@@ -96,7 +96,7 @@ export function LayoutToolbar({
               Sort by
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="rounded">
+          <DropdownMenuContent align="start">
             <DropdownMenuItem onSelect={() => onSortChange("name")}>
               Name
             </DropdownMenuItem>

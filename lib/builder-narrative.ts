@@ -53,6 +53,7 @@ const STYLE_LABEL: Record<GeneratedLayout["style"], string> = {
   modern: "modern",
   classic: "classic",
   bold: "bold",
+  branded: "branded",
 }
 
 /**

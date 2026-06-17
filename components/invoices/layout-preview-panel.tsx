@@ -11,7 +11,7 @@ import { useLayoutPreview } from "@/lib/layout-preview-context"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import { layoutEditSeedFromRow } from "@/lib/layout-edit-seed"
 import { layoutFromRow } from "@/lib/layout-builder-context"
-import { LayoutThumbnail } from "@/components/invoices/builder/layout-document"
+import { LayoutPagePreview } from "@/components/invoices/builder/layout-document"
 import { getDocumentPageProfile } from "@/lib/mediums-data"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { Button } from "@/components/highrise/button"
@@ -154,15 +154,11 @@ export function LayoutPreviewPanel() {
               </div>
             </header>
 
-            <div className="mb-4 min-h-0 flex-1 overflow-hidden rounded-lg border border-[#eaecf0] bg-white">
-              <div className="h-full overflow-y-auto overflow-x-hidden">
-                <LayoutThumbnail
-                  layout={layoutFromRow(layout)}
-                  pageProfile={getDocumentPageProfile(layout.mediumId)}
-                  flow
-                  className="w-full"
-                />
-              </div>
+            <div className="mb-4 min-h-0 flex-1 overflow-hidden rounded-lg border border-[#eaecf0]">
+              <LayoutPagePreview
+                layout={layoutFromRow(layout)}
+                pageProfile={getDocumentPageProfile(layout.mediumId)}
+              />
             </div>
 
             <footer className="flex shrink-0 flex-col gap-3">

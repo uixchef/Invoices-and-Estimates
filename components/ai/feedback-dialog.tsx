@@ -170,7 +170,7 @@ function IssueSelect({
         align="start"
         // Must clear the Dialog's overlay/content (z-120); the default z-50
         // renders the menu behind the modal and it appears invisible.
-        className="z-[130] w-[var(--radix-dropdown-menu-trigger-width)] min-w-[240px] rounded-lg p-1.5 font-[family-name:var(--font-inter)]"
+        className="z-[130] w-[var(--radix-dropdown-menu-trigger-width)] min-w-[240px] font-[family-name:var(--font-inter)]"
       >
         {FEEDBACK_ISSUES.map((option) => {
           const isActive = option === value

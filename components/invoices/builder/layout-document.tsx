@@ -1,6 +1,7 @@
 "use client"
 
-import { useLayoutEffect, useRef, useState } from "react"
+import { Fragment, useLayoutEffect, useRef, useState } from "react"
+import { Info } from "lucide-react"
 
 import type { DocumentPageProfile } from "@/lib/mediums-data"
 import type { GeneratedLayout } from "@/lib/layout-builder-types"
@@ -151,6 +152,339 @@ function DocumentHeader({
   )
 }
 
+/**
+ * Detailed, branded invoice template (Figma node 3333:158560). A self-contained
+ * layout with a business/contact header, an issue/invoice/due info bar, a tax-
+ * aware itemised table, a multi-line totals block with a payment schedule, and
+ * footer notes. Reads from `GeneratedLayout` so it stays dynamic (and responds
+ * to the document data-source picker); template-specific lines (contact details,
+ * payment schedule dates) use believable demo content, matching the rest of the
+ * renderer's placeholder convention.
+ */
+function BrandedInvoiceDocument({
+  layout,
+  pageProfile,
+}: {
+  layout: GeneratedLayout
+  pageProfile: DocumentPageProfile
+}) {
+  const accent = layout.accent
+  const lightAccent = "#eaecf5"
+  const money = (value: number) => formatMoney(layout.currencySymbol, value)
+
+  const title = /invoice/i.test(layout.documentType)
+    ? "INVOICE"
+    : layout.documentType.toUpperCase()
+
+  const subtotal = layout.lineItems.reduce(
+    (sum, item) => sum + item.qty * item.rate,
+    0
+  )
+  const discount = subtotal * (layout.discountRate || 0.12)
+  const taxableSubtotal = subtotal - discount
+  const centralRate = 0.1
+  const cityRate = 0.08
+  const centralTax = taxableSubtotal * centralRate
+  const cityTax = taxableSubtotal * cityRate
+  const deposit = 50
+  const amountDue = taxableSubtotal + centralTax + cityTax - deposit
+  const paymentHalf = amountDue / 2
+  const taxPct = Math.round((layout.taxRate || 0.18) * 100)
+
+  const businessSlug =
+    layout.businessName
+      .split(",")[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "") || "studio"
+  const businessLines = [
+    `www.${businessSlug}.co`,
+    "+91 86900 01213",
+    "2/112, Friends Colony, Raja Park",
+    "Jaipur, Rajasthan, India, 302031",
+  ]
+  const clientLines = [
+    "hey@uixchef.com",
+    "+91 86900 01213",
+    "2/112, Friends Colony, Raja Park",
+    "Jaipur, Rajasthan, India, 302031",
+  ]
+
+  const hint = "text-[14px] leading-5 text-[#475467]"
+  const totalLabel =
+    "flex-1 px-3 text-[16px] leading-6 font-medium overflow-hidden text-ellipsis whitespace-nowrap"
+  const totalAmount =
+    "w-[120px] px-4 text-right text-[16px] leading-6 font-medium text-[#101828]"
+
+  function InfoBox({
+    label,
+    value,
+    filled,
+  }: {
+    label: string
+    value: string
+    filled?: boolean
+  }) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center gap-1 p-4 text-center text-[14px] leading-5"
+        style={
+          filled
+            ? { backgroundColor: accent, color: "#ffffff" }
+            : { backgroundColor: lightAccent, color: accent }
+        }
+      >
+        <p className="w-[82px] font-medium">{label}</p>
+        <p className="w-[82px]">{value}</p>
+      </div>
+    )
+  }
+
+  function PaymentRow({
+    label,
+    due,
+    amount,
+  }: {
+    label: string
+    due: string
+    amount: number
+  }) {
+    return (
+      <div className="flex w-full items-center">
+        <div className="flex w-[79px] items-center justify-start">
+          <span className="rounded-xl bg-[#fffaeb] px-2 text-[14px] font-medium leading-5 text-[#b54708]">
+            Pending
+          </span>
+        </div>
+        <div className="pl-1 pr-2">
+          <span
+            className="text-[16px] font-medium leading-6"
+            style={{ color: accent }}
+          >
+            {label}
+          </span>
+        </div>
+        <div className="flex-1 px-3">
+          <span
+            className="text-[16px] font-medium leading-6"
+            style={{ color: accent }}
+          >
+            {due}
+          </span>
+        </div>
+        <div className="px-4 text-right text-[16px] font-medium leading-6 text-[#475467]">
+          {money(amount)}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="bg-white font-[family-name:var(--font-inter)] text-[#101828]"
+      style={{ width: pageProfile.widthPx }}
+    >
+      {/* Business information */}
+      <div className="flex items-start justify-between gap-4 overflow-hidden p-4">
+        <div className="flex flex-col gap-0.5">
+          <p className={hint}>{layout.businessName}</p>
+          {businessLines.map((line) => (
+            <p key={line} className={hint}>
+              {line}
+            </p>
+          ))}
+        </div>
+        <p
+          className="text-[20px] font-semibold leading-[30px]"
+          style={{ color: accent }}
+        >
+          {title}
+        </p>
+        <div
+          className="flex size-16 shrink-0 items-center justify-center rounded-lg text-lg font-bold text-white"
+          style={{ backgroundColor: accent }}
+          aria-hidden
+        >
+          {initialsFor(layout.businessName)}
+        </div>
+      </div>
+
+      {/* Customer information + info bar */}
+      <div className="flex items-start justify-between border-t border-[#eaecf0] pb-4 pl-4">
+        <div className="flex flex-col gap-1 pt-2">
+          <p className="text-[14px] font-medium leading-5 text-[#101828]">
+            Billed to
+          </p>
+          <div className="flex flex-col gap-0.5">
+            <p className={hint}>{layout.clientName}</p>
+            {clientLines.map((line) => (
+              <p key={line} className={hint}>
+                {line}
+              </p>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex">
+            <InfoBox label="Issue date" value={layout.issueDate} />
+            <InfoBox label="Invoice no." value={layout.documentNumber} filled />
+            <InfoBox label="Due date" value={layout.dueDate} />
+          </div>
+          <div
+            className="flex w-[114px] items-center justify-center rounded px-2.5 py-1.5 text-[16px] font-semibold leading-6 text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)]"
+            style={{ backgroundColor: accent }}
+          >
+            {`Pay ${money(amountDue)}`}
+          </div>
+        </div>
+      </div>
+
+      {/* Products table */}
+      <div className="flex flex-col border-b border-[#d0d5dd]">
+        {/* Header */}
+        <div className="flex">
+          <div className="flex h-9 flex-1 items-center border-b border-[#d0d5dd] px-4 text-[16px] font-semibold leading-6 text-[#101828]">
+            Item
+          </div>
+          <div className="flex h-9 w-[110px] items-center border-b border-[#d0d5dd] px-4 text-[16px] font-semibold leading-6 text-[#101828]">
+            Price
+          </div>
+          <div className="flex h-9 w-[60px] items-center border-b border-[#d0d5dd] px-4 text-[16px] font-semibold leading-6 text-[#101828]">
+            Qty
+          </div>
+          <div className="flex h-9 w-[90px] items-center border-b border-[#d0d5dd] px-4 text-[16px] font-semibold leading-6 text-[#101828]">
+            Tax
+          </div>
+          <div className="flex h-9 w-[120px] items-center justify-end border-b border-[#d0d5dd] px-4 text-right text-[16px] font-semibold leading-6 text-[#101828]">
+            Subtotal
+          </div>
+        </div>
+        {/* Item rows */}
+        {layout.lineItems.map((item, index) => (
+          <Fragment key={index}>
+            <div className={cn("flex", index !== 0 && "border-b border-[#d0d5dd]")}>
+              <div className="flex flex-1 items-center px-4 py-1 text-[16px] font-medium leading-6 text-[#475467]">
+                <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+                  {item.description}
+                </span>
+              </div>
+              <div className="flex w-[110px] items-center px-4 py-1 text-[16px] font-medium leading-6 text-[#475467]">
+                {money(item.rate)}
+              </div>
+              <div className="flex w-[60px] items-center px-4 py-1 text-[16px] font-medium leading-6 text-[#475467]">
+                {item.qty}
+              </div>
+              <div className="flex w-[90px] items-center gap-1 px-4 py-1 text-[16px] font-medium leading-6 text-[#475467]">
+                <span>{taxPct}%</span>
+                <Info className="size-4 shrink-0 text-[#98a2b3]" aria-hidden />
+              </div>
+              <div className="flex w-[120px] items-center justify-end px-4 py-1 text-right text-[16px] font-medium leading-6 text-[#475467]">
+                {money(item.qty * item.rate)}
+              </div>
+            </div>
+            {index === 0 ? (
+              <div className="border-b border-[#d0d5dd] px-4 pb-1 pt-0.5">
+                <p className={hint}>
+                  Sustainably sourced from Colombia and Ethiopia, these
+                  medium-roast beans offer rich notes of dark chocolate, caramel,
+                  and citrus. Perfect for any brewing method, they deliver a
+                  smooth, full-bodied cup every time.
+                </p>
+              </div>
+            ) : null}
+          </Fragment>
+        ))}
+      </div>
+
+      {/* Totals */}
+      <div className="flex flex-col gap-1 py-2">
+        <div className="flex w-full pl-[71px]">
+          <span className={cn(totalLabel, "text-[#101828]")}>Subtotal</span>
+          <span className={totalAmount}>{money(subtotal)}</span>
+        </div>
+        <div className="flex w-full pl-[71px]">
+          <span className={totalLabel} style={{ color: accent }}>
+            {`Discount (${Math.round((layout.discountRate || 0.12) * 100)}%)`}
+          </span>
+          <span className={totalAmount}>{`-${money(discount)}`}</span>
+        </div>
+        <div className="flex w-full pl-[71px]">
+          <span className={cn(totalLabel, "text-[#101828]")}>
+            Taxable subtotal
+          </span>
+          <span className={totalAmount}>{money(taxableSubtotal)}</span>
+        </div>
+        <div className="flex w-full pl-[71px]">
+          <span className={totalLabel} style={{ color: accent }}>
+            {`Central tax (${Math.round(centralRate * 100)}% on ${money(
+              taxableSubtotal
+            )})`}
+          </span>
+          <span className={totalAmount}>{money(centralTax)}</span>
+        </div>
+        <div className="flex w-full pl-[71px]">
+          <span className={totalLabel} style={{ color: accent }}>
+            {`City tax (${Math.round(cityRate * 100)}% on ${money(
+              taxableSubtotal
+            )})`}
+          </span>
+          <span className={totalAmount}>{money(cityTax)}</span>
+        </div>
+        <div className="flex w-full pl-[71px]">
+          <span className={cn(totalLabel, "text-[#101828]")}>
+            Deposit (Check)
+          </span>
+          <span className={totalAmount}>{`-${money(deposit)}`}</span>
+        </div>
+
+        <div className="my-1 h-px w-full bg-[#d0d5dd]" />
+
+        <div className="flex flex-col gap-1">
+          <PaymentRow
+            label="Payment 1 of 2"
+            due="Due Aug 15, 2024"
+            amount={paymentHalf}
+          />
+          <PaymentRow
+            label="Payment 2 of 2"
+            due="Due Sept 30, 2024"
+            amount={paymentHalf}
+          />
+        </div>
+
+        <div className="my-1 h-px w-full bg-[#d0d5dd]" />
+
+        <div className="flex w-full items-center justify-between pl-[71px]">
+          <span className="w-[240px] px-3 text-[16px] font-medium leading-6 text-[#101828]">
+            {`Amount due (in ${layout.currencyCode})`}
+          </span>
+          <span className="w-[120px] px-4 text-right text-[16px] font-medium leading-6 text-[#101828]">
+            {money(amountDue)}
+          </span>
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div className="flex flex-col gap-1 p-4">
+        <p className="text-[14px] font-medium leading-5 text-[#101828]">
+          Note to customer
+        </p>
+        <p className="text-[14px] leading-5 text-[#475467]">
+          {`Thank you for your business.${
+            layout.emphasis ? ` Designed to emphasise ${layout.emphasis}.` : ""
+          }`}
+        </p>
+      </div>
+
+      {/* Footer hint */}
+      <div className="flex items-center p-4">
+        <p className="text-[14px] leading-5 text-[#475467]">
+          Reverse charge (Article 197 - Directive 2006/112 EC)
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export function LayoutDocument({
   layout,
   pageProfile,
@@ -158,6 +492,10 @@ export function LayoutDocument({
   layout: GeneratedLayout
   pageProfile: DocumentPageProfile
 }) {
+  if (layout.style === "branded") {
+    return <BrandedInvoiceDocument layout={layout} pageProfile={pageProfile} />
+  }
+
   const safePadding = pageProfile.padding
   const subtotal = layout.lineItems.reduce(
     (sum, item) => sum + item.qty * item.rate,
@@ -340,6 +678,84 @@ export function LayoutDocument({
           ) : null}
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Frames a `LayoutDocument` as a sheet of paper: a page sized to the medium's
+ * real aspect ratio (A4 / US Letter), centred on a neutral mat with a soft
+ * elevation, and scaled to contain within the available area so it never
+ * stretches into a tall full-bleed strip. The document fits the page width and
+ * longer templates scroll inside the page frame, so the silhouette always reads
+ * as a page — the mental model the preview panel needs to communicate.
+ */
+const PAGE_MAT_PADDING = 24
+
+export function LayoutPagePreview({
+  layout,
+  pageProfile,
+  className,
+}: {
+  layout: GeneratedLayout
+  pageProfile: DocumentPageProfile
+  className?: string
+}) {
+  const matRef = useRef<HTMLDivElement>(null)
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const node = matRef.current
+    if (!node) {
+      return
+    }
+    const update = () =>
+      setBox({ width: node.clientWidth, height: node.clientHeight })
+    const observer = new ResizeObserver(update)
+    observer.observe(node)
+    update()
+    return () => observer.disconnect()
+  }, [])
+
+  const aspect = pageProfile.widthPx / pageProfile.heightPx
+
+  // Contain the page within the mat (minus padding) at the paper aspect ratio:
+  // start width-bound, fall back to height-bound when that would overflow.
+  let pageWidth = 0
+  let pageHeight = 0
+  if (box) {
+    const availWidth = Math.max(box.width - PAGE_MAT_PADDING * 2, 0)
+    const availHeight = Math.max(box.height - PAGE_MAT_PADDING * 2, 0)
+    pageWidth = availWidth
+    pageHeight = pageWidth / aspect
+    if (pageHeight > availHeight) {
+      pageHeight = availHeight
+      pageWidth = pageHeight * aspect
+    }
+  }
+
+  return (
+    <div
+      ref={matRef}
+      className={cn(
+        "flex h-full w-full items-center justify-center overflow-hidden bg-[#f2f4f7]",
+        className
+      )}
+      style={{ padding: PAGE_MAT_PADDING }}
+    >
+      {box && pageWidth > 0 ? (
+        <div
+          className="overflow-y-auto rounded-[6px] bg-white ring-1 ring-[#eaecf0] shadow-[0_12px_24px_-6px_rgba(16,24,40,0.16),0_4px_8px_-4px_rgba(16,24,40,0.08)]"
+          style={{ width: pageWidth, height: pageHeight }}
+        >
+          <LayoutThumbnail
+            layout={layout}
+            pageProfile={pageProfile}
+            flow
+            className="w-full"
+          />
+        </div>
+      ) : null}
     </div>
   )
 }

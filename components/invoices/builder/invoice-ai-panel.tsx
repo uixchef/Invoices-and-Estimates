@@ -11,10 +11,8 @@ import {
   ImageIcon,
   Link2,
   MousePointerClick,
-  Palette,
   Paperclip,
   Send,
-  Settings2,
   Square,
   Upload,
   X,
@@ -27,7 +25,6 @@ import { AiTodoList } from "@/components/ai/ai-todo-list"
 import { StreamingText } from "@/components/ai/streaming-text"
 import { AddElementsPanel } from "@/components/invoices/builder/add-elements-panel"
 import { AiWelcomeState } from "@/components/invoices/builder/ai-welcome-state"
-import { VisualEditsPanel } from "@/components/invoices/builder/visual-edits-panel"
 import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
 import {
   DropdownMenu,
@@ -397,6 +394,7 @@ function AiComposer() {
     isCodeDetached,
     inspectingLayer,
     inspectLayer,
+    aiEditingLayer,
     selections,
     removeSelection,
     clearSelections,
@@ -438,6 +436,11 @@ function AiComposer() {
   const isGenerating = status === "thinking"
   const isReasoning = status === "reasoning"
   const isAsking = status === "asking"
+  // Questions for a scoped edit render inside the edits overlay (attached to the
+  // selected layer), so the left composer suppresses its own questions stencil
+  // for that case — but still shows them if the overlay isn't on that layer.
+  const scopedQuestionInOverlay =
+    isAsking && aiEditingLayer !== null && aiEditingLayer === inspectingLayer
   const isBusy = isGenerating || isReasoning
   const canSend = value.trim().length > 0 && !isBusy
 
@@ -464,7 +467,7 @@ function AiComposer() {
               <PreviewVersionBanner onExit={exitVersionPreview} />
             </div>
           ) : null}
-          {isAsking ? (
+          {isAsking && !scopedQuestionInOverlay ? (
             <div className="w-full px-2">
               <AiQuestions
                 key={questions.map((question) => question.id).join("|")}
@@ -479,9 +482,10 @@ function AiComposer() {
           <div
             className={cn(
               "flex w-full flex-col gap-2.5 rounded-lg border p-2 transition-colors",
-              // Muted while questions are docked, active otherwise. Focusing the
-              // input always promotes it to the active (white + purple) state.
-              isAsking
+              // Muted while questions are docked here, active otherwise (incl.
+              // when questions moved to the edits overlay). Focusing the input
+              // always promotes it to the active (white + purple) state.
+              isAsking && !scopedQuestionInOverlay
                 ? "border-[#eaecf0] bg-[#f9fafb]"
                 : "border-[#9b8afb] bg-white shadow-[0_12px_8px_rgba(16,24,40,0.08),0_4px_3px_rgba(16,24,40,0.03)]",
               "focus-within:border-[#9b8afb] focus-within:bg-white focus-within:shadow-[0_12px_8px_rgba(16,24,40,0.08),0_4px_3px_rgba(16,24,40,0.03)]"
@@ -570,7 +574,7 @@ function AiComposer() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   align="start"
-                  className="min-w-[220px] rounded-lg"
+                  className="min-w-[220px]"
                 >
                   <DropdownMenuItem
                     className="gap-2.5 px-3 py-2"
@@ -643,7 +647,7 @@ function AiComposer() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   align="end"
-                  className="min-w-[260px] rounded-lg p-1.5 font-[family-name:var(--font-inter)]"
+                  className="min-w-[260px] font-[family-name:var(--font-inter)]"
                 >
                   {AI_MODELS.map((model) => (
                     <DropdownMenuItem
@@ -755,9 +759,6 @@ export function InvoiceAiPanel({
     preReasoning,
     receivedAnswers,
     inspectingLayer,
-    inspectLayer,
-    editsTab,
-    setEditsTab,
     addingElement,
     closeAddElements,
     editMode,
@@ -843,69 +844,41 @@ export function InvoiceAiPanel({
       <div
         className={cn(
           "flex flex-col gap-3 px-4 pt-4",
-          inspecting || blankWelcome ? "pb-4" : "pb-0"
+          blankWelcome ? "pb-4" : "pb-0"
         )}
       >
         <div className="flex items-center gap-2">
-          {!inspecting && !adding && !editsEmpty ? (
+          {!adding && !editsEmpty ? (
             <AutoAwesomeIcon className="size-4 shrink-0 text-[#6938ef]" />
           ) : null}
           <p className="min-w-0 flex-1 font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">
-            {adding ? "Add elements" : inspecting || editsEmpty ? "Edits" : "Invoice AI"}
+            {adding ? "Add elements" : editsEmpty ? "Edits" : "Invoice AI"}
           </p>
           <button
             type="button"
             aria-label={
               adding
                 ? "Close add elements"
-                : inspecting || editsEmpty
+                : editsEmpty
                   ? "Close edits"
                   : "Close Invoice AI"
             }
             onClick={
               adding
                 ? closeAddElements
-                : inspecting
-                  ? () => inspectLayer(null)
-                  : editsEmpty
-                    ? toggleEditMode
-                    : onClose
+                : editsEmpty
+                  ? toggleEditMode
+                  : onClose
             }
             className="inline-flex size-5 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
           >
             <X className="size-5" aria-hidden />
           </button>
         </div>
-
-        {/* Edits sub-tabs (Figma 3246:55799): Style ⇄ Advanced segmented control. */}
-        {inspecting ? (
-          <div
-            role="tablist"
-            aria-label="Edit mode"
-            className="flex items-center gap-1 rounded-[4px] bg-[#f2f4f7] p-1"
-          >
-            <EditsTab
-              active={editsTab === "style"}
-              icon={<Palette className="size-3.5" aria-hidden />}
-              label="Style"
-              onClick={() => setEditsTab("style")}
-            />
-            <EditsTab
-              active={editsTab === "advanced"}
-              icon={<Settings2 className="size-3.5" aria-hidden />}
-              label="Advanced"
-              onClick={() => setEditsTab("advanced")}
-            />
-          </div>
-        ) : null}
       </div>
 
       {adding ? (
         <AddElementsPanel />
-      ) : inspecting ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-4">
-          <VisualEditsPanel />
-        </div>
       ) : blankWelcome ? (
         <AiWelcomeState />
       ) : editsEmpty ? (
@@ -1070,34 +1043,3 @@ function EditsEmptyState() {
   )
 }
 
-/** A single segmented tab in the Edits header (Style / Advanced). */
-function EditsTab({
-  active,
-  icon,
-  label,
-  onClick,
-}: {
-  active: boolean
-  icon: React.ReactNode
-  label: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-6 flex-1 items-center justify-center gap-1 rounded-[4px] px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
-        "font-[family-name:var(--font-inter)] text-sm font-semibold leading-5",
-        active
-          ? "bg-white text-[#004eeb] shadow-[0px_1px_3px_0px_rgba(16,24,40,0.1),0px_1px_2px_0px_rgba(16,24,40,0.06)]"
-          : "text-[#475467] hover:text-[#101828]"
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  )
-}

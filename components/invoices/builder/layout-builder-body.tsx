@@ -3,6 +3,7 @@
 import { useCallback, useRef } from "react"
 import { GripVertical } from "lucide-react"
 
+import { EditsOverlay } from "@/components/invoices/builder/edits-overlay"
 import { InvoiceAiPanel } from "@/components/invoices/builder/invoice-ai-panel"
 import { LayoutBuilderCanvas } from "@/components/invoices/builder/layout-builder-canvas"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
@@ -116,6 +117,11 @@ export function LayoutBuilderBody() {
       ) : null}
 
       <LayoutBuilderCanvas />
+
+      {/* Edits panel — floating overlay by default (portals out, leaving this
+          slot empty so the canvas stays full width); docked it becomes a
+          full-height right column and the canvas reflows (Figma 3181:33796). */}
+      <EditsOverlay />
     </div>
   )
 }

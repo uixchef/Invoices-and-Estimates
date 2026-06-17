@@ -143,7 +143,7 @@ function LayoutCardActions({ item }: { item: LayoutRow }) {
             <MoreVertical className="size-4 shrink-0" aria-hidden />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="rounded">
+        <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => cloneLayout(item)}>
             <Copy className="size-4 text-[#667085]" aria-hidden />
             Clone

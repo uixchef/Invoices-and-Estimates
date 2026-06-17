@@ -427,6 +427,7 @@ const STYLE_ACCENT: Record<BuilderVisualStyle, string> = {
   modern: "#155eef",
   classic: "#475467",
   bold: "#6938ef",
+  branded: "#3e4784",
 }
 
 /** Sample catalogue used to populate a believable itemised table. */
@@ -485,7 +486,7 @@ function deriveLayout(
   const styleAnswer =
     typeof answers?.style === "string" ? answers.style : "modern"
   const style: BuilderVisualStyle = (
-    ["minimal", "modern", "classic", "bold"] as BuilderVisualStyle[]
+    ["minimal", "modern", "classic", "bold", "branded"] as BuilderVisualStyle[]
   ).includes(styleAnswer as BuilderVisualStyle)
     ? (styleAnswer as BuilderVisualStyle)
     : "modern"
@@ -759,6 +760,7 @@ const EDIT_STYLE_PHRASE: Record<BuilderVisualStyle, string> = {
   modern: "Give it a modern look with a subtle accent colour",
   classic: "Make it classic and formal",
   bold: "Make it bold with a strong branded header",
+  branded: "Use our detailed branded invoice template",
 }
 
 function indefiniteArticle(noun: string): string {
@@ -804,9 +806,24 @@ function deriveEditSession(editSeed: LayoutBuilderEditSeed): {
   const currencies = ["usd", "eur", "gbp", "inr"]
   const seed = Math.max(0, editSeed.seed)
 
-  const style = styles[seed % styles.length]
+  // The first two dashboard templates showcase the detailed branded invoice
+  // design with distinct sample data so the cards don't read as duplicates.
+  const BRANDED_BUSINESS_BY_ID: Record<string, string> = {
+    "layout-draft-1": "BranditX, digital design agency",
+    "layout-draft-2": "Northwind Studio, creative agency",
+    "layout-draft-3": "Harbor & Co., brand consultancy",
+    "layout-draft-4": "Cedar & Sage, design studio",
+  }
+  const brandedBusiness = BRANDED_BUSINESS_BY_ID[editSeed.layoutId]
+  const isBranded = brandedBusiness !== undefined
+
+  const style: BuilderVisualStyle = isBranded
+    ? "branded"
+    : styles[seed % styles.length]
   const currency = currencies[Math.floor(seed / 4) % currencies.length]
-  const business = EDIT_BUSINESSES[seed % EDIT_BUSINESSES.length]
+  const business = isBranded
+    ? brandedBusiness
+    : EDIT_BUSINESSES[seed % EDIT_BUSINESSES.length]
 
   // Header, table, and totals are always present; notes/terms vary so reopened
   // layouts read as distinct documents rather than one template.
@@ -983,6 +1000,12 @@ type LayoutBuilderContextValue = {
   layerStyles: Record<string, BuilderLayerStyle>
   setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
 
+  /** True when the layer has any user edits (content / style / rules / copies)
+   *  beyond the baseline captured when it was first inspected. */
+  hasLayerChanges: (label: string) => boolean
+  /** Reverts a layer's edits back to that captured baseline. */
+  resetLayer: (label: string) => void
+
   /** True when the layer has been deleted (hidden) via its selector control. */
   isLayerHidden: (label: string) => boolean
   /** Number of inline copies a layer currently has from the duplicate control. */
@@ -991,6 +1014,41 @@ type LayoutBuilderContextValue = {
   duplicateLayer: (label: string) => void
   /** Opens the delete confirmation for a layer (hide on confirm). */
   requestDeleteLayer: (label: string) => void
+
+  /**
+   * In-app element clipboard powering the inspector's "More options" menu
+   * (Figma 3350:64356 / 3350:65267). Copying a layer (or just its properties)
+   * enables the paste actions; until something is copied they read disabled.
+   */
+  /** Copies the layer's content + style onto the clipboard. */
+  copyLayer: (label: string) => void
+  /** Copies just the layer's style properties onto the clipboard. */
+  copyLayerProperties: (label: string) => void
+  /** Replaces the layer's content + style with the clipboard's (no-op if empty). */
+  pasteToReplace: (label: string) => void
+  /** Inserts a copy of the layer immediately after it (no-op if clipboard empty). */
+  pasteAfter: (label: string) => void
+  /** Applies the clipboard's style properties to the layer (no-op if empty). */
+  pasteLayerProperties: (label: string) => void
+  /** True when a layer is on the clipboard (enables Paste to replace / Paste after). */
+  canPasteLayer: boolean
+  /** True when layer properties are on the clipboard (enables Paste properties). */
+  canPasteProperties: boolean
+
+  /**
+   * Section reorder bridge so the inspector's "More options" menu can drive the
+   * same up/down reordering the on-canvas section selector grips use. Sections
+   * register their handlers; non-reorderable layers report `false` so the menu
+   * disables Move up / Move down for them.
+   */
+  canMoveLayer: (label: string, direction: "up" | "down") => boolean
+  moveLayer: (label: string, direction: "up" | "down") => void
+  registerLayerMover: (
+    label: string,
+    mover:
+      | { canUp: boolean; canDown: boolean; up: () => void; down: () => void }
+      | null
+  ) => void
 
   /**
    * The layer whose Visual edits inspector is open (replaces the chat). Null
@@ -1008,8 +1066,16 @@ type LayoutBuilderContextValue = {
   inspectingLayerKind: BuilderLayerKind | null
 
   /** Which Edits sub-tab the inspector shows. */
-  editsTab: "style" | "advanced"
-  setEditsTab: (tab: "style" | "advanced") => void
+  editsTab: "content" | "style" | "advanced"
+  setEditsTab: (tab: "content" | "style" | "advanced") => void
+
+  /**
+   * Whether the edits panel is docked as a full-height right column (vs. the
+   * default floating overlay anchored beside the selection). Docked, it becomes
+   * part of the builder layout so the canvas reflows (Figma 3181:33796).
+   */
+  editsDocked: boolean
+  setEditsDocked: (docked: boolean) => void
 
   /** Selects a layer for inspection — opens its Visual edits panel + chip. */
   selectLayer: (label: string, kind?: BuilderLayerKind) => void
@@ -1197,13 +1263,41 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [layerRules, setLayerRules] = useState<
     Record<string, BuilderLayerRules>
   >({})
+  // Snapshot of each layer's content + style as first seeded on inspect, so the
+  // inspector can offer a per-layer "reset changes" against this baseline.
+  const layerBaselineRef = useRef<
+    Record<string, { content: string; style: BuilderLayerStyle }>
+  >({})
+  // In-app element clipboard for the inspector's "More options" menu. `null`
+  // until the user copies, which is what gates the paste actions' disabled
+  // state (Figma 3350:65267).
+  const [copiedLayer, setCopiedLayer] = useState<{
+    content: string
+    style: BuilderLayerStyle
+  } | null>(null)
+  const [copiedProperties, setCopiedProperties] =
+    useState<BuilderLayerStyle | null>(null)
+  // Section reorder handlers registered by each reorderable SelectableSection,
+  // keyed by layer label, so the inspector menu can move the inspected section.
+  const layerMoversRef = useRef<
+    Record<
+      string,
+      { canUp: boolean; canDown: boolean; up: () => void; down: () => void }
+    >
+  >({})
+  // Bumped when a registered mover's up/down availability changes so consumers
+  // re-read `canMoveLayer` (the handlers themselves live in the ref).
+  const [moverVersion, setMoverVersion] = useState(0)
   const [inspectingLayer, setInspectingLayer] = useState<string | null>(null)
   const [inspectingLayerKind, setInspectingLayerKind] =
     useState<BuilderLayerKind | null>(null)
   const [pendingDeleteLayer, setPendingDeleteLayer] = useState<string | null>(
     null
   )
-  const [editsTab, setEditsTab] = useState<"style" | "advanced">("style")
+  const [editsTab, setEditsTab] = useState<"content" | "style" | "advanced">(
+    "style"
+  )
+  const [editsDocked, setEditsDocked] = useState(false)
   const [addingElement, setAddingElement] = useState(false)
   const [placedElements, setPlacedElements] = useState<PlacedElement[]>([])
 
@@ -1932,6 +2026,123 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     setPendingDeleteLayer(label)
   }, [])
 
+  // Element clipboard: copying captures the layer's content + style overrides
+  // (or just the style), which in turn enables the paste actions in the menu.
+  const copyLayer = useCallback(
+    (label: string) => {
+      setCopiedLayer({
+        content: layerText[label] ?? "",
+        style: { ...(layerStyles[label] ?? {}) },
+      })
+    },
+    [layerText, layerStyles]
+  )
+
+  const copyLayerProperties = useCallback(
+    (label: string) => {
+      setCopiedProperties({ ...(layerStyles[label] ?? {}) })
+    },
+    [layerStyles]
+  )
+
+  const pasteToReplace = useCallback(
+    (label: string) => {
+      if (!copiedLayer) {
+        return
+      }
+      pushHistory()
+      setLayerTextState((current) => ({
+        ...current,
+        [label]: copiedLayer.content,
+      }))
+      setLayerStyles((current) => ({
+        ...current,
+        [label]: { ...copiedLayer.style },
+      }))
+    },
+    [copiedLayer, pushHistory]
+  )
+
+  // "Paste after" inserts a copy of the layer directly after it (the closest
+  // structural match to inserting the clipboard's element in the next slot).
+  const pasteAfter = useCallback(
+    (label: string) => {
+      if (!copiedLayer) {
+        return
+      }
+      duplicateLayer(label)
+    },
+    [copiedLayer, duplicateLayer]
+  )
+
+  const pasteLayerProperties = useCallback(
+    (label: string) => {
+      if (!copiedProperties) {
+        return
+      }
+      pushHistory()
+      setLayerStyles((current) => ({
+        ...current,
+        [label]: { ...current[label], ...copiedProperties },
+      }))
+    },
+    [copiedProperties, pushHistory]
+  )
+
+  // Reorder bridge — sections register their up/down handlers here so the
+  // inspector menu can drive the same reordering as the on-canvas grips.
+  const registerLayerMover = useCallback(
+    (
+      label: string,
+      mover:
+        | { canUp: boolean; canDown: boolean; up: () => void; down: () => void }
+        | null
+    ) => {
+      const prev = layerMoversRef.current[label]
+      if (mover) {
+        layerMoversRef.current[label] = mover
+        // Only force a re-read when availability actually changes (the handler
+        // identities churn every render and must not trigger update loops).
+        if (
+          !prev ||
+          prev.canUp !== mover.canUp ||
+          prev.canDown !== mover.canDown
+        ) {
+          setMoverVersion((value) => value + 1)
+        }
+      } else if (prev) {
+        delete layerMoversRef.current[label]
+        setMoverVersion((value) => value + 1)
+      }
+    },
+    []
+  )
+
+  const canMoveLayer = useCallback(
+    (label: string, direction: "up" | "down") => {
+      const mover = layerMoversRef.current[label]
+      if (!mover) {
+        return false
+      }
+      return direction === "up" ? mover.canUp : mover.canDown
+    },
+    // `moverVersion` is the cache-buster: re-derive when availability changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [moverVersion]
+  )
+
+  const moveLayer = useCallback((label: string, direction: "up" | "down") => {
+    const mover = layerMoversRef.current[label]
+    if (!mover) {
+      return
+    }
+    if (direction === "up") {
+      mover.up()
+    } else {
+      mover.down()
+    }
+  }, [])
+
   const confirmDeleteLayer = useCallback(() => {
     if (pendingDeleteLayer) {
       deleteLayer(pendingDeleteLayer)
@@ -2080,6 +2291,13 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const seedLayer = useCallback(
     (label: string, seed: { content: string; style: BuilderLayerStyle }) => {
+      // First seed wins as the reset baseline (later inspects keep live edits).
+      if (!(label in layerBaselineRef.current)) {
+        layerBaselineRef.current[label] = {
+          content: seed.content,
+          style: { ...seed.style },
+        }
+      }
       setLayerTextState((current) =>
         label in current ? current : { ...current, [label]: seed.content }
       )
@@ -2088,6 +2306,74 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       )
     },
     []
+  )
+
+  // Compares a layer's live content/style/rules/copies against the seeded
+  // baseline so the inspector can show a reset affordance only when dirty.
+  const hasLayerChanges = useCallback(
+    (label: string) => {
+      const baseline = layerBaselineRef.current[label]
+      if ((layerDuplicates[label] ?? 0) > 0) {
+        return true
+      }
+      const rules = layerRules[label]
+      if (rules && Object.keys(rules).length > 0) {
+        return true
+      }
+      if (!baseline) {
+        return false
+      }
+      if (label in layerText && layerText[label] !== baseline.content) {
+        return true
+      }
+      const style = layerStyles[label]
+      if (style && style !== baseline.style) {
+        const keys = new Set([
+          ...Object.keys(style),
+          ...Object.keys(baseline.style),
+        ]) as Set<keyof BuilderLayerStyle>
+        for (const key of keys) {
+          if (style[key] !== baseline.style[key]) {
+            return true
+          }
+        }
+      }
+      return false
+    },
+    [layerDuplicates, layerRules, layerText, layerStyles]
+  )
+
+  const resetLayer = useCallback(
+    (label: string) => {
+      const baseline = layerBaselineRef.current[label]
+      pushHistory()
+      if (baseline) {
+        setLayerTextState((current) => ({
+          ...current,
+          [label]: baseline.content,
+        }))
+        setLayerStyles((current) => ({
+          ...current,
+          [label]: { ...baseline.style },
+        }))
+      }
+      setLayerRules((current) => {
+        if (!(label in current)) {
+          return current
+        }
+        const { [label]: _removed, ...rest } = current
+        return rest
+      })
+      setLayerDuplicates((current) => {
+        if (!(current[label] ?? 0)) {
+          return current
+        }
+        return { ...current, [label]: 0 }
+      })
+      setHiddenLayers((current) => current.filter((hidden) => hidden !== label))
+      setHasUnsavedChanges(true)
+    },
+    [pushHistory]
   )
 
   // Saves (or replaces) an Advanced-tab rule for a layer. Persisted in session
@@ -2667,15 +2953,29 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerText,
       layerStyles: effective.layerStyles,
       setLayerStyle,
+      hasLayerChanges,
+      resetLayer,
       isLayerHidden: effective.isLayerHidden,
       layerDuplicateCount: effective.layerDuplicateCount,
       duplicateLayer,
       requestDeleteLayer,
+      copyLayer,
+      copyLayerProperties,
+      pasteToReplace,
+      pasteAfter,
+      pasteLayerProperties,
+      canPasteLayer: copiedLayer !== null,
+      canPasteProperties: copiedProperties !== null,
+      canMoveLayer,
+      moveLayer,
+      registerLayerMover,
       inspectingLayer: effective.inspectingLayer,
       inspectLayer,
       inspectingLayerKind,
       editsTab,
       setEditsTab,
+      editsDocked,
+      setEditsDocked,
       selectLayer,
       seedLayer,
       layerRules,
@@ -2760,15 +3060,29 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerText,
       layerStyles,
       setLayerStyle,
+      hasLayerChanges,
+      resetLayer,
       isLayerHidden,
       layerDuplicateCount,
       duplicateLayer,
       requestDeleteLayer,
+      copyLayer,
+      copyLayerProperties,
+      pasteToReplace,
+      pasteAfter,
+      pasteLayerProperties,
+      copiedLayer,
+      copiedProperties,
+      canMoveLayer,
+      moveLayer,
+      registerLayerMover,
       inspectingLayer,
       inspectLayer,
       inspectingLayerKind,
       editsTab,
       setEditsTab,
+      editsDocked,
+      setEditsDocked,
       selectLayer,
       seedLayer,
       layerRules,

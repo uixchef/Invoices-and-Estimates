@@ -19,6 +19,7 @@ import {
   Copy,
   GripVertical,
   ImageIcon,
+  Info,
   Move,
   Plus,
   RotateCcw,
@@ -63,8 +64,79 @@ type SectionUnit = (typeof DEFAULT_SECTION_ORDER)[number]
 const isSectionUnit = (value: string): value is SectionUnit =>
   (DEFAULT_SECTION_ORDER as readonly string[]).includes(value)
 
+/** Reorderable body sections of the branded template (the header is pinned). */
+const BRANDED_SECTION_ORDER = [
+  "customer",
+  "items",
+  "totals",
+  "notes",
+  "footer",
+] as const
+
+/**
+ * Generic top-level section reorder model: owns the current order and produces
+ * the `SectionMove` props (drag grip + up/down arrows + drop target) each
+ * `SelectableSection` needs. Shared so any document surface can opt sections
+ * into reordering with the same interaction as the standard template.
+ */
+function useSectionReorder(initial: readonly string[]): {
+  order: string[]
+  moveProps: (unit: string) => SectionMove
+} {
+  const [order, setOrder] = useState<string[]>([...initial])
+  const valid = (unit: string) => initial.includes(unit)
+
+  const moveUnit = (unit: string, direction: -1 | 1) => {
+    setOrder((current) => {
+      const index = current.indexOf(unit)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= current.length) {
+        return current
+      }
+      const next = [...current]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
+  const dropBefore = (target: string, dragged: string) => {
+    if (!valid(dragged) || dragged === target) {
+      return
+    }
+    setOrder((current) => {
+      const next = current.filter((unit) => unit !== dragged)
+      const targetIndex = next.indexOf(target)
+      next.splice(targetIndex < 0 ? next.length : targetIndex, 0, dragged)
+      return next
+    })
+  }
+
+  const moveProps = (unit: string): SectionMove => {
+    const index = order.indexOf(unit)
+    return {
+      unit,
+      canUp: index > 0,
+      canDown: index >= 0 && index < order.length - 1,
+      onUp: () => moveUnit(unit, -1),
+      onDown: () => moveUnit(unit, 1),
+      onDrop: (dragged) => dropBefore(unit, dragged),
+    }
+  }
+
+  return { order, moveProps }
+}
+
 /** Maps a layer's style overrides to an inline style object. */
-function styleFromLayer(style?: BuilderLayerStyle): CSSProperties | undefined {
+function styleFromLayer(
+  style?: BuilderLayerStyle,
+  /**
+   * Text layers render as inline spans, so box props promote them to
+   * inline-block. Sections are already block/flex containers, so they pass
+   * `false` to keep their own display (otherwise spacing/border edits would
+   * collapse the layout).
+   */
+  promoteInlineBlock = true
+): CSSProperties | undefined {
   if (!style) {
     return undefined
   }
@@ -100,10 +172,13 @@ function styleFromLayer(style?: BuilderLayerStyle): CSSProperties | undefined {
     style.marginLeft,
     style.width,
     style.height,
-    style.borderWidth,
+    style.borderTopWidth,
+    style.borderRightWidth,
+    style.borderBottomWidth,
+    style.borderLeftWidth,
   ]
   const hasBox = boxKeys.some((value) => value != null)
-  if (hasBox) result.display = "inline-block"
+  if (hasBox && promoteInlineBlock) result.display = "inline-block"
   if (style.paddingTop != null) result.paddingTop = style.paddingTop
   if (style.paddingRight != null) result.paddingRight = style.paddingRight
   if (style.paddingBottom != null) result.paddingBottom = style.paddingBottom
@@ -126,10 +201,20 @@ function styleFromLayer(style?: BuilderLayerStyle): CSSProperties | undefined {
     }px ${style.radiusBottomRight ?? 0}px ${style.radiusBottomLeft ?? 0}px`
   }
 
-  if (style.borderWidth != null && style.borderStyle !== "none") {
-    result.borderWidth = style.borderWidth
-    result.borderStyle = style.borderStyle ?? "solid"
+  const hasBorderWidth =
+    style.borderTopWidth != null ||
+    style.borderRightWidth != null ||
+    style.borderBottomWidth != null ||
+    style.borderLeftWidth != null
+  // Only paint a border once a real line style is picked (the picker defaults to
+  // "none"), so per-side widths set with style "none" stay invisible.
+  if (hasBorderWidth && style.borderStyle && style.borderStyle !== "none") {
+    result.borderStyle = style.borderStyle
     result.borderColor = style.borderColor ?? "#101828"
+    result.borderTopWidth = style.borderTopWidth ?? 0
+    result.borderRightWidth = style.borderRightWidth ?? 0
+    result.borderBottomWidth = style.borderBottomWidth ?? 0
+    result.borderLeftWidth = style.borderLeftWidth ?? 0
   }
   return result
 }
@@ -203,7 +288,6 @@ function EditableText({
   const {
     editMode,
     selections,
-    sendScopedEdit,
     isLayerEditing,
     layerText,
     setLayerText,
@@ -212,8 +296,8 @@ function EditableText({
     seedLayer,
     isLayerHidden,
     layerDuplicateCount,
-    duplicateLayer,
-    requestDeleteLayer,
+    canMoveLayer,
+    moveLayer,
   } = useLayoutBuilder()
   const spanRef = useRef<HTMLSpanElement>(null)
   // Bare leaves (inside a section selector) rest as plain text so a click
@@ -394,9 +478,29 @@ function EditableText({
   }
 
   // Every other layer gets the full Cursor-style selector: click to select,
-  // hover the selection for the scoped "Describe your edit" prompt, plus the
-  // duplicate / delete controls every element exposes.
+  // hover the selection for the scoped "Describe your edit" prompt. These small
+  // inline fields keep only the reorder controls upfront (move up / down) —
+  // duplicate / delete live in the inspector's "More options" menu to avoid
+  // crowding the compact toolbar.
   const duplicateCount = layerDuplicateCount(label)
+  // Only surface a reorder arrow for a direction that's actually available — no
+  // permanently-disabled controls cluttering the compact field toolbar. Fields
+  // with no registered reorder handler show just the "+".
+  const moveActions: SelectorAction[] = []
+  if (canMoveLayer(label, "up")) {
+    moveActions.push({
+      icon: <ArrowUp />,
+      label: `Move ${label} up`,
+      onClick: () => moveLayer(label, "up"),
+    })
+  }
+  if (canMoveLayer(label, "down")) {
+    moveActions.push({
+      icon: <ArrowDown />,
+      label: `Move ${label} down`,
+      onClick: () => moveLayer(label, "down"),
+    })
+  }
   return (
     <>
       <VisualEditSelector
@@ -404,19 +508,7 @@ function EditableText({
         selected={isSelected}
         working={isLayerEditing(label)}
         onSelect={openInspector}
-        onSubmitPrompt={(text) => sendScopedEdit(label, text)}
-        rightActions={[
-          {
-            icon: <Copy />,
-            label: `Duplicate ${label}`,
-            onClick: () => duplicateLayer(label),
-          },
-          {
-            icon: <Trash2 />,
-            label: `Delete ${label}`,
-            onClick: () => requestDeleteLayer(label),
-          },
-        ]}
+        leftActions={moveActions}
         className="inline-flex max-w-full align-baseline"
       >
         {editable("focus:ring-2 focus:ring-[#6938ef]")}
@@ -606,23 +698,71 @@ function SelectableSection({
     editMode,
     selections,
     selectLayer,
-    sendScopedEdit,
     isLayerEditing,
     isLayerHidden,
     layerDuplicateCount,
+    layerStyles,
     duplicateLayer,
     requestDeleteLayer,
+    registerLayerMover,
   } = useLayoutBuilder()
 
-  if (!editMode) {
-    return className ? <div className={className}>{children}</div> : <>{children}</>
-  }
+  // Expose this section's reorder handlers to the inspector's "More options"
+  // menu (Move up / Move down) via context. The handler closures churn each
+  // render, so we read them through a ref and only re-register when the up/down
+  // availability changes — keeping the menu in sync without update loops.
+  const moveRef = useRef(move)
+  moveRef.current = move
+  const hasMove = move != null
+  const canMoveUp = move?.canUp ?? false
+  const canMoveDown = move?.canDown ?? false
+  useEffect(() => {
+    if (!hasMove) {
+      registerLayerMover(label, null)
+      return
+    }
+    registerLayerMover(label, {
+      canUp: canMoveUp,
+      canDown: canMoveDown,
+      up: () => moveRef.current?.onUp(),
+      down: () => moveRef.current?.onDown(),
+    })
+    return () => registerLayerMover(label, null)
+  }, [label, hasMove, canMoveUp, canMoveDown, registerLayerMover])
 
   if (isLayerHidden(label)) {
     return null
   }
 
   const duplicateCount = layerDuplicateCount(label)
+  // Section-level style edits from the Visual edits panel apply to the section's
+  // box (padding, colours, border, radius, spacing). Keep its block/flex display.
+  const appliedStyle = styleFromLayer(layerStyles[label], false)
+
+  // Preview / edit-mode-off: drop the selection chrome but keep the applied
+  // style overrides (and any duplicates) so edits made in edit mode persist when
+  // it's turned off, matching what the user sees while editing.
+  if (!editMode) {
+    if (!className && !appliedStyle && duplicateCount === 0) {
+      return <>{children}</>
+    }
+    return (
+      <>
+        <div className={className} style={appliedStyle}>
+          {children}
+        </div>
+        {Array.from({ length: duplicateCount }, (_, index) => (
+          <div
+            key={`${label} copy ${index + 1}`}
+            className={className}
+            style={appliedStyle}
+          >
+            {children}
+          </div>
+        ))}
+      </>
+    )
+  }
 
   // Left toolbar mirrors Figma 3197:71570: a "move" drag grip followed by the
   // move-up / move-down arrows. Only sections that opt into reordering get it.
@@ -657,10 +797,10 @@ function SelectableSection({
     <>
       <VisualEditSelector
         label={label}
+        scope="section"
         selected={selections.some((selection) => selection.label === label)}
         working={isLayerEditing(label)}
         onSelect={() => selectLayer(label)}
-        onSubmitPrompt={(text) => sendScopedEdit(label, text)}
         leftActions={leftActions}
         rightActions={[
           {
@@ -696,13 +836,14 @@ function SelectableSection({
             : undefined
         }
         className={className}
+        style={appliedStyle}
       >
         {children}
       </VisualEditSelector>
       {Array.from({ length: duplicateCount }, (_, index) => {
         const copyLabel = `${label} copy ${index + 1}`
         return (
-          <div key={copyLabel} className={className}>
+          <div key={copyLabel} className={className} style={appliedStyle}>
             {children}
           </div>
         )
@@ -1207,6 +1348,446 @@ function DocumentStage({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Editable builder surface for the detailed branded invoice template (Figma node
+ * 3333:158560). Mirrors `BrandedInvoiceDocument` (the pure renderer used by cards
+ * and the preview panel) but wraps every text leaf in `EditableText` and every
+ * region in `SelectableSection`, so the same click-to-select + inline-edit +
+ * scoped-prompt affordances the other styles have apply here too. Pure renderer
+ * and this editable twin share markup so the two can never visually drift.
+ */
+function BrandedDocumentSurface() {
+  const { generatedLayout: layout, updateLayout, mediumId } = useLayoutBuilder()
+  const pageProfile = getDocumentPageProfile(mediumId)
+
+  const accent = layout.accent
+  const lightAccent = "#eaecf5"
+  const money = (value: number) => formatMoney(layout.currencySymbol, value)
+  const title = /invoice/i.test(layout.documentType)
+    ? "INVOICE"
+    : layout.documentType.toUpperCase()
+
+  const subtotal = layout.lineItems.reduce(
+    (sum, item) => sum + item.qty * item.rate,
+    0
+  )
+  const discountRate = layout.discountRate || 0.12
+  const discount = subtotal * discountRate
+  const taxableSubtotal = subtotal - discount
+  const centralRate = 0.1
+  const cityRate = 0.08
+  const centralTax = taxableSubtotal * centralRate
+  const cityTax = taxableSubtotal * cityRate
+  const deposit = 50
+  const amountDue = taxableSubtotal + centralTax + cityTax - deposit
+  const paymentHalf = amountDue / 2
+  const taxPct = Math.round((layout.taxRate || 0.18) * 100)
+
+  const businessSlug =
+    layout.businessName
+      .split(",")[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "") || "studio"
+
+  const hint = "text-[14px] leading-5 text-[#475467]"
+  const totalLabel =
+    "flex-1 px-3 text-[16px] leading-6 font-medium overflow-hidden text-ellipsis whitespace-nowrap"
+  const totalAmount =
+    "w-[120px] px-4 text-right text-[16px] leading-6 font-medium text-[#101828]"
+
+  // Reorderable body sections (the header is pinned, like the standard surface).
+  // The grip drag + up/down arrows on each section selector rewrite this order.
+  const { order: sectionOrder, moveProps } = useSectionReorder(
+    BRANDED_SECTION_ORDER
+  )
+
+  return (
+    <PaginatedDocument
+      pageWidth={pageProfile.widthPx}
+      pageHeight={pageProfile.heightPx}
+      padTop={0}
+      padBottom={0}
+      paperClassName="font-[family-name:var(--font-inter)]"
+    >
+      <div className="bg-white text-[#101828]">
+        {/* Business information (pinned) */}
+        <SelectableSection
+          label="Business header"
+          className="flex items-start justify-between gap-4 overflow-hidden p-4"
+        >
+          <div className="flex flex-col gap-0.5">
+            <p className={hint}>
+              <EditableText
+                value={layout.businessName}
+                label="Business name"
+                onCommit={(businessName) => updateLayout({ businessName })}
+              />
+            </p>
+            <p className={hint}>
+              <EditableText value={`www.${businessSlug}.co`} label="Business website" />
+            </p>
+            <p className={hint}>
+              <EditableText value="+91 86900 01213" label="Business phone" />
+            </p>
+            <p className={hint}>
+              <EditableText
+                value="2/112, Friends Colony, Raja Park"
+                label="Business address line 1"
+              />
+            </p>
+            <p className={hint}>
+              <EditableText
+                value="Jaipur, Rajasthan, India, 302031"
+                label="Business address line 2"
+              />
+            </p>
+          </div>
+          <p
+            className="text-[20px] font-semibold leading-[30px]"
+            style={{ color: accent }}
+          >
+            <EditableText value={title} label="Document title" />
+          </p>
+          <div
+            className="flex size-16 shrink-0 items-center justify-center rounded-lg text-lg font-bold text-white"
+            style={{ backgroundColor: accent }}
+            aria-hidden
+          >
+            {initialsFor(layout.businessName)}
+          </div>
+        </SelectableSection>
+
+        {(() => {
+          const unitNodes: Record<string, ReactNode> = {
+            customer: (
+        // Customer information + info bar
+        <SelectableSection
+          label="Customer information"
+          className="flex items-start justify-between border-t border-[#eaecf0] pb-4 pl-4"
+          move={moveProps("customer")}
+        >
+          <div className="flex flex-col gap-1 pt-2">
+            <p className="text-[14px] font-medium leading-5 text-[#101828]">
+              <EditableText value="Billed to" label="Billed to label" />
+            </p>
+            <div className="flex flex-col gap-0.5">
+              <p className={hint}>
+                <EditableText
+                  value={layout.clientName}
+                  label="Client name"
+                  onCommit={(clientName) => updateLayout({ clientName })}
+                />
+              </p>
+              <p className={hint}>
+                <EditableText value="hey@uixchef.com" label="Client email" />
+              </p>
+              <p className={hint}>
+                <EditableText value="+91 86900 01213" label="Client phone" />
+              </p>
+              <p className={hint}>
+                <EditableText
+                  value="2/112, Friends Colony, Raja Park"
+                  label="Client address line 1"
+                />
+              </p>
+              <p className={hint}>
+                <EditableText
+                  value="Jaipur, Rajasthan, India, 302031"
+                  label="Client address line 2"
+                />
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex">
+              <div
+                className="flex flex-col items-center justify-center gap-1 p-4 text-center text-[14px] leading-5"
+                style={{ backgroundColor: lightAccent, color: accent }}
+              >
+                <p className="font-medium">
+                  <EditableText value="Issue date" label="Issue date label" />
+                </p>
+                <EditableText
+                  value={layout.issueDate}
+                  label="Issue date"
+                  onCommit={(issueDate) => updateLayout({ issueDate })}
+                />
+              </div>
+              <div
+                className="flex flex-col items-center justify-center gap-1 p-4 text-center text-[14px] leading-5"
+                style={{ backgroundColor: accent, color: "#ffffff" }}
+              >
+                <p className="font-medium">
+                  <EditableText value="Invoice no." label="Invoice no. label" />
+                </p>
+                <EditableText
+                  value={layout.documentNumber}
+                  label="Invoice number"
+                  onCommit={(documentNumber) => updateLayout({ documentNumber })}
+                />
+              </div>
+              <div
+                className="flex flex-col items-center justify-center gap-1 p-4 text-center text-[14px] leading-5"
+                style={{ backgroundColor: lightAccent, color: accent }}
+              >
+                <p className="font-medium">
+                  <EditableText value="Due date" label="Due date label" />
+                </p>
+                <EditableText
+                  value={layout.dueDate}
+                  label="Due date"
+                  onCommit={(dueDate) => updateLayout({ dueDate })}
+                />
+              </div>
+            </div>
+            <div
+              className="flex w-[114px] items-center justify-center rounded px-2.5 py-1.5 text-[16px] font-semibold leading-6 text-white shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)]"
+              style={{ backgroundColor: accent }}
+            >
+              {`Pay ${money(amountDue)}`}
+            </div>
+          </div>
+        </SelectableSection>
+            ),
+            items: (
+        // Products table
+        <SelectableSection
+          label="Items table"
+          className="flex flex-col border-b border-[#d0d5dd]"
+          move={moveProps("items")}
+        >
+          <div className="flex">
+            <div className="flex h-9 flex-1 items-center border-b border-[#d0d5dd] px-4 text-[16px] font-semibold leading-6 text-[#101828]">
+              <EditableText value="Item" label="Item header" showBadge={false} />
+            </div>
+            <div className="flex h-9 w-[110px] items-center border-b border-[#d0d5dd] px-4 text-[16px] font-semibold leading-6 text-[#101828]">
+              <EditableText value="Price" label="Price header" showBadge={false} />
+            </div>
+            <div className="flex h-9 w-[60px] items-center border-b border-[#d0d5dd] px-4 text-[16px] font-semibold leading-6 text-[#101828]">
+              <EditableText value="Qty" label="Qty header" showBadge={false} />
+            </div>
+            <div className="flex h-9 w-[90px] items-center border-b border-[#d0d5dd] px-4 text-[16px] font-semibold leading-6 text-[#101828]">
+              <EditableText value="Tax" label="Tax header" showBadge={false} />
+            </div>
+            <div className="flex h-9 w-[120px] items-center justify-end border-b border-[#d0d5dd] px-4 text-right text-[16px] font-semibold leading-6 text-[#101828]">
+              <EditableText value="Subtotal" label="Subtotal header" showBadge={false} />
+            </div>
+          </div>
+          {layout.lineItems.map((item, index) => (
+            <Fragment key={index}>
+              <div
+                className={cn("flex", index !== 0 && "border-b border-[#d0d5dd]")}
+              >
+                <div className="flex flex-1 items-center px-4 py-1 text-[16px] font-medium leading-6 text-[#475467]">
+                  <EditableText
+                    value={item.description}
+                    label={`Item ${index + 1} name`}
+                    showBadge={false}
+                    onCommit={(description) =>
+                      updateLayout({
+                        lineItems: layout.lineItems.map((line, lineIndex) =>
+                          lineIndex === index ? { ...line, description } : line
+                        ),
+                      })
+                    }
+                  />
+                </div>
+                <div className="flex w-[110px] items-center px-4 py-1 text-[16px] font-medium leading-6 text-[#475467]">
+                  {money(item.rate)}
+                </div>
+                <div className="flex w-[60px] items-center px-4 py-1 text-[16px] font-medium leading-6 text-[#475467]">
+                  {item.qty}
+                </div>
+                <div className="flex w-[90px] items-center gap-1 px-4 py-1 text-[16px] font-medium leading-6 text-[#475467]">
+                  <span>{taxPct}%</span>
+                  <Info className="size-4 shrink-0 text-[#98a2b3]" aria-hidden />
+                </div>
+                <div className="flex w-[120px] items-center justify-end px-4 py-1 text-right text-[16px] font-medium leading-6 text-[#475467]">
+                  {money(item.qty * item.rate)}
+                </div>
+              </div>
+              {index === 0 ? (
+                <div className="border-b border-[#d0d5dd] px-4 pb-1 pt-0.5">
+                  <p className={hint}>
+                    <EditableText
+                      value="Sustainably sourced from Colombia and Ethiopia, these medium-roast beans offer rich notes of dark chocolate, caramel, and citrus. Perfect for any brewing method, they deliver a smooth, full-bodied cup every time."
+                      label="Item 1 description"
+                      showBadge={false}
+                    />
+                  </p>
+                </div>
+              ) : null}
+            </Fragment>
+          ))}
+        </SelectableSection>
+            ),
+            totals: (
+        // Totals
+        <SelectableSection
+          label="Totals"
+          className="flex flex-col gap-1 py-2"
+          move={moveProps("totals")}
+        >
+          <div className="flex w-full pl-[71px]">
+            <span className={cn(totalLabel, "text-[#101828]")}>
+              <EditableText value="Subtotal" label="Subtotal label" showBadge={false} />
+            </span>
+            <span className={totalAmount}>{money(subtotal)}</span>
+          </div>
+          <div className="flex w-full pl-[71px]">
+            <span className={totalLabel} style={{ color: accent }}>
+              <EditableText
+                value={`Discount (${Math.round(discountRate * 100)}%)`}
+                label="Discount label"
+                showBadge={false}
+              />
+            </span>
+            <span className={totalAmount}>{`-${money(discount)}`}</span>
+          </div>
+          <div className="flex w-full pl-[71px]">
+            <span className={cn(totalLabel, "text-[#101828]")}>
+              <EditableText
+                value="Taxable subtotal"
+                label="Taxable subtotal label"
+                showBadge={false}
+              />
+            </span>
+            <span className={totalAmount}>{money(taxableSubtotal)}</span>
+          </div>
+          <div className="flex w-full pl-[71px]">
+            <span className={totalLabel} style={{ color: accent }}>
+              <EditableText
+                value={`Central tax (${Math.round(centralRate * 100)}% on ${money(taxableSubtotal)})`}
+                label="Central tax label"
+                showBadge={false}
+              />
+            </span>
+            <span className={totalAmount}>{money(centralTax)}</span>
+          </div>
+          <div className="flex w-full pl-[71px]">
+            <span className={totalLabel} style={{ color: accent }}>
+              <EditableText
+                value={`City tax (${Math.round(cityRate * 100)}% on ${money(taxableSubtotal)})`}
+                label="City tax label"
+                showBadge={false}
+              />
+            </span>
+            <span className={totalAmount}>{money(cityTax)}</span>
+          </div>
+          <div className="flex w-full pl-[71px]">
+            <span className={cn(totalLabel, "text-[#101828]")}>
+              <EditableText value="Deposit (Check)" label="Deposit label" showBadge={false} />
+            </span>
+            <span className={totalAmount}>{`-${money(deposit)}`}</span>
+          </div>
+
+          <div className="my-1 h-px w-full bg-[#d0d5dd]" />
+
+          <div className="flex flex-col gap-1">
+            {[
+              { label: "Payment 1 of 2", due: "Due Aug 15, 2024", key: "1" },
+              { label: "Payment 2 of 2", due: "Due Sept 30, 2024", key: "2" },
+            ].map((payment) => (
+              <div key={payment.key} className="flex w-full items-center">
+                <div className="flex w-[79px] items-center justify-start">
+                  <span className="rounded-xl bg-[#fffaeb] px-2 text-[14px] font-medium leading-5 text-[#b54708]">
+                    Pending
+                  </span>
+                </div>
+                <div className="pl-1 pr-2">
+                  <span
+                    className="text-[16px] font-medium leading-6"
+                    style={{ color: accent }}
+                  >
+                    <EditableText
+                      value={payment.label}
+                      label={`Payment ${payment.key} label`}
+                      showBadge={false}
+                    />
+                  </span>
+                </div>
+                <div className="flex-1 px-3">
+                  <span
+                    className="text-[16px] font-medium leading-6"
+                    style={{ color: accent }}
+                  >
+                    <EditableText
+                      value={payment.due}
+                      label={`Payment ${payment.key} due`}
+                      showBadge={false}
+                    />
+                  </span>
+                </div>
+                <div className="px-4 text-right text-[16px] font-medium leading-6 text-[#475467]">
+                  {money(paymentHalf)}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="my-1 h-px w-full bg-[#d0d5dd]" />
+
+          <div className="flex w-full items-center justify-between pl-[71px]">
+            <span className="w-[240px] px-3 text-[16px] font-medium leading-6 text-[#101828]">
+              <EditableText
+                value={`Amount due (in ${layout.currencyCode})`}
+                label="Amount due label"
+                showBadge={false}
+              />
+            </span>
+            <span className="w-[120px] px-4 text-right text-[16px] font-medium leading-6 text-[#101828]">
+              {money(amountDue)}
+            </span>
+          </div>
+        </SelectableSection>
+            ),
+            notes: (
+        // Notes
+        <SelectableSection
+          label="Notes"
+          className="flex flex-col gap-1 p-4"
+          move={moveProps("notes")}
+        >
+          <p className="text-[14px] font-medium leading-5 text-[#101828]">
+            <EditableText value="Note to customer" label="Note label" showBadge={false} />
+          </p>
+          <p className="text-[14px] leading-5 text-[#475467]">
+            <EditableText
+              value={`Thank you for your business.${
+                layout.emphasis ? ` Designed to emphasise ${layout.emphasis}.` : ""
+              }`}
+              label="Note body"
+              showBadge={false}
+            />
+          </p>
+        </SelectableSection>
+            ),
+            footer: (
+        // Footer hint
+        <SelectableSection
+          label="Footer note"
+          className="flex items-center p-4"
+          move={moveProps("footer")}
+        >
+          <p className="text-[14px] leading-5 text-[#475467]">
+            <EditableText
+              value="Reverse charge (Article 197 - Directive 2006/112 EC)"
+              label="Footer note text"
+              showBadge={false}
+            />
+          </p>
+        </SelectableSection>
+            ),
+          }
+          return sectionOrder.map((unit) => (
+            <Fragment key={unit}>{unitNodes[unit]}</Fragment>
+          ))
+        })()}
+      </div>
+    </PaginatedDocument>
+  )
+}
+
+/**
  * Real, rendered document shown once generation completes. A fixed-width paper
  * card wrapped in `DocumentStage`, which scales it to fit the canvas on smaller
  * screens — same in full preview and split view (Figma 3189:58977).
@@ -1217,8 +1798,7 @@ function DocumentSurface() {
     updateLayout,
     editMode,
     selections,
-    addSelection,
-    sendScopedEdit,
+    selectLayer,
     isLayerEditing,
     mediumId,
   } = useLayoutBuilder()
@@ -1475,8 +2055,7 @@ function DocumentSurface() {
                     (selection) => selection.label === itemLabel
                   )}
                   working={isLayerEditing(itemLabel)}
-                  onSelect={() => addSelection(itemLabel)}
-                  onSubmitPrompt={(text) => sendScopedEdit(itemLabel, text)}
+                  onSelect={() => selectLayer(itemLabel)}
                   leftActions={[
                     {
                       icon: <ArrowUp />,
@@ -2577,7 +3156,6 @@ function BlankPlacedElement({ element }: { element: PlacedElement }) {
     inspectingLayer,
     inspectLayer,
     seedLayer,
-    sendScopedEdit,
     isLayerEditing,
     layerText,
     layerStyles,
@@ -2628,7 +3206,6 @@ function BlankPlacedElement({ element }: { element: PlacedElement }) {
         selected={isSelected}
         working={isLayerEditing(label)}
         onSelect={openInspector}
-        onSubmitPrompt={(text) => sendScopedEdit(label, text)}
         rightActions={[
           {
             icon: <Copy />,
@@ -2869,9 +3446,21 @@ export function LayoutBuilderCanvas() {
     openAddElements,
     focusPrompt,
     canvasToast,
+    generatedLayout,
+    mediumId,
   } = useLayoutBuilder()
   // Resolves medium context for future preview sizing; kept for parity with prompt selection.
   useMediumsStore()
+
+  // The detailed branded template has its own editable surface (mirrors the pure
+  // `BrandedInvoiceDocument` used by cards + preview, so they can't drift). Other
+  // styles use the standard editable `DocumentSurface`.
+  const documentBody =
+    generatedLayout.style === "branded" ? (
+      <BrandedDocumentSurface />
+    ) : (
+      <DocumentSurface />
+    )
 
   const isReady = status === "ready"
   // Blank build-from-scratch session (Figma 3268:37410): the canvas owns its own
@@ -2983,6 +3572,7 @@ export function LayoutBuilderCanvas() {
     <div className="flex min-h-0 w-full flex-1 flex-col p-4">
       <div
         ref={splitRef}
+        data-builder-surface
         className={cn(
           "relative flex min-h-0 flex-1 overflow-hidden rounded-[12px] shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]",
           showCode && !showPreview
@@ -3020,9 +3610,7 @@ export function LayoutBuilderCanvas() {
               {isCodeDetached ? (
                 <CodePreviewFrame html={codeOverride ?? ""} />
               ) : (
-                <DocumentStage>
-                  <DocumentSurface />
-                </DocumentStage>
+                <DocumentStage>{documentBody}</DocumentStage>
               )}
             </div>
 
@@ -3065,9 +3653,7 @@ export function LayoutBuilderCanvas() {
             {isCodeDetached ? (
               <CodePreviewFrame html={codeOverride ?? ""} />
             ) : (
-              <DocumentStage>
-                <DocumentSurface />
-              </DocumentStage>
+              <DocumentStage>{documentBody}</DocumentStage>
             )}
           </div>
         )}

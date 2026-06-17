@@ -208,6 +208,7 @@ export function LayoutBuilderToolbar() {
     closeAddElements,
     inspectingLayer,
     inspectLayer,
+    editMode,
     canUndo,
     canRedo,
     undo,
@@ -215,10 +216,14 @@ export function LayoutBuilderToolbar() {
     isBlankSession,
   } = useLayoutBuilder()
 
-  // The Invoice AI button represents the AI conversation view. The panel can
-  // also host the Add Elements palette or the Visual edits inspector, so it's
-  // only "active" when the conversation itself is what's showing.
-  const aiPanelActive = panelOpen && !addingElement && !inspectingLayer
+  // The Invoice AI button represents the AI conversation view in the left panel.
+  // That panel keeps showing the conversation even while a layer is inspected
+  // (the inspector is now its own overlay/column, not the left rail), so
+  // inspecting no longer deselects this button. It's only inactive when the
+  // panel is closed, the Add elements palette is open, or edit mode is showing
+  // its "select an element" empty state instead of the chat.
+  const editsEmpty = editMode && !inspectingLayer && !addingElement
+  const aiPanelActive = panelOpen && !addingElement && !editsEmpty
 
   const mediumName = mediumId ? getMediumName(mediumId) : "Medium"
 

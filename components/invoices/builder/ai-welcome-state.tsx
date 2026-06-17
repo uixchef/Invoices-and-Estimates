@@ -240,7 +240,7 @@ export function AiWelcomeState() {
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="start"
-                className="min-w-[220px] rounded-lg"
+                className="min-w-[220px]"
               >
                 <DropdownMenuItem
                   className="gap-2.5 px-3 py-2"

@@ -87,8 +87,11 @@ export type BuilderLayerStyle = {
   radiusTopRight?: number
   radiusBottomRight?: number
   radiusBottomLeft?: number
-  /** Border. */
-  borderWidth?: number
+  /** Border — per-side width (px). */
+  borderTopWidth?: number
+  borderRightWidth?: number
+  borderBottomWidth?: number
+  borderLeftWidth?: number
   borderStyle?: "none" | "solid" | "dashed" | "dotted"
   borderColor?: string
 }
@@ -203,7 +206,12 @@ export type BuilderDocumentType = (typeof BUILDER_DOCUMENT_TYPES)[number]
 
 export const DEFAULT_LAYOUT_NAME = "New layout"
 
-export type BuilderVisualStyle = "minimal" | "modern" | "classic" | "bold"
+export type BuilderVisualStyle =
+  | "minimal"
+  | "modern"
+  | "classic"
+  | "bold"
+  | "branded"
 
 export type GeneratedLineItem = {
   description: string

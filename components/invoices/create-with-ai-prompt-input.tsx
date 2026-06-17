@@ -310,7 +310,7 @@ export function CreateWithAiPromptInput({
                   <Paperclip className="size-5" aria-hidden />
                 </IconCircleButton>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-[220px] rounded-lg">
+              <DropdownMenuContent align="start" className="min-w-[220px]">
                 <DropdownMenuItem
                   className="gap-2.5 px-3 py-2"
                   onSelect={() => fileInputRef.current?.click()}
@@ -336,7 +336,7 @@ export function CreateWithAiPromptInput({
                   <ChevronDown className="size-5 shrink-0 text-[#667085]" aria-hidden />
                 </PillButton>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-[300px] rounded-lg p-1.5">
+              <DropdownMenuContent align="start" className="min-w-[300px]">
                 {AI_MODELS.map((option) => {
                   const isActive = option.id === modelId
                   return (
@@ -377,7 +377,7 @@ export function CreateWithAiPromptInput({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="start"
-                className="w-[240px] rounded-lg p-1.5"
+                className="w-[240px]"
               >
                 {MEDIUM_PRESETS.map((medium) => {
                   const isActive = medium.id === selectedMediumId
