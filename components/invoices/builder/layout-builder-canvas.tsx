@@ -48,7 +48,10 @@ import type {
   PlacedElement,
   PlacedElementZone,
 } from "@/lib/layout-builder-types"
-import { ELEMENT_DRAG_MIME } from "@/lib/layout-builder-types"
+import {
+  ELEMENT_DRAG_MIME,
+  PAGE_LAYER_LABEL,
+} from "@/lib/layout-builder-types"
 import {
   isMultilinePlacedKind,
   isTextPlacedKind,
@@ -59,7 +62,13 @@ import { cn } from "@/lib/utils"
 const SECTION_REORDER_MIME = "application/x-invoice-section-reorder"
 
 /** Reorderable top-level body sections, in their default top-to-bottom order. */
-const DEFAULT_SECTION_ORDER = ["billing", "items", "totals", "notes"] as const
+const DEFAULT_SECTION_ORDER = [
+  "billing",
+  "items",
+  "totals",
+  "payOnline",
+  "notes",
+] as const
 type SectionUnit = (typeof DEFAULT_SECTION_ORDER)[number]
 const isSectionUnit = (value: string): value is SectionUnit =>
   (DEFAULT_SECTION_ORDER as readonly string[]).includes(value)
@@ -862,6 +871,104 @@ const DOCUMENT_PAGE_GAP = 24
 const DOCUMENT_PAPER_SHELL =
   "mx-auto flex w-full flex-col overflow-hidden rounded-[4px] bg-white shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]"
 
+function parsePx(value: string): number | undefined {
+  const parsed = Math.round(parseFloat(value))
+  return Number.isFinite(parsed) && parsed !== 0 ? parsed : undefined
+}
+
+/** Reads box-model values from a live page shell for the inspector baseline. */
+function pageStyleFromComputed(node: HTMLElement): BuilderLayerStyle {
+  const cs = window.getComputedStyle(node)
+  const radius = parsePx(cs.borderTopLeftRadius)
+  return {
+    backgroundColor:
+      cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)"
+        ? cs.backgroundColor
+        : undefined,
+    marginTop: parsePx(cs.marginTop),
+    marginRight: parsePx(cs.marginRight),
+    marginBottom: parsePx(cs.marginBottom),
+    marginLeft: parsePx(cs.marginLeft),
+    paddingTop: parsePx(cs.paddingTop),
+    paddingRight: parsePx(cs.paddingRight),
+    paddingBottom: parsePx(cs.paddingBottom),
+    paddingLeft: parsePx(cs.paddingLeft),
+    width: parsePx(cs.width),
+    height: parsePx(cs.height),
+    radiusTopLeft: radius,
+    radiusTopRight: radius,
+    radiusBottomRight: radius,
+    radiusBottomLeft: radius,
+  }
+}
+
+/**
+ * The invoice paper shell — selectable in visual-edit mode so margin, background,
+ * padding, border, and sizing apply to every page in the paginated preview.
+ */
+function SelectablePageShell({
+  className,
+  style: baseStyle,
+  children,
+}: {
+  className?: string
+  style?: CSSProperties
+  children: ReactNode
+}) {
+  const {
+    editMode,
+    selections,
+    selectLayer,
+    isLayerEditing,
+    layerStyles,
+    seedLayer,
+  } = useLayoutBuilder()
+
+  const appliedStyle = styleFromLayer(layerStyles[PAGE_LAYER_LABEL], false)
+  const mergedStyle = { ...baseStyle, ...appliedStyle }
+  const selected = selections.some(
+    (selection) => selection.label === PAGE_LAYER_LABEL
+  )
+
+  const openInspector = () => {
+    const node = document.querySelector(
+      `[data-layer="${PAGE_LAYER_LABEL}"]`
+    )
+    if (node instanceof HTMLElement) {
+      seedLayer(PAGE_LAYER_LABEL, {
+        content: "",
+        style: pageStyleFromComputed(node),
+      })
+    }
+    selectLayer(PAGE_LAYER_LABEL, "page")
+  }
+
+  if (!editMode) {
+    return (
+      <div className={className} style={mergedStyle}>
+        {children}
+      </div>
+    )
+  }
+
+  return (
+    <VisualEditSelector
+      label={PAGE_LAYER_LABEL}
+      scope="section"
+      selected={selected}
+      working={isLayerEditing(PAGE_LAYER_LABEL)}
+      onSelect={openInspector}
+      showAddElement={false}
+      leftActions={[]}
+      rightActions={[]}
+      className={className}
+      style={mergedStyle}
+    >
+      {children}
+    </VisualEditSelector>
+  )
+}
+
 /**
  * Stacks fixed-height page shells and clips one continuous document flow across
  * them — same mental model as Google Docs page breaks in the builder preview.
@@ -917,7 +1024,7 @@ function PaginatedDocument({
       </div>
 
       {Array.from({ length: pageCount }, (_, pageIndex) => (
-        <div
+        <SelectablePageShell
           key={pageIndex}
           className={cn(DOCUMENT_PAPER_SHELL, paperClassName)}
           style={{ width: pageWidth, height: pageHeight }}
@@ -937,7 +1044,7 @@ function PaginatedDocument({
               </div>
             </div>
           </div>
-        </div>
+        </SelectablePageShell>
       ))}
     </div>
   )
@@ -2148,20 +2255,26 @@ function DocumentSurface() {
           </div>
         </SelectableSection>
 
-        {layout.sections.onlinePayment ? (
-          <SelectableSection label="Pay online" className="flex justify-end">
-            <div
-              className="inline-flex h-10 items-center justify-center rounded-lg px-5 text-sm font-semibold text-white"
-              style={{ backgroundColor: layout.accent }}
-            >
-              <EditableText value="Pay online" label="Pay online button" />
-            </div>
-          </SelectableSection>
-        ) : null}
-
         <ElementDropZone zone="after-totals" />
               </Fragment>
             ),
+            payOnline:
+              layout.sections.onlinePayment ? (
+                <Fragment key="payOnline">
+                  <SelectableSection
+                    label="Pay online"
+                    className="flex justify-end"
+                    move={moveProps("payOnline")}
+                  >
+                    <div
+                      className="inline-flex h-10 items-center justify-center rounded-lg px-5 text-sm font-semibold text-white"
+                      style={{ backgroundColor: layout.accent }}
+                    >
+                      <EditableText value="Pay online" label="Pay online button" />
+                    </div>
+                  </SelectableSection>
+                </Fragment>
+              ) : null,
             notes: (
               <Fragment key="notes">
         {layout.sections.notes ||
@@ -3278,7 +3391,7 @@ function BlankPage() {
 
   return (
     <DocumentStage>
-      <div
+      <SelectablePageShell
         className={cn(DOCUMENT_PAPER_SHELL, "font-[family-name:var(--font-inter)]")}
         style={{ minHeight: profile.heightPx }}
       >
@@ -3309,7 +3422,7 @@ function BlankPage() {
             </>
           )}
         </div>
-      </div>
+      </SelectablePageShell>
     </DocumentStage>
   )
 }

@@ -36,6 +36,7 @@ import {
 import { AiQuestions } from "@/components/ai/ai-questions"
 import { VisualEditsPanel } from "@/components/invoices/builder/visual-edits-panel"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
+import { isPageLayer } from "@/lib/layout-builder-types"
 import { cn } from "@/lib/utils"
 
 /** "More options" menu glyphs (Untitled UI). Pre-coloured PNGs served from
@@ -393,7 +394,35 @@ export function EditsOverlay() {
     showCanvasToast("Code copied")
   }
 
-  const moreMenuGroups: MoreMenuItem[][] = [
+  const isPage = isPageLayer(inspectingLayer)
+  const visibleTabs = isPage ? TABS.filter((tab) => tab.id === "style") : TABS
+
+  const moreMenuGroups: MoreMenuItem[][] = isPage
+    ? [
+        [
+          {
+            id: "copy-code",
+            label: "Copy code",
+            icon: MENU_ICON.copyCode,
+            onSelect: copyCode,
+          },
+          {
+            id: "copy-props",
+            label: "Copy properties",
+            onSelect: () => {
+              copyLayerProperties(inspectingLayer!)
+              showCanvasToast("Properties copied")
+            },
+          },
+          {
+            id: "paste-props",
+            label: "Paste properties",
+            onSelect: () => pasteLayerProperties(inspectingLayer!),
+            disabled: !canPasteProperties,
+          },
+        ],
+      ]
+    : [
     [
       {
         id: "copy",
@@ -619,13 +648,14 @@ export function EditsOverlay() {
         </div>
       </div>
 
-      {/* Tabs (Figma 3246:46487). */}
+      {/* Tabs (Figma 3246:46487). Page layer only exposes Style. */}
+      {visibleTabs.length > 1 ? (
       <div
         role="tablist"
         aria-label="Edit mode"
         className="flex items-center gap-1 rounded-[4px] bg-[#f2f4f7] p-1"
       >
-        {TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const active = editsTab === tab.id
           return (
             <button
@@ -647,6 +677,7 @@ export function EditsOverlay() {
           )
         })}
       </div>
+      ) : null}
     </div>
   )
 

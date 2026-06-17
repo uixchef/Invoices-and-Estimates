@@ -25,10 +25,18 @@ export type BuilderSelection = {
 /**
  * What kind of layer the Visual edits inspector is pointed at. Text layers are
  * individually editable strings (e.g. "Business name"); containers are
- * sections / structural blocks (e.g. "Totals", "Billing details"). Text-only
- * controls — like the Style tab's "Content" field — key off this.
+ * sections / structural blocks (e.g. "Totals", "Billing details"); page is the
+ * invoice paper shell (margin, background, border). Text-only controls — like
+ * the Style tab's "Content" field — key off this.
  */
-export type BuilderLayerKind = "text" | "container"
+export type BuilderLayerKind = "text" | "container" | "page"
+
+/** Stable label for the paginated document paper shell in visual-edit mode. */
+export const PAGE_LAYER_LABEL = "Page"
+
+export function isPageLayer(label: string | null | undefined): label is typeof PAGE_LAYER_LABEL {
+  return label === PAGE_LAYER_LABEL
+}
 
 /**
  * The Advanced tab's conditional-logic cards. "condition" is the show/hide rule;

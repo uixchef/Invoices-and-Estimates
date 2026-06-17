@@ -10,7 +10,6 @@ import {
   Redo2,
   Ruler,
   Save,
-  Type,
   Undo2,
 } from "lucide-react"
 
@@ -22,8 +21,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
+import { PAGE_LAYER_LABEL } from "@/lib/layout-builder-types"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { cn } from "@/lib/utils"
+
+const TOOLBAR_ICONS = "/icons/toolbar"
 
 /**
  * Wraps a control in a hover/focus tooltip when a label is supplied. Disabled
@@ -98,7 +100,7 @@ function ToolbarIconButton({
         className={cn(
           "inline-flex size-7 shrink-0 items-center justify-center rounded-[4px] outline-none transition-colors",
           "focus-visible:ring-2 focus-visible:ring-[#155eef]/40 [&_svg]:size-4",
-          "disabled:pointer-events-none disabled:text-[#d0d5dd]",
+          "disabled:pointer-events-none disabled:text-[#d0d5dd] disabled:[&_img]:opacity-40",
           active && tone === "accent" && "bg-[#ebe9fe] text-[#6938ef]",
           active && tone === "default" && "bg-[#f2f4f7] text-[#101828]",
           !active &&
@@ -208,6 +210,7 @@ export function LayoutBuilderToolbar() {
     closeAddElements,
     inspectingLayer,
     inspectLayer,
+    selectLayer,
     editMode,
     canUndo,
     canRedo,
@@ -235,6 +238,8 @@ export function LayoutBuilderToolbar() {
   // Add elements tool is available from the empty state (status === "idle")
   // even before anything has been generated.
   const canAddElements = canEdit || isBlankSession
+  const canSettings = canEdit || isBlankSession
+  const pageSettingsActive = inspectingLayer === PAGE_LAYER_LABEL
 
   return (
     <div className="relative flex h-11 w-full shrink-0 items-center gap-4 border-b border-[#d0d5dd] bg-white px-4 py-1">
@@ -270,10 +275,7 @@ export function LayoutBuilderToolbar() {
           >
             <AutoAwesomeIcon className="size-4 text-[#6938ef]" />
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Insert text" comingSoon>
-            <Type aria-hidden />
-          </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Theme" comingSoon>
+          <ToolbarIconButton aria-label="Brand boards" comingSoon>
             <svg viewBox="0 0 24 24" fill="none" aria-hidden className="size-4">
               <path
                 d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1 .8-1.8 1.8-1.8H16a5 5 0 0 0 5-5c0-3.9-4-7-9-7Z"
@@ -358,6 +360,21 @@ export function LayoutBuilderToolbar() {
         <div className="h-4 w-px bg-[#d0d5dd]" />
         <ToolbarIconButton aria-label="Download" disabled={!canEdit}>
           <Download aria-hidden />
+        </ToolbarIconButton>
+        <div className="h-4 w-px bg-[#d0d5dd]" />
+        <ToolbarIconButton
+          aria-label="Settings"
+          tooltip="Page settings"
+          active={pageSettingsActive}
+          disabled={!canSettings}
+          onClick={() => selectLayer(PAGE_LAYER_LABEL, "page")}
+        >
+          <img
+            src={`${TOOLBAR_ICONS}/settings-04.png`}
+            alt=""
+            aria-hidden
+            className="size-4 object-contain"
+          />
         </ToolbarIconButton>
       </div>
     </div>

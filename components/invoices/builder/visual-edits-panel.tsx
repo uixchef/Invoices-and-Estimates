@@ -47,6 +47,7 @@ import type {
   BuilderConditionRule,
   BuilderLayerStyle,
 } from "@/lib/layout-builder-types"
+import { isPageLayer } from "@/lib/layout-builder-types"
 import { cn } from "@/lib/utils"
 
 /**
@@ -611,6 +612,7 @@ export function VisualEditsPanel() {
     return (
       <ContentTab
         label={inspectingLayer}
+        isPage={isPageLayer(inspectingLayer)}
         // "Content" only applies to individual text layers, not sections /
         // containers, which have no single editable string of their own.
         content={
@@ -628,6 +630,7 @@ export function VisualEditsPanel() {
       label={inspectingLayer}
       style={layerStyles[inspectingLayer] ?? {}}
       setLayerStyle={setLayerStyle}
+      variant={isPageLayer(inspectingLayer) ? "page" : "default"}
     />
   )
 }
@@ -641,6 +644,7 @@ function ContentTab({
   label,
   content,
   setContent,
+  isPage = false,
 }: {
   label: string
   /**
@@ -649,6 +653,8 @@ function ContentTab({
    */
   content: string | null
   setContent: (next: string) => void
+  /** Page layer has no bound fields or editable copy. */
+  isPage?: boolean
 }) {
   return (
     <div className="flex flex-col gap-6 pb-4">
@@ -668,9 +674,14 @@ function ContentTab({
             )}
           />
         </section>
+      ) : isPage ? (
+        <p className="text-sm leading-5 text-[#667085]">
+          Page settings live on the Style tab — margin, background, padding, border,
+          and sizing.
+        </p>
       ) : null}
 
-      <ConnectedFields label={label} />
+      {!isPage ? <ConnectedFields label={label} /> : null}
     </div>
   )
 }
@@ -679,10 +690,13 @@ function StyleTab({
   label,
   style,
   setLayerStyle,
+  variant = "default",
 }: {
   label: string
   style: BuilderLayerStyle
   setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
+  /** Page shell omits typography — those belong on text layers inside the page. */
+  variant?: "default" | "page"
 }) {
   // Padding & margin start collapsed (uniform H/V); the maximize toggle expands
   // each to per-side editing, matching the medium builder's safe-area control.
@@ -798,6 +812,8 @@ function StyleTab({
 
   return (
     <div className="flex flex-col gap-6 pb-4">
+      {variant === "page" ? null : (
+        <>
       {/* Typography */}
       <section className="flex flex-col gap-3">
         <SectionLabel>Typography</SectionLabel>
@@ -885,10 +901,21 @@ function StyleTab({
       </section>
 
       <PanelDivider />
+        </>
+      )}
 
       {/* Colors */}
       <section className="flex flex-col gap-3">
         <SectionLabel>Colors</SectionLabel>
+        {variant === "page" ? (
+          <label className="flex flex-col gap-1">
+            <FieldLabel>Background</FieldLabel>
+            <ColorField
+              value={style.backgroundColor}
+              onChange={(next) => set({ backgroundColor: next })}
+            />
+          </label>
+        ) : (
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1">
             <FieldLabel>Text</FieldLabel>
@@ -902,6 +929,7 @@ function StyleTab({
             />
           </label>
         </div>
+        )}
       </section>
 
       <PanelDivider />
