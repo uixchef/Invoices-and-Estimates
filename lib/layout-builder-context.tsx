@@ -1082,7 +1082,11 @@ type LayoutBuilderContextValue = {
   setEditsDocked: (docked: boolean) => void
 
   /** Selects a layer for inspection — opens its Visual edits panel + chip. */
-  selectLayer: (label: string, kind?: BuilderLayerKind) => void
+  selectLayer: (
+    label: string,
+    kind?: BuilderLayerKind,
+    options?: { keepAddElements?: boolean }
+  ) => void
 
   /** Seeds a layer's content/style overrides from the DOM on first inspect. */
   seedLayer: (
@@ -1682,10 +1686,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     // "Start from blank": open on the empty state (Figma 3268:37410). No seed
     // prompt, no generation — the canvas shows the empty state and the panel
     // shows the AI welcome until the user describes a layout or inserts an
-    // element. A default medium keeps the toolbar's size picker populated.
-    if (consumePendingBlank()) {
+    // element. The chosen medium comes from the dashboard picker modal.
+    const blankMediumId = consumePendingBlank()
+    if (blankMediumId) {
       setIsBlankSession(true)
-      setMediumId(getDefaultBuilderMediumId())
+      setMediumId(blankMediumId)
       return
     }
 
@@ -1923,14 +1928,19 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   }, [codeOverride])
 
   /** Enter visual edit mode without clearing the current inspector selection. */
-  const enterEditMode = useCallback(() => {
-    if (codeOverride !== null) {
-      return
-    }
-    setPreviewOpen(true)
-    setEditMode(true)
-    setAddingElement(false)
-  }, [codeOverride])
+  const enterEditMode = useCallback(
+    (options?: { keepAddElements?: boolean }) => {
+      if (codeOverride !== null) {
+        return
+      }
+      setPreviewOpen(true)
+      setEditMode(true)
+      if (!options?.keepAddElements) {
+        setAddingElement(false)
+      }
+    },
+    [codeOverride]
+  )
 
   // Detaching snapshots the current generated code as the editable buffer and
   // tears down structured-edit affordances so the two models can't silently
@@ -2204,12 +2214,18 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   )
 
   const selectLayer = useCallback(
-    (label: string, kind: BuilderLayerKind = "container") => {
+    (
+      label: string,
+      kind: BuilderLayerKind = "container",
+      options?: { keepAddElements?: boolean }
+    ) => {
       addSelection(label)
       setInspectingLayer(label)
       setInspectingLayerKind(kind)
       setEditsTab("style")
-      setAddingElement(false)
+      if (!options?.keepAddElements) {
+        setAddingElement(false)
+      }
     },
     [addSelection]
   )
@@ -2351,11 +2367,17 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const openPlacedElementInspector = useCallback(
     (element: PlacedElement) => {
-      enterEditMode()
+      // While the AI thread is empty, keep the Add elements palette open so
+      // build-from-scratch stays in a drop rhythm. Once the panel has content,
+      // hand off to Invoice AI after each drop like the generated flow.
+      const keepAddElements = messages.length === 0
+      enterEditMode({ keepAddElements })
       seedLayer(element.label, getPlacedElementSeed(element.kind, element.content))
-      selectLayer(element.label, getPlacedElementLayerKind(element.kind))
+      selectLayer(element.label, getPlacedElementLayerKind(element.kind), {
+        keepAddElements,
+      })
     },
-    [enterEditMode, selectLayer, seedLayer]
+    [enterEditMode, messages.length, selectLayer, seedLayer]
   )
 
   const addPlacedElement = useCallback(

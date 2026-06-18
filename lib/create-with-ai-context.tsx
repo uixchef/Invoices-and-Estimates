@@ -76,9 +76,9 @@ type CreateWithAiContextValue = {
   /** Reads and clears the edit request queued for the builder route. */
   consumePendingEdit: () => LayoutBuilderEditSeed | null
   /** "Start from blank" — opens the builder on its empty state (no seed prompt). */
-  startBlankLayout: () => void
-  /** Reads and clears the blank-session request queued for the builder route. */
-  consumePendingBlank: () => boolean
+  startBlankLayout: (mediumId: string) => void
+  /** Reads and clears the blank-session medium queued for the builder route. */
+  consumePendingBlank: () => string | null
 }
 
 const CreateWithAiContext = createContext<CreateWithAiContextValue | null>(null)
@@ -89,7 +89,7 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
   const attachmentsRef = useRef<PromptAttachment[]>([])
   const pendingGenerationRef = useRef<LayoutBuilderSeed | null>(null)
   const pendingEditRef = useRef<LayoutBuilderEditSeed | null>(null)
-  const pendingBlankRef = useRef(false)
+  const pendingBlankMediumRef = useRef<string | null>(null)
 
   // The create-with-AI hero opens by default and stays open until the user
   // explicitly collapses it (or a generation hands off to the builder).
@@ -209,20 +209,23 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
     return seed
   }, [])
 
-  const startBlankLayout = useCallback(() => {
-    // A blank start supersedes any queued generation/edit — the builder should
-    // open on its empty state, not a stale seed.
-    pendingGenerationRef.current = null
-    pendingEditRef.current = null
-    pendingBlankRef.current = true
-    setIsOpen(false)
-    router.push(LAYOUT_BUILDER_ROUTE)
-  }, [router])
+  const startBlankLayout = useCallback(
+    (mediumId: string) => {
+      // A blank start supersedes any queued generation/edit — the builder should
+      // open on its empty state, not a stale seed.
+      pendingGenerationRef.current = null
+      pendingEditRef.current = null
+      pendingBlankMediumRef.current = mediumId
+      setIsOpen(false)
+      router.push(LAYOUT_BUILDER_ROUTE)
+    },
+    [router]
+  )
 
   const consumePendingBlank = useCallback(() => {
-    const blank = pendingBlankRef.current
-    pendingBlankRef.current = false
-    return blank
+    const mediumId = pendingBlankMediumRef.current
+    pendingBlankMediumRef.current = null
+    return mediumId
   }, [])
 
   useEffect(() => {

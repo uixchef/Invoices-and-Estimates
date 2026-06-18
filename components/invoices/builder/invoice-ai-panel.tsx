@@ -399,6 +399,7 @@ function AiComposer() {
     removeSelection,
     clearSelections,
     isBlankSession,
+    placedElements,
     previewVersionId,
     exitVersionPreview,
   } = useLayoutBuilder()
@@ -407,12 +408,12 @@ function AiComposer() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // The Edit / model actions appear once there's a generated layout to act on,
-  // and also in a blank build-from-scratch session where elements are dropped
-  // directly onto the page — the composer stays identical to the AI flow.
+  // Model picker appears once the docked composer is in play (generated layout
+  // or blank build-from-scratch). Edit only after there is something on canvas.
   const hasGenerated =
     status === "ready" || messages.some((message) => message.role === "assistant")
   const showComposerActions = hasGenerated || isBlankSession
+  const showEditAction = hasGenerated || placedElements.length > 0
   // The Edit toggle reads active whenever a layer's Visual edits panel is open —
   // in the AI flow that always implies edit mode; the blank flow opens the
   // inspector directly, so fold the inspecting state into the active look too.
@@ -596,7 +597,7 @@ function AiComposer() {
 
               {/* Visual edit toggle (Figma 3191:71120 / 3192:71293): gray at
                   rest, purple while editing the invoice directly. */}
-              {showComposerActions ? (
+              {showEditAction ? (
                 <button
                   type="button"
                   aria-pressed={editActive}

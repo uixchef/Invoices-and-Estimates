@@ -1564,6 +1564,7 @@ function SelectablePlacedElement({ element }: { element: PlacedElement }) {
     isLayerEditing,
     layerText,
     layerStyles,
+    messages,
     updatePlacedElementContent,
     duplicatePlacedElement,
     removePlacedElement,
@@ -1627,7 +1628,9 @@ function SelectablePlacedElement({ element }: { element: PlacedElement }) {
         })
       }
     }
-    selectLayer(label, layerKind)
+    selectLayer(label, layerKind, {
+      keepAddElements: messages.length === 0,
+    })
   }
 
   const leftActions: SelectorAction[] = [
@@ -1856,7 +1859,7 @@ function DocumentStage({ children }: { children: ReactNode }) {
   return (
     // overflow-hidden guarantees the scaled document can never spill past the
     // pane's padding and break the rounded canvas frame, even mid-reflow.
-    <div ref={outerRef} className="w-full min-w-0 overflow-hidden">
+    <div ref={outerRef} className="w-full min-w-0 overflow-visible">
       <div
         className="mx-auto"
         style={size ? { width: size.width, height: size.height } : undefined}

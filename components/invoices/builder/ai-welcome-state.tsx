@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   AtSign,
   BookOpen,
+  ChevronDown,
   Image as ImageIcon,
   Paperclip,
   Send,
@@ -17,6 +18,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { AI_MODELS } from "@/lib/ai-models"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { cn } from "@/lib/utils"
 
@@ -60,8 +62,11 @@ const PANEL_WASH =
 export function AiWelcomeState() {
   const { sendMessage, promptFocusToken } = useLayoutBuilder()
   const [value, setValue] = useState("")
+  const [modelId, setModelId] = useState(AI_MODELS[0].id)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const activeModel =
+    AI_MODELS.find((model) => model.id === modelId) ?? AI_MODELS[0]
 
   const syncHeight = () => {
     const textarea = textareaRef.current
@@ -261,6 +266,41 @@ export function AiWelcomeState() {
             </DropdownMenu>
 
             <div className="min-w-px flex-1" />
+
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  "inline-flex h-6 items-center justify-center gap-1 rounded-[4px] border border-[#f9fafb] bg-[#f9fafb] px-1.5 outline-none transition-colors",
+                  "text-xs font-semibold leading-[17px] text-[#475467] hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+                )}
+                aria-label="Select AI model"
+              >
+                {activeModel.name}
+                <ChevronDown className="size-3.5 text-[#667085]" aria-hidden />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="min-w-[260px] font-[family-name:var(--font-inter)]"
+              >
+                {AI_MODELS.map((model) => (
+                  <DropdownMenuItem
+                    key={model.id}
+                    onSelect={() => setModelId(model.id)}
+                    className={cn(
+                      "flex-col items-start gap-0.5 rounded-md px-3 py-2",
+                      model.id === modelId && "bg-[#f4f3ff] focus:bg-[#f4f3ff]"
+                    )}
+                  >
+                    <span className="text-sm font-semibold text-[#101828]">
+                      {model.name}
+                    </span>
+                    <span className="text-[13px] leading-[18px] text-[#667085]">
+                      {model.description}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <button
               type="button"
