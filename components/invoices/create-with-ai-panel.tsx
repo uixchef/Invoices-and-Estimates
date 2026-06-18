@@ -135,6 +135,7 @@ export function CreateWithAiPanel() {
           )}
         >
           <span className="vibe-hero-water" aria-hidden />
+          <span className="vibe-hero-ripple" aria-hidden />
           <span className="vibe-hero-cursor" aria-hidden />
 
           <button
