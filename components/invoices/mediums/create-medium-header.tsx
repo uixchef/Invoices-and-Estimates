@@ -136,7 +136,7 @@ export function CreateMediumHeader() {
                   cancelNameEdit()
                 }
               }}
-              aria-label="Medium name"
+              aria-label="Paper type name"
               className={cn(
                 "h-8 max-w-md min-w-[12rem] rounded border border-[#84adff] bg-white px-2 text-center",
                 "font-[family-name:var(--font-inter)] text-xl font-semibold leading-[30px] text-[#101828] outline-none",
@@ -150,7 +150,7 @@ export function CreateMediumHeader() {
               </h2>
               <button
                 type="button"
-                aria-label="Edit medium name"
+                aria-label="Edit paper type name"
                 onClick={startNameEdit}
                 className="flex size-6 shrink-0 items-center justify-center rounded outline-none transition-colors hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
               >

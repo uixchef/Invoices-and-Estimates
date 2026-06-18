@@ -412,7 +412,7 @@ function buildFollowUpQuestions(text: string): AiQuestion[] | null {
 /** Cursor-style plan the assistant works through while generating a layout. */
 const BUILDER_TODO_LABELS = [
   "Analyse prompt & requirements",
-  "Set up medium dimensions & safe area",
+  "Set up paper type dimensions & safe area",
   "Lay out header & branding",
   "Build the line items table",
   "Add totals, taxes & discounts",

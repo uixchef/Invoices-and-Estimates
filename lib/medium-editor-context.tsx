@@ -93,12 +93,12 @@ export function MediumEditorProvider({ children }: { children: ReactNode }) {
     useMediumsStore()
 
   const [formState, setFormState] = useState<MediumFormState>(DEFAULT_MEDIUM_FORM)
-  const [name, setName] = useState("New medium")
-  const [draftName, setDraftName] = useState("New medium")
+  const [name, setName] = useState("New paper type")
+  const [draftName, setDraftName] = useState("New paper type")
   const [isEditingName, setIsEditingName] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [savedSnapshot, setSavedSnapshot] = useState<EditorSnapshot>(() =>
-    createSnapshot("New medium", DEFAULT_MEDIUM_FORM)
+    createSnapshot("New paper type", DEFAULT_MEDIUM_FORM)
   )
   const mediumId = routeMediumId
   const storedMedium = mediumId ? getMediumById(mediumId) : undefined
@@ -106,7 +106,7 @@ export function MediumEditorProvider({ children }: { children: ReactNode }) {
   const initializeEditor = useCallback(
     ({ initialState = DEFAULT_MEDIUM_FORM, initialName }: InitializeEditorInput) => {
       const resolvedName =
-        initialName ?? storedMedium?.name ?? (isNewRoute ? "New medium" : "Medium")
+        initialName ?? storedMedium?.name ?? (isNewRoute ? "New paper type" : "Paper type")
 
       setFormState(initialState)
       setName(resolvedName)
@@ -141,7 +141,7 @@ export function MediumEditorProvider({ children }: { children: ReactNode }) {
   }, [name])
 
   const saveMediumHandler = useCallback((): MediumSaveResult | null => {
-    const resolvedName = (isEditingName ? draftName : name).trim() || "New medium"
+    const resolvedName = (isEditingName ? draftName : name).trim() || "New paper type"
 
     if (isEditingName) {
       setName(resolvedName)
@@ -175,7 +175,7 @@ export function MediumEditorProvider({ children }: { children: ReactNode }) {
   ])
 
   const isDirty = useMemo(() => {
-    const currentName = (isEditingName ? draftName : name).trim() || "New medium"
+    const currentName = (isEditingName ? draftName : name).trim() || "New paper type"
     return !editorSnapshotsEqual(
       savedSnapshot,
       createSnapshot(currentName, formState)

@@ -14,7 +14,7 @@ type MediumEditorPageProps = {
 
 export function MediumEditorPage({
   initialState = DEFAULT_MEDIUM_FORM,
-  pageTitle = "New medium",
+  pageTitle = "New paper type",
 }: MediumEditorPageProps) {
   const pathname = usePathname()
   const { formState, setFormState, initializeEditor } = useMediumEditor()

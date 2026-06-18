@@ -40,7 +40,7 @@ const PROMPT_PLACEHOLDER_SUGGESTIONS = [
 
 const PLACEHOLDER_ROTATE_MS = 3800
 
-const MEDIUM_PLACEHOLDER = "Medium"
+const MEDIUM_PLACEHOLDER = "Paper type"
 
 const MEDIUM_PRESETS = getBuilderMediumPresets()
 
@@ -367,7 +367,7 @@ export function CreateWithAiPromptInput({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <PillButton aria-label="Select medium">
+                <PillButton aria-label="Select paper type">
                   <Ruler className="size-5 shrink-0 text-[#667085]" aria-hidden />
                   <span className="truncate">
                     {selectedMedium?.name ?? MEDIUM_PLACEHOLDER}
@@ -407,15 +407,6 @@ export function CreateWithAiPromptInput({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-
-          <span
-            className="hero-prompt-counter flex shrink-0 items-center gap-0.5 p-0.5 font-[family-name:var(--font-inter)] text-[13px] leading-[18px] text-[#475467]"
-            aria-live="polite"
-          >
-            <span>{value.length}</span>
-            <span>/</span>
-            <span>{PROMPT_MAX_LENGTH}</span>
-          </span>
 
           <button
             type="button"

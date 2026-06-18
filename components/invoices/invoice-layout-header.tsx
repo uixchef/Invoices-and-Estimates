@@ -35,7 +35,7 @@ export function InvoiceLayoutHeader() {
           {SHOW_MEDIUMS_NAV ? (
             <Link href="/invoices/mediums" className={neutralSecondaryButtonVariants()}>
               <Ruler className="size-5 shrink-0" strokeWidth={2} aria-hidden />
-              Mediums
+              Paper types
             </Link>
           ) : null}
           <CreateWithAiButton />

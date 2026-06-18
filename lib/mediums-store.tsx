@@ -63,7 +63,7 @@ export function MediumsStoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const saveMedium = useCallback((mediumId: string, input: MediumSaveInput) => {
-    const trimmed = input.name.trim() || "New medium"
+    const trimmed = input.name.trim() || "New paper type"
     const fields = mediumFormToRowFields(input.formState)
     const updatedOn = formatMediumUpdatedOn()
 
@@ -87,7 +87,7 @@ export function MediumsStoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const createMedium = useCallback((input: MediumSaveInput) => {
-    const trimmed = input.name.trim() || "New medium"
+    const trimmed = input.name.trim() || "New paper type"
     const fields = mediumFormToRowFields(input.formState)
     const updatedOn = formatMediumUpdatedOn()
     const newId = `medium-${Date.now()}`

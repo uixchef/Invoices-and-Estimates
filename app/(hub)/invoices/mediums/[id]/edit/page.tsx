@@ -14,8 +14,8 @@ export async function generateMetadata({
   const medium = getMediumById(id)
 
   return {
-    title: medium ? `${medium.name} | Invoice Layouts` : "Edit medium | Invoice Layouts",
-    description: "Edit document output medium settings",
+    title: medium ? `${medium.name} | Invoice Layouts` : "Edit paper type | Invoice Layouts",
+    description: "Edit paper type settings",
   }
 }
 

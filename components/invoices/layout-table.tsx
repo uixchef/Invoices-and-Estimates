@@ -343,7 +343,7 @@ export function LayoutTable({
               filterDefinitions={filterDefinitions}
             />
             <TableHeaderCell icon={Tag} label="Type" {...filterProps("type")} />
-            <TableHeaderCell icon={FileText} label="Medium" {...filterProps("medium")} />
+            <TableHeaderCell icon={FileText} label="Paper type" {...filterProps("medium")} />
             <TableHeaderCell icon={Flag} label="Status" {...filterProps("status")} />
             <TableHeaderCell
               icon={Calendar}

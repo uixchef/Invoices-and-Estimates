@@ -20,13 +20,13 @@ export function getMediumEditorHref(mediumId: string): string {
 
 export function getMediumEditorTitle(pathname: string): string {
   if (pathname === "/invoices/mediums/new") {
-    return "New medium"
+    return "New paper type"
   }
 
   const mediumId = getMediumIdFromEditorPath(pathname)
   if (mediumId) {
-    return getMediumById(mediumId)?.name ?? "Edit medium"
+    return getMediumById(mediumId)?.name ?? "Edit paper type"
   }
 
-  return "Medium"
+  return "Paper type"
 }

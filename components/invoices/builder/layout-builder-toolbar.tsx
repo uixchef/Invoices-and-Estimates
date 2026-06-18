@@ -50,7 +50,7 @@ function WithTooltip({
     <Tooltip>
       <TooltipTrigger asChild>
         {disabled ? (
-          <span className="inline-flex">{children}</span>
+          <span className="inline-flex cursor-not-allowed">{children}</span>
         ) : (
           children
         )}
@@ -176,6 +176,7 @@ function ToolbarTag({
           selected
             ? "bg-[#f2f4f7] text-[#475467]"
             : "border border-[#d0d5dd] bg-white text-[#475467] hover:bg-[#f9fafb]",
+          "disabled:pointer-events-none disabled:cursor-not-allowed",
           className
         )}
         {...props}
@@ -220,7 +221,7 @@ export function LayoutBuilderToolbar() {
   // its "select an element" empty state instead of the chat.
   const aiPanelActive = panelOpen && !addingElement
 
-  const mediumName = mediumId ? getMediumName(mediumId) : "Medium"
+  const mediumName = mediumId ? getMediumName(mediumId) : "Paper type"
 
   // Editing/utility tools only operate on a generated layout, so they stay
   // disabled until the first generation completes (status === "ready").
@@ -322,7 +323,8 @@ export function LayoutBuilderToolbar() {
         <ToolbarTag
           icon={<Ruler aria-hidden />}
           selected
-          tooltip="Page size"
+          disabled
+          tooltip="Paper size is defined at the time of layout creation and cannot be changed"
           className="cursor-not-allowed"
         >
           {mediumName}

@@ -240,7 +240,7 @@ export function MediumTable({
           {isEmpty ? (
             <div className="flex min-h-[360px] items-center justify-center px-4 py-16">
               <LayoutsEmptyState
-                entityLabel="mediums"
+                entityLabel="paper types"
                 showClear={hasActiveFilters}
                 onClearFilters={onClearFilters}
               />

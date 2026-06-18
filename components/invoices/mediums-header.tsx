@@ -21,7 +21,7 @@ export function MediumsHeader() {
           </Link>
           <div className="min-w-0">
             <h2 className="font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">
-              Mediums
+              Paper types
             </h2>
             <p className="font-[family-name:var(--font-inter)] text-sm font-normal leading-5 text-[#475467]">
               Define output channels, paper, safe area, and resolution, that
@@ -33,12 +33,12 @@ export function MediumsHeader() {
         <div
           className="flex shrink-0 flex-wrap items-center gap-2"
           role="group"
-          aria-label="Medium actions"
+          aria-label="Paper type actions"
         >
           <Button asChild variant="primary">
             <Link href="/invoices/mediums/new">
               <Plus className="size-5 shrink-0" strokeWidth={2} aria-hidden />
-              Create medium
+              Create paper type
             </Link>
           </Button>
         </div>

@@ -15,7 +15,7 @@ export function buildReasoning(prompt: string): string {
     "",
     "Key requirements:",
     "- Translate the request into a structured invoice layout",
-    "- Apply the selected medium's dimensions, spacing, and safe areas",
+    "- Apply the selected paper type's dimensions, spacing, and safe areas",
     "- Keep the sections clear: header, line items, totals, and notes",
     "",
     "I'll map this to the canvas using brand-safe defaults, then keep everything print-ready and editable.",
@@ -44,7 +44,7 @@ export function buildPostReasoning(
     "Confirmed preferences:",
     ...answerLines,
     "",
-    "Next I'll apply these to the canvas — structure sections, set typography and spacing for the medium, and keep totals and notes aligned with what they asked for.",
+    "Next I'll apply these to the canvas — structure sections, set typography and spacing for the paper type, and keep totals and notes aligned with what they asked for.",
   ].join("\n")
 }
 

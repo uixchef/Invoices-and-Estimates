@@ -31,9 +31,9 @@ export const FILTER_DEFINITIONS: Record<LayoutFilterType, FilterDefinition> = {
   },
   medium: {
     id: "medium",
-    tagLabel: "Medium",
-    menuLabel: "Medium",
-    emptyStatus: "No mediums selected yet",
+    tagLabel: "Paper type",
+    menuLabel: "Paper type",
+    emptyStatus: "No paper types selected yet",
     options: [],
   },
   status: {

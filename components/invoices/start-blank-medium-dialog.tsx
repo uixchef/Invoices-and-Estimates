@@ -62,7 +62,7 @@ export function StartBlankMediumDialog({
                 aria-hidden
               />
               <DialogTitle className="truncate text-base font-semibold leading-6 text-[#101828]">
-                Select medium
+                Select paper type
               </DialogTitle>
             </div>
             <DialogClose asChild>
@@ -81,7 +81,7 @@ export function StartBlankMediumDialog({
           <div
             className="flex flex-col gap-1"
             role="radiogroup"
-            aria-label="Paper medium"
+            aria-label="Paper type"
           >
             {MEDIUM_PRESETS.map((medium) => {
               const isActive = medium.id === selectedMediumId

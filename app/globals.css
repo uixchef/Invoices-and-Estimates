@@ -497,7 +497,7 @@ nextjs-portal:has([role="dialog"]) > * {
   width: 100%;
   white-space: nowrap;
   font-family: var(--font-inter), Inter, sans-serif;
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 400;
   line-height: 32px;
   color: #101828;
@@ -526,12 +526,14 @@ nextjs-portal:has([role="dialog"]) > * {
 }
 
 .hero-accent__slot-text {
-  font-family: var(--font-newsreader), "Newsreader", Georgia, serif;
-  font-size: 26px;
+  font-family: var(--font-instrument-serif), "Instrument Serif",
+    "Iowan Old Style", "Apple Garamond", Georgia, "Times New Roman", serif;
+  font-size: 32px;
   font-style: italic;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 32px;
   letter-spacing: -0.01em;
+  padding-right: 2px;
 }
 
 .hero-accent__live {
@@ -548,21 +550,15 @@ nextjs-portal:has([role="dialog"]) > * {
 }
 
 .hero-accent__text {
-  font-family: var(--font-newsreader), "Newsreader", Georgia, serif;
-  font-size: 26px;
+  font-family: var(--font-instrument-serif), "Instrument Serif",
+    "Iowan Old Style", "Apple Garamond", Georgia, "Times New Roman", serif;
+  font-size: 32px;
   font-style: italic;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 32px;
   letter-spacing: -0.01em;
-  background-image: linear-gradient(
-    100deg,
-    #6b81fa 0%,
-    #8b5cf6 42%,
-    #d946ef 100%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: #5b21b6;
+  padding-right: 2px;
 }
 
 .hero-accent__caret {
@@ -579,6 +575,206 @@ nextjs-portal:has([role="dialog"]) > * {
 
 @media (prefers-reduced-motion: reduce) {
   .hero-accent__caret {
+    animation: none;
+  }
+}
+
+/* Animated purple glow behind the Create with AI hero. Two blurred radial
+   layers drift and pulse in counter-motion behind the content (which sits at
+   z-[1]), giving the banner a cool, living backdrop. */
+/* Watery purple backdrop for the Create with AI hero. Two layers of soft,
+   heavily-blurred purple blobs flow along organic, looping paths so the
+   background ripples like liquid. Single purple hue only — no pink. Content
+   sits at z-[1] above these. */
+@keyframes hero-water-1 {
+  0% {
+    transform: translate(-8%, -5%) scale(1.08) rotate(0deg);
+    opacity: 0.85;
+  }
+  20% {
+    transform: translate(6%, 5%) scale(1.22) rotate(4deg);
+    opacity: 1;
+  }
+  40% {
+    transform: translate(11%, -7%) scale(1.12) rotate(7deg);
+    opacity: 0.8;
+  }
+  60% {
+    transform: translate(-5%, 9%) scale(1.2) rotate(2deg);
+    opacity: 1;
+  }
+  80% {
+    transform: translate(-10%, -3%) scale(1.04) rotate(-4deg);
+    opacity: 0.82;
+  }
+  100% {
+    transform: translate(-8%, -5%) scale(1.08) rotate(0deg);
+    opacity: 0.85;
+  }
+}
+
+@keyframes hero-water-2 {
+  0% {
+    transform: translate(9%, 6%) scale(1.16) rotate(0deg);
+    opacity: 0.8;
+  }
+  25% {
+    transform: translate(-10%, -5%) scale(0.96) rotate(-5deg);
+    opacity: 1;
+  }
+  45% {
+    transform: translate(6%, 10%) scale(1.26) rotate(3deg);
+    opacity: 0.78;
+  }
+  65% {
+    transform: translate(10%, -6%) scale(1.1) rotate(6deg);
+    opacity: 1;
+  }
+  85% {
+    transform: translate(-6%, 7%) scale(1.2) rotate(-2deg);
+    opacity: 0.84;
+  }
+  100% {
+    transform: translate(9%, 6%) scale(1.16) rotate(0deg);
+    opacity: 0.8;
+  }
+}
+
+/* Slow continuous swirl layered on top of the blob drift for a flowing,
+   liquid feel. */
+@keyframes hero-water-swirl {
+  from {
+    transform: rotate(0deg) scale(1.15);
+  }
+  to {
+    transform: rotate(360deg) scale(1.15);
+  }
+}
+
+.vibe-hero-banner {
+  isolation: isolate;
+}
+
+.vibe-hero-banner::before,
+.vibe-hero-banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+  filter: blur(72px);
+  mix-blend-mode: multiply;
+  will-change: transform, opacity;
+  /* Wide + short feather: colour spreads toward the left/right but fades hard to
+     white at the top and bottom, matching the airy Email AI hero wash. */
+  -webkit-mask-image: radial-gradient(120% 66% at 50% 50%, #000 20%, transparent 74%);
+  mask-image: radial-gradient(120% 66% at 50% 50%, #000 20%, transparent 74%);
+}
+
+/* Slow-swirling third layer of purple blobs for the flowing water feel. */
+.vibe-hero-water {
+  position: absolute;
+  inset: -15%;
+  z-index: 0;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+  filter: blur(72px);
+  mix-blend-mode: multiply;
+  will-change: transform;
+  /* Fade fully to transparent before the panel edge so the swirl melts into
+     the white rather than ending at a seam. */
+  -webkit-mask-image: radial-gradient(108% 60% at 50% 50%, #000 14%, transparent 70%);
+  mask-image: radial-gradient(108% 60% at 50% 50%, #000 14%, transparent 70%);
+  background:
+    radial-gradient(
+      30% 38% at 36% 46%,
+      rgba(139, 92, 246, 0.3),
+      transparent 72%
+    ),
+    radial-gradient(
+      26% 34% at 66% 42%,
+      rgba(167, 139, 250, 0.28),
+      transparent 72%
+    ),
+    radial-gradient(
+      30% 38% at 54% 64%,
+      rgba(167, 139, 250, 0.26),
+      transparent 72%
+    );
+  animation: hero-water-swirl 38s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vibe-hero-water {
+    animation: none;
+  }
+}
+
+/* Cursor-reactive bloom. Follows the pointer (via --hero-cursor-x/y) and swells
+   with movement energy (--hero-energy, driven + decayed in JS), so the watery
+   wash pulses toward wherever the user moves. */
+.vibe-hero-cursor {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(60px);
+  mix-blend-mode: multiply;
+  will-change: opacity;
+  opacity: calc(var(--hero-energy, 0) * 0.55);
+  background: radial-gradient(
+    30% 40% at var(--hero-cursor-x, 50%) var(--hero-cursor-y, 50%),
+    rgba(139, 92, 246, 0.6),
+    rgba(167, 139, 250, 0.28) 46%,
+    transparent 72%
+  );
+  -webkit-mask-image: radial-gradient(120% 66% at 50% 50%, #000 20%, transparent 74%);
+  mask-image: radial-gradient(120% 66% at 50% 50%, #000 20%, transparent 74%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vibe-hero-cursor {
+    display: none;
+  }
+}
+
+/* Left + right lavender masses that frame the headline, lighter through the
+   centre so the text stays legible. Soft violet only — matches the reference. */
+.vibe-hero-banner::before {
+  background:
+    radial-gradient(
+      44% 56% at 28% 50%,
+      rgba(139, 92, 246, 0.42),
+      transparent 74%
+    ),
+    radial-gradient(
+      42% 52% at 74% 52%,
+      rgba(167, 139, 250, 0.4),
+      transparent 74%
+    );
+  animation: hero-water-1 16s ease-in-out infinite;
+}
+
+/* Counter-flowing pair for the rippling, liquid motion. */
+.vibe-hero-banner::after {
+  background:
+    radial-gradient(
+      40% 52% at 64% 42%,
+      rgba(139, 92, 246, 0.34),
+      transparent 74%
+    ),
+    radial-gradient(
+      42% 54% at 36% 58%,
+      rgba(167, 139, 250, 0.36),
+      transparent 74%
+    );
+  animation: hero-water-2 21s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vibe-hero-banner::before,
+  .vibe-hero-banner::after {
     animation: none;
   }
 }

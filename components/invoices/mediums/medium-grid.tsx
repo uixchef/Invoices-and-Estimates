@@ -22,7 +22,7 @@ export function MediumGrid({
     return (
       <div className="flex min-h-0 flex-1 items-start justify-center rounded-lg bg-white px-4 pb-16 pt-[100px]">
         <LayoutsEmptyState
-          entityLabel="mediums"
+          entityLabel="paper types"
           showClear={hasActiveFilters}
           onClearFilters={onClearFilters}
         />

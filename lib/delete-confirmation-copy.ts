@@ -2,7 +2,7 @@ export type DeleteEntityKind = "layout" | "medium"
 
 const DELETE_ENTITY_LABEL: Record<DeleteEntityKind, string> = {
   layout: "layout",
-  medium: "medium",
+  medium: "paper type",
 }
 
 export function getDeleteConfirmationTitle(kind: DeleteEntityKind) {

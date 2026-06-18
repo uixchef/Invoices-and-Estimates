@@ -1,7 +1,7 @@
 function resolveMediumDisplayName(name: string): string | null {
   const trimmed = name.trim()
 
-  if (!trimmed || trimmed.toLowerCase() === "new medium") {
+  if (!trimmed || trimmed.toLowerCase() === "new paper type") {
     return null
   }
 
@@ -13,7 +13,7 @@ export function mediumSavedSuccessMessage(name: string): string {
 
   return displayName
     ? `${displayName} has been saved successfully.`
-    : "Medium has been saved successfully."
+    : "Paper type has been saved successfully."
 }
 
 export function mediumCreatedSuccessMessage(name: string): string {
@@ -21,5 +21,5 @@ export function mediumCreatedSuccessMessage(name: string): string {
 
   return displayName
     ? `${displayName} has been created successfully.`
-    : "Medium has been created successfully."
+    : "Paper type has been created successfully."
 }
