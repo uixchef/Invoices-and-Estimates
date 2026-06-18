@@ -1077,8 +1077,8 @@ function PageWatermarkField({
       ) : null}
 
       {type !== "none" ? (
-        <div className="flex items-start gap-3">
-          <div className="flex flex-1 flex-col gap-1">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
             <FieldLabel>Layout</FieldLabel>
             <div className="flex h-8 items-center gap-1 rounded-[4px] bg-[#f2f4f7] p-1">
               {(["tiled", "single"] as const).map((option) => {
@@ -1102,7 +1102,7 @@ function PageWatermarkField({
               })}
             </div>
           </div>
-          <label className="flex flex-1 flex-col gap-1">
+          <label className="flex w-16 shrink-0 flex-col gap-1">
             <FieldLabel>Opacity</FieldLabel>
             <PercentInput
               value={style.watermarkOpacity ?? 100}
