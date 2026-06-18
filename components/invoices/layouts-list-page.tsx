@@ -95,63 +95,66 @@ export function LayoutsListPage({ rows }: LayoutsListPageProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-6">
       <CreateWithAiPanel />
 
-      <LayoutToolbar
-        filterDefinitions={filterDefinitions}
-        view={view}
-        onViewChange={setView}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        onSortChange={setSort}
-        openFilterId={openFilterId}
-        openFilterAnchor={openFilterAnchor}
-        selections={selections}
-        filterDraftIds={filterDraftIds}
-        visibleFilterTags={visibleFilterTags}
-        onFilterDraftIdsChange={setFilterDraftIds}
-        onFilterApply={handleFilterApply}
-        onToolbarFilterOpenChange={handleToolbarFilterOpenChange}
-        onAddFilter={handleAddFilter}
-        onRemoveFilter={handleRemoveFilter}
-      />
+      {/* Toolbar + results are a tighter group (12px) sitting 24px below the hero. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <LayoutToolbar
+          filterDefinitions={filterDefinitions}
+          view={view}
+          onViewChange={setView}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          onSortChange={setSort}
+          openFilterId={openFilterId}
+          openFilterAnchor={openFilterAnchor}
+          selections={selections}
+          filterDraftIds={filterDraftIds}
+          visibleFilterTags={visibleFilterTags}
+          onFilterDraftIdsChange={setFilterDraftIds}
+          onFilterApply={handleFilterApply}
+          onToolbarFilterOpenChange={handleToolbarFilterOpenChange}
+          onAddFilter={handleAddFilter}
+          onRemoveFilter={handleRemoveFilter}
+        />
 
-      {view === "list" ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <LayoutTable
-            items={pageItems}
-            needsPagination={needsPagination}
-            filterDefinitions={filterDefinitions}
-            openFilterId={openFilterId}
-            openFilterAnchor={openFilterAnchor}
-            selections={selections}
-            filterDraftIds={filterDraftIds}
-            onFilterOpenChange={handleTableFilterOpenChange}
-            onFilterDraftIdsChange={setFilterDraftIds}
-            onFilterApply={handleFilterApply}
-            hasActiveFilters={hasActiveFilters}
-            onClearFilters={handleClearFilters}
-          />
-          {needsPagination ? (
-            <LayoutsPagination
-              total={filtered.length}
-              page={page}
-              pageSize={pageSize}
-              onPageChange={setPage}
-              onPageSizeChange={setPageSize}
+        {view === "list" ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <LayoutTable
+              items={pageItems}
+              needsPagination={needsPagination}
+              filterDefinitions={filterDefinitions}
+              openFilterId={openFilterId}
+              openFilterAnchor={openFilterAnchor}
+              selections={selections}
+              filterDraftIds={filterDraftIds}
+              onFilterOpenChange={handleTableFilterOpenChange}
+              onFilterDraftIdsChange={setFilterDraftIds}
+              onFilterApply={handleFilterApply}
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={handleClearFilters}
             />
-          ) : null}
-        </div>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <LayoutGrid
-            items={filtered}
-            hasActiveFilters={hasActiveFilters}
-            onClearFilters={handleClearFilters}
-          />
-        </div>
-      )}
+            {needsPagination ? (
+              <LayoutsPagination
+                total={filtered.length}
+                page={page}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+              />
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <LayoutGrid
+              items={filtered}
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={handleClearFilters}
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }

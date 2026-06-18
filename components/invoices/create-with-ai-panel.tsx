@@ -157,8 +157,8 @@ export function CreateWithAiPanel() {
             <ChevronUp className="size-5" aria-hidden />
           </button>
 
-          <div className="vibe-hero-inner relative z-[1] flex w-full max-w-[960px] flex-col items-center gap-6">
-            <div className="flex w-full flex-col items-center gap-3">
+          <div className="vibe-hero-inner relative z-[1] flex w-full max-w-[960px] flex-col items-start gap-6">
+            <div className="flex w-full flex-col items-start gap-3">
               <span className="hero-eyebrow relative inline-flex h-9 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-[#ddd6fe] bg-[linear-gradient(135deg,#f5f3ff_0%,#ebe9fe_100%)] px-3.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#5b21b6] shadow-[inset_0_1px_#ffffffb3,inset_0_-1px_#5b21b60f,0_1px_2px_#5b21b614]">
                 <AutoAwesomeIcon className="size-[18px] shrink-0 text-[#5b21b6]" />
                 Layout AI
@@ -180,7 +180,7 @@ export function CreateWithAiPanel() {
             />
 
             <div
-              className="flex w-full flex-wrap items-center justify-center gap-2"
+              className="flex w-full flex-wrap items-center justify-start gap-2"
               role="group"
               aria-label="Suggested prompts"
             >

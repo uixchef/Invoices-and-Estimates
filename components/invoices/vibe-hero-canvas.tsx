@@ -3,40 +3,157 @@
 import { useEffect, useRef } from "react"
 
 /**
- * Animated purple "vibe" wash for the Create with AI hero, rendered on a
- * <canvas> (replaces the earlier layered-CSS backdrop). Several translucent
- * sine-wave layers travel across each other to read as flowing water, and a
- * cursor-reactive bloom swells toward the pointer. An elliptical mask feathers
- * the wash so it melts into the panel edges and keeps the headline legible.
+ * Animated purple "vibe" wash for the Create with AI hero — a faithful WebGL
+ * port of the Email AI (`VibeBuilderHero`) shader: an fbm domain-warp noise
+ * field lit by a right-biased bloom and a left "subtitle" reading-glow, with
+ * a mouse-follow warp and soft edge feathering. Premultiplied-alpha output is
+ * blended over the panel so only the lit band reads.
  *
- * Honors prefers-reduced-motion (renders one static frame, no pointer energy)
- * and is devicePixelRatio-correct.
+ * Honors prefers-reduced-motion (single static frame, u_motion = 0) and is
+ * devicePixelRatio-correct (capped at 2x).
  */
 
-type Wave = {
-  /** Baseline (vertical rest position) and crest amplitude, as height fractions. */
-  base: number
-  amp: number
-  /** Wavelength as a fraction of width (smaller = more crests). */
-  len: number
-  /** Horizontal travel speed in rad/s; sign sets direction. */
-  speed: number
-  /** How far below the baseline the fill fades out (height fraction). */
-  fade: number
-  /** Starting phase offset and color "r,g,b" + peak alpha. */
-  phase: number
-  color: string
-  alpha: number
-}
+const VERTEX_SHADER = `
+  attribute vec2 a_position;
+  void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+  }
+`
 
-// Layered like rolling water: different baselines, wavelengths, and opposing
-// travel directions so the crests interfere and flow. Low alpha keeps it airy.
-const WAVES: Wave[] = [
-  { base: 0.34, amp: 0.05, len: 1.0, speed: -0.5, fade: 0.5, phase: 4.2, color: "167,139,250", alpha: 0.1 },
-  { base: 0.44, amp: 0.06, len: 0.85, speed: 0.5, fade: 0.42, phase: 0, color: "139,92,246", alpha: 0.16 },
-  { base: 0.54, amp: 0.075, len: 1.2, speed: -0.38, fade: 0.45, phase: 1.6, color: "167,139,250", alpha: 0.14 },
-  { base: 0.62, amp: 0.05, len: 0.6, speed: 0.66, fade: 0.4, phase: 3.1, color: "168,150,255", alpha: 0.1 },
-]
+const FRAGMENT_SHADER = `
+  precision highp float;
+  uniform vec2  u_resolution;
+  uniform vec2  u_mouse;       // 0..1, y = top-down
+  uniform float u_time;        // seconds since mount
+  uniform float u_motion;      // 1.0 animate, 0.0 static
+
+  float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i + vec2(0.0, 0.0));
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.55;
+    for (int i = 0; i < 3; i++) {
+      v += a * vnoise(p);
+      p = p * 2.02 + vec2(11.7, 3.1);
+      a *= 0.55;
+    }
+    return v;
+  }
+
+  void main() {
+    vec2 fragUV = gl_FragCoord.xy / u_resolution.xy;
+    float aspect = u_resolution.x / u_resolution.y;
+    vec2 p = (fragUV - 0.5) * vec2(aspect, 1.0);
+
+    float t = u_time * u_motion * 0.08;
+
+    // Mouse in centered/aspect-corrected space; pulled into the warp so the
+    // colored ribbons bend toward the cursor.
+    vec2 mp = (vec2(u_mouse.x, 1.0 - u_mouse.y) - 0.5) * vec2(aspect, 1.0);
+
+    // Two-pass domain warp.
+    vec2 q = vec2(
+      fbm(p + vec2(0.0, 0.0) + t),
+      fbm(p + vec2(5.2, 1.3) - t)
+    );
+    vec2 r = vec2(
+      fbm(p + 1.7 * q + vec2(1.7, 9.2) + 0.55 * mp + 1.4 * t),
+      fbm(p + 1.7 * q + vec2(8.3, 2.8) - 0.55 * mp + 1.4 * t)
+    );
+    float field = fbm(p + 2.5 * r);
+
+    // Big soft bloom anchored toward the right side of the hero so the colored
+    // wash deepens left -> right, stretched horizontally so the right edge
+    // stays saturated.
+    vec2 bloomCenter = vec2(0.72, 0.62);
+    vec2 bloomDelta = (fragUV - bloomCenter) * vec2(0.85, 1.40);
+    float bloomDist = length(bloomDelta);
+    float bloom = exp(-pow(bloomDist * 1.30, 2.0));
+
+    // Luminance envelope behind the subtitle (upper-left) so body text reads
+    // against a near-white backing.
+    vec2 subtitleCenter = vec2(0.22, 0.38);
+    float subtitleDist = distance(fragUV, subtitleCenter);
+    float subtitleGlow = exp(-pow(subtitleDist * 2.20, 2.0));
+
+    // Horizontal right-bias ramp: 0 far-left, 1 far-right.
+    float rightBias = smoothstep(0.20, 0.95, fragUV.x);
+
+    float n = bloom * (0.65 + 0.55 * field);
+
+    // High-frequency breakup mask for the white highlight.
+    float sparkle = fbm(p * 3.2 + vec2(7.1, 4.4) + 0.7 * t);
+
+    // Five-stop purple ramp + soft white highlight (all-brand, no warm/pink).
+    vec3 cMist  = vec3(0.769, 0.710, 0.992); // purple-300 #c4b5fd
+    vec3 cBrand = vec3(0.486, 0.227, 0.929); // purple-500 #7c3aed
+    vec3 cDeep  = vec3(0.357, 0.129, 0.714); // purple-700 #5b21b6
+    vec3 cInk   = vec3(0.180, 0.063, 0.396); // purple-900 #2e1065
+    vec3 cLit   = vec3(1.000, 0.984, 1.000); // near-white #fffbff
+
+    vec3 col = cMist;
+    col = mix(col, cBrand, smoothstep(0.20, 0.75, n));
+    col = mix(col, cDeep,  smoothstep(0.55, 1.00, n) * 0.40);
+    col = mix(col, cInk,   smoothstep(0.85, 1.15, n) * 0.25);
+
+    // White highlight driven by the subtitle glow, suppressed on the right.
+    float highlight = subtitleGlow * mix(0.55, 1.00, sparkle) * 0.55 * (1.0 - 0.85 * rightBias);
+    col = mix(col, cLit, highlight);
+
+    // Gentle deep-ink darkening into the right half, gated by the bloom.
+    col = mix(col, cInk, smoothstep(0.10, 0.90, bloom) * rightBias * 0.18);
+
+    float bloomAlpha     = smoothstep(0.05, 0.65, n) * mix(0.24, 0.34, rightBias);
+    float highlightAlpha = highlight * 1.6;
+    float alpha = max(bloomAlpha, highlightAlpha);
+
+    // Top/bottom feathering so the wash hugs a horizontal band in the middle.
+    float topFade = smoothstep(0.0, 0.32, fragUV.y);
+    float botFade = smoothstep(0.0, 0.30, 1.0 - fragUV.y);
+    alpha *= topFade * botFade;
+
+    // Side feathering.
+    float leftFade  = smoothstep(0.0, 0.10, fragUV.x);
+    float rightFade = smoothstep(0.0, 0.03, 1.0 - fragUV.x);
+    alpha *= mix(0.85, 1.0, leftFade) * mix(0.92, 1.0, rightFade);
+
+    // Premultiplied alpha (context is premultipliedAlpha:true, blend ONE / ONE_MINUS_SRC_ALPHA).
+    gl_FragColor = vec4(col * alpha, alpha);
+  }
+`
+
+function compileShader(
+  gl: WebGLRenderingContext,
+  type: number,
+  source: string
+): WebGLShader | null {
+  const shader = gl.createShader(type)
+  if (!shader) {
+    return null
+  }
+  gl.shaderSource(shader, source)
+  gl.compileShader(shader)
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    gl.deleteShader(shader)
+    return null
+  }
+  return shader
+}
 
 export function VibeHeroCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -47,8 +164,7 @@ export function VibeHeroCanvas() {
       return
     }
     const parent = canvas.parentElement
-    const ctx = canvas.getContext("2d")
-    if (!parent || !ctx) {
+    if (!parent) {
       return
     }
 
@@ -56,138 +172,112 @@ export function VibeHeroCanvas() {
       "(prefers-reduced-motion: reduce)"
     ).matches
 
-    let width = 0
-    let height = 0
-    let dpr = 1
+    const gl = (canvas.getContext("webgl", {
+      alpha: true,
+      premultipliedAlpha: true,
+      antialias: false,
+    }) ||
+      canvas.getContext("experimental-webgl", {
+        alpha: true,
+      })) as WebGLRenderingContext | null
+    if (!gl) {
+      return
+    }
 
-    // Cursor-reactive state: target follows the pointer, energy decays after
-    // movement stops so the bloom settles.
-    let cursorX = 0.5
-    let cursorY = 0.4
-    let energy = 0
+    const vertexShader = compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER)
+    const fragmentShader = compileShader(
+      gl,
+      gl.FRAGMENT_SHADER,
+      FRAGMENT_SHADER
+    )
+    if (!vertexShader || !fragmentShader) {
+      return
+    }
+
+    const program = gl.createProgram()
+    if (!program) {
+      return
+    }
+    gl.attachShader(program, vertexShader)
+    gl.attachShader(program, fragmentShader)
+    gl.linkProgram(program)
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      return
+    }
+
+    gl.useProgram(program)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+    gl.clearColor(0, 0, 0, 0)
+
+    const buffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW
+    )
+    const aPosition = gl.getAttribLocation(program, "a_position")
+    gl.enableVertexAttribArray(aPosition)
+    gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0)
+
+    const uResolution = gl.getUniformLocation(program, "u_resolution")
+    const uMouse = gl.getUniformLocation(program, "u_mouse")
+    const uTime = gl.getUniformLocation(program, "u_time")
+    const uMotion = gl.getUniformLocation(program, "u_motion")
+
+    // Smoothed pointer: target (tx/ty) is set on move; current (x/y) eases in.
+    const mouse = { x: 0.5, y: 0.5, tx: 0.5, ty: 0.5 }
 
     const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
       const rect = parent.getBoundingClientRect()
-      width = rect.width
-      height = rect.height
-      dpr = Math.min(window.devicePixelRatio || 1, 2)
-      canvas.width = Math.max(1, Math.round(width * dpr))
-      canvas.height = Math.max(1, Math.round(height * dpr))
+      const w = Math.max(1, Math.floor(rect.width * dpr))
+      const h = Math.max(1, Math.floor(rect.height * dpr))
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w
+        canvas.height = h
+        gl.viewport(0, 0, w, h)
+      }
     }
 
-    const drawBlob = (
-      x: number,
-      y: number,
-      radius: number,
-      color: string,
-      alpha: number
-    ) => {
-      if (alpha <= 0.001 || radius <= 0) {
-        return
-      }
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius)
-      gradient.addColorStop(0, `rgba(${color},${alpha})`)
-      gradient.addColorStop(0.55, `rgba(${color},${alpha * 0.45})`)
-      gradient.addColorStop(1, `rgba(${color},0)`)
-      ctx.fillStyle = gradient
-      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2)
-    }
+    let rafId = 0
+    let startTime = 0
 
-    // Fills the area under a traveling sine curve with a downward-fading
-    // gradient, so the moving crest reads as a flowing water surface.
-    const drawWave = (w: Wave, t: number) => {
-      const baseY = w.base * height
-      const ampPx = w.amp * height * (1 + 0.18 * Math.sin(t * 0.3 + w.phase))
-      const step = Math.max(6, width / 96)
-      ctx.beginPath()
-      ctx.moveTo(0, height)
-      ctx.lineTo(0, baseY)
-      for (let x = 0; x <= width; x += step) {
-        const y =
-          baseY +
-          Math.sin((x / width / w.len) * Math.PI * 2 + t * w.speed + w.phase) *
-            ampPx
-        ctx.lineTo(x, y)
-      }
-      ctx.lineTo(width, height)
-      ctx.closePath()
-      const gradient = ctx.createLinearGradient(
-        0,
-        baseY - ampPx,
-        0,
-        baseY + w.fade * height
-      )
-      gradient.addColorStop(0, `rgba(${w.color},${w.alpha})`)
-      gradient.addColorStop(1, `rgba(${w.color},0)`)
-      ctx.fillStyle = gradient
-      ctx.fill()
-    }
-
-    const render = (t: number) => {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.clearRect(0, 0, width, height)
-      ctx.globalCompositeOperation = "source-over"
-
-      const base = Math.max(width, height)
-
-      // Crest edges are softened by a CSS blur on the <canvas> element (see
-      // className) rather than ctx.filter, which isn't reliably honored across
-      // browsers/GPU paths and was leaving hard wave outlines on production.
-      for (const w of WAVES) {
-        drawWave(w, t)
-      }
-
-      // A deeper-purple mass that floats slowly from one end of the hero to the
-      // other (with a gentle vertical bob), giving the wash a dynamic focal flow.
-      const travelX = 0.5 + 0.42 * Math.sin(t * 0.18)
-      const travelY = 0.48 + 0.07 * Math.sin(t * 0.27 + 1.0)
-      drawBlob(travelX * width, travelY * height, 0.46 * base, "124,58,237", 0.3)
-
-      if (energy > 0.001) {
-        drawBlob(
-          cursorX * width,
-          cursorY * height,
-          0.32 * base,
-          "139,92,246",
-          0.35 * energy
-        )
-      }
-
-      // Feather to the panel edges with an elliptical mask (wide + short),
-      // mirroring the original CSS radial mask.
-      ctx.globalCompositeOperation = "destination-in"
-      ctx.save()
-      ctx.translate(width / 2, height / 2)
-      ctx.scale(width * 0.62, height * 0.6)
-      const mask = ctx.createRadialGradient(0, 0, 0, 0, 0, 1)
-      mask.addColorStop(0, "rgba(0,0,0,1)")
-      mask.addColorStop(0.6, "rgba(0,0,0,1)")
-      mask.addColorStop(1, "rgba(0,0,0,0)")
-      ctx.fillStyle = mask
-      ctx.fillRect(-2, -2, 4, 4)
-      ctx.restore()
-    }
-
-    let rafId: number | null = null
-    let startTime: number | null = null
-
-    const frame = (now: number) => {
-      if (startTime === null) {
+    const render = (now: number) => {
+      if (!startTime) {
         startTime = now
       }
       const t = (now - startTime) / 1000
-      energy = Math.max(0, energy - 0.012)
-      render(t)
-      rafId = window.requestAnimationFrame(frame)
+
+      mouse.x += (mouse.tx - mouse.x) * 0.12
+      mouse.y += (mouse.ty - mouse.y) * 0.12
+
+      if (uResolution) {
+        gl.uniform2f(uResolution, gl.drawingBufferWidth, gl.drawingBufferHeight)
+      }
+      if (uMouse) {
+        gl.uniform2f(uMouse, mouse.x, mouse.y)
+      }
+      if (uTime) {
+        gl.uniform1f(uTime, t)
+      }
+      if (uMotion) {
+        gl.uniform1f(uMotion, reduceMotion ? 0 : 1)
+      }
+
+      gl.clear(gl.COLOR_BUFFER_BIT)
+      gl.drawArrays(gl.TRIANGLES, 0, 6)
+
+      if (!reduceMotion) {
+        rafId = window.requestAnimationFrame(render)
+      }
     }
 
     const handlePointerMove = (event: PointerEvent) => {
       const rect = parent.getBoundingClientRect()
-      cursorX = (event.clientX - rect.left) / rect.width
-      cursorY = (event.clientY - rect.top) / rect.height
-      if (!reduceMotion) {
-        energy = Math.min(1, energy + 0.32)
-      }
+      mouse.tx = (event.clientX - rect.left) / rect.width
+      mouse.ty = (event.clientY - rect.top) / rect.height
     }
 
     resize()
@@ -200,19 +290,23 @@ export function VibeHeroCanvas() {
     })
     resizeObserver.observe(parent)
 
-    if (reduceMotion) {
-      render(0)
-    } else {
-      parent.addEventListener("pointermove", handlePointerMove)
-      rafId = window.requestAnimationFrame(frame)
+    if (!reduceMotion) {
+      parent.addEventListener("pointermove", handlePointerMove, {
+        passive: true,
+      })
     }
+    rafId = window.requestAnimationFrame(render)
 
     return () => {
-      if (rafId !== null) {
+      if (rafId) {
         window.cancelAnimationFrame(rafId)
       }
       resizeObserver.disconnect()
       parent.removeEventListener("pointermove", handlePointerMove)
+      // Intentionally NOT calling WEBGL_lose_context here: a canvas exposes a
+      // single GL context, and under React StrictMode (dev) the effect runs
+      // setup → cleanup → setup. Losing the context in cleanup would leave the
+      // re-run setup reusing a dead context, rendering nothing.
     }
   }, [])
 
@@ -220,10 +314,6 @@ export function VibeHeroCanvas() {
     <canvas
       ref={canvasRef}
       aria-hidden
-      // CSS blur (reliable everywhere) softens the wave crests into a blended
-      // wash; the parent's overflow-hidden clips the blur halo at the edges.
-      // Inline style avoids any Tailwind filter-utility composition surprises.
-      style={{ filter: "blur(40px)" }}
       className="pointer-events-none absolute inset-0 z-0 h-full w-full"
     />
   )
