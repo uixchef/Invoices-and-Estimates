@@ -1899,8 +1899,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         // Entering edit mode supersedes the Add elements palette, so close it
         // and fall through to the edit empty state.
         setAddingElement(false)
+        // Fresh edit session — no stale inspector or selection chips.
+        setInspectingLayer(null)
+        setInspectingLayerKind(null)
+        setSelections([])
       } else {
         setInspectingLayer(null)
+        setInspectingLayerKind(null)
+        setSelections([])
       }
       return next
     })

@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/tooltip"
 import { AiQuestions } from "@/components/ai/ai-questions"
 import { VisualEditsPanel } from "@/components/invoices/builder/visual-edits-panel"
+import { EditsEmptyState } from "@/components/invoices/builder/edits-empty-state"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { isPageLayer } from "@/lib/layout-builder-types"
 import { cn } from "@/lib/utils"
@@ -91,6 +92,9 @@ const TABS: { id: "content" | "style" | "advanced"; label: string }[] = [
  */
 export function EditsOverlay() {
   const {
+    editMode,
+    toggleEditMode,
+    addingElement,
     inspectingLayer,
     inspectLayer,
     clearSelections,
@@ -209,12 +213,24 @@ export function EditsOverlay() {
     }
   }, [inspectingLayer, setEditsDocked])
 
-  // Anchor beside the freshly selected element (floating only). Resets on every
-  // new selection so the overlay re-docks to the element the user just picked;
-  // once placed, dragging takes over and the anchor no longer fights the user.
+  // Anchor beside the freshly selected element (floating only), or park the
+  // empty-state overlay top-right when edit mode is on but nothing is picked yet.
   useLayoutEffect(() => {
-    if (!inspectingLayer || editsDocked) {
+    if (editsDocked) {
       setPos(null)
+      return
+    }
+    if (!editMode || addingElement) {
+      setPos(null)
+      return
+    }
+    if (!inspectingLayer) {
+      setPos(
+        clampToViewport({
+          left: window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN,
+          top: 96,
+        })
+      )
       return
     }
     setPromptValue("")
@@ -260,17 +276,17 @@ export function EditsOverlay() {
     return () => cancelAnimationFrame(frame)
     // Re-anchor only when the selected layer changes or docking toggles off.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inspectingLayer, editsDocked])
+  }, [inspectingLayer, editsDocked, editMode, addingElement])
 
   // Keep the floating overlay inside the viewport on resize.
   useEffect(() => {
-    if (!inspectingLayer || editsDocked) {
+    if ((!editMode && !inspectingLayer) || editsDocked || addingElement) {
       return
     }
     const onResize = () => setPos((prev) => (prev ? clampToViewport(prev) : prev))
     window.addEventListener("resize", onResize)
     return () => window.removeEventListener("resize", onResize)
-  }, [inspectingLayer, editsDocked, clampToViewport])
+  }, [inspectingLayer, editsDocked, editMode, addingElement, clampToViewport])
 
   // Closest ancestor layer of the inspected element (for "Select parent").
   // Resolved from the DOM only while the menu is open; null disables the action.
@@ -332,9 +348,75 @@ export function EditsOverlay() {
     window.addEventListener("pointerup", onUp)
   }
 
+  const exitEdits = () => {
+    toggleEditMode()
+  }
+
   const close = () => {
     inspectLayer(null)
     clearSelections()
+  }
+
+  const showOverlay = editMode && !addingElement
+
+  if (!showOverlay) {
+    return null
+  }
+
+  if (!inspectingLayer) {
+    if (!pos || typeof document === "undefined") {
+      return null
+    }
+
+    return createPortal(
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-label="Edits"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={onHeaderPointerDown}
+        style={{
+          position: "fixed",
+          left: pos.left,
+          top: pos.top,
+          width: PANEL_WIDTH,
+          maxHeight: "min(420px, calc(100vh - 32px))",
+        }}
+        className={cn(
+          "z-[70] flex flex-col overflow-hidden rounded-[12px] border border-[#eaecf0] bg-white",
+          "font-[family-name:var(--font-inter)]",
+          "shadow-[0px_20px_24px_-4px_rgba(16,24,40,0.08),0px_8px_8px_-4px_rgba(16,24,40,0.03)]",
+          "animate-in fade-in-0 zoom-in-95 duration-200 ease-out motion-reduce:animate-none"
+        )}
+      >
+        <div className="flex flex-col gap-2 px-4 pt-3 pb-3">
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-sm font-semibold leading-5 text-[#101828]">
+              Edits
+            </p>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Close edits"
+                  onClick={exitEdits}
+                  className="inline-flex size-[18px] items-center justify-center rounded text-[#667085] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+                >
+                  <X className="size-[18px]" aria-hidden />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="z-[90]">
+                Close edits
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[#f9fafb] px-4 py-12">
+          <EditsEmptyState />
+        </div>
+      </div>,
+      document.body
+    )
   }
 
   const resizePrompt = () => {
@@ -354,10 +436,6 @@ export function EditsOverlay() {
     sendScopedEdit(inspectingLayer, promptValue.trim())
     setPromptValue("")
     requestAnimationFrame(resizePrompt)
-  }
-
-  if (!inspectingLayer) {
-    return null
   }
 
   // Scoped clarifying questions — swap the whole property panel for just the
@@ -518,7 +596,7 @@ export function EditsOverlay() {
         // Docked "full view" gets a roomier header (16px top padding, 12px gap)
         // to match the left AI panel; the compact floating overlay keeps its
         // tighter 12px / 8px rhythm with a 12px bottom padding before the body.
-        editsDocked ? "gap-3 pt-4" : "gap-2 pt-3 pb-3"
+        editsDocked ? "gap-3 pt-4 pb-4" : "gap-2 pt-3 pb-3"
       )}
     >
       <div
@@ -737,11 +815,9 @@ export function EditsOverlay() {
       {header}
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto px-4 pt-4",
-          // The floating overlay uses a subtle off-white body to separate it
-          // from the header/footer; the docked view stays white like the left
-          // AI panel it mirrors.
-          editsDocked ? "bg-white" : "bg-[#f9fafb]"
+          "min-h-0 flex-1 overflow-y-auto px-4",
+          // Docked header carries the top spacing; floating keeps pt-4 on the body.
+          editsDocked ? "bg-white" : "bg-[#f9fafb] pt-4"
         )}
       >
         <VisualEditsPanel />

@@ -225,8 +225,7 @@ export function LayoutBuilderToolbar() {
   // inspecting no longer deselects this button. It's only inactive when the
   // panel is closed, the Add elements palette is open, or edit mode is showing
   // its "select an element" empty state instead of the chat.
-  const editsEmpty = editMode && !inspectingLayer && !addingElement
-  const aiPanelActive = panelOpen && !addingElement && !editsEmpty
+  const aiPanelActive = panelOpen && !addingElement
 
   const mediumName = mediumId ? getMediumName(mediumId) : "Medium"
 

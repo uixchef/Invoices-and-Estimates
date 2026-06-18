@@ -762,14 +762,13 @@ export function InvoiceAiPanel({
     addingElement,
     closeAddElements,
     editMode,
-    toggleEditMode,
     isBlankSession,
   } = useLayoutBuilder()
   const scrollRef = useRef<HTMLDivElement>(null)
   const inspecting = inspectingLayer !== null
   const adding = addingElement
-  // Edit mode is on but nothing is selected yet — show the educational empty
-  // state prompting the user to pick an element on the canvas (Figma 3249:58583).
+  // Edit empty state lives in the floating overlay — the left panel keeps the
+  // Invoice AI thread visible while the user picks an element on the canvas.
   const editsEmpty = editMode && !inspecting && !adding
   // "Start from blank" welcome state (Figma 3268:37411) — greeting + suggestions
   // + prompt input. Yields to the palette/inspector if the user opens those.
@@ -815,7 +814,7 @@ export function InvoiceAiPanel({
   // the latest turn, not scrolled to the top replaying the whole history. Pin
   // the last turn to the top of the viewport — the same resting place as a new
   // prompt — once per entry. The flag resets whenever the chat is hidden.
-  const showChat = !adding && !inspecting && !blankWelcome && !editsEmpty
+  const showChat = !adding && !inspecting && !blankWelcome
   const didEntryScrollRef = useRef(false)
   useLayoutEffect(() => {
     if (!showChat) {
@@ -848,28 +847,16 @@ export function InvoiceAiPanel({
         )}
       >
         <div className="flex items-center gap-2">
-          {!adding && !editsEmpty ? (
+          {!adding ? (
             <AutoAwesomeIcon className="size-4 shrink-0 text-[#6938ef]" />
           ) : null}
           <p className="min-w-0 flex-1 font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">
-            {adding ? "Add elements" : editsEmpty ? "Edits" : "Invoice AI"}
+            {adding ? "Add elements" : "Invoice AI"}
           </p>
           <button
             type="button"
-            aria-label={
-              adding
-                ? "Close add elements"
-                : editsEmpty
-                  ? "Close edits"
-                  : "Close Invoice AI"
-            }
-            onClick={
-              adding
-                ? closeAddElements
-                : editsEmpty
-                  ? toggleEditMode
-                  : onClose
-            }
+            aria-label={adding ? "Close add elements" : "Close Invoice AI"}
+            onClick={adding ? closeAddElements : onClose}
             className="inline-flex size-5 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
           >
             <X className="size-5" aria-hidden />
@@ -881,8 +868,6 @@ export function InvoiceAiPanel({
         <AddElementsPanel />
       ) : blankWelcome ? (
         <AiWelcomeState />
-      ) : editsEmpty ? (
-        <EditsEmptyState />
       ) : (
       <div
         ref={scrollRef}
@@ -1019,27 +1004,3 @@ function PreviewVersionBanner({ onExit }: { onExit: () => void }) {
     </div>
   )
 }
-
-/**
- * Edits empty state (Figma 3249:58583). Shown when visual-edit mode is active
- * but no element is selected yet — an educational nudge telling the user to pick
- * an element on the canvas.
- */
-function EditsEmptyState() {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-12">
-      <div className="flex w-full flex-col items-center gap-4 text-center">
-        <MousePointerClick className="size-8 text-[#344054]" aria-hidden />
-        <div className="flex flex-col gap-1">
-          <p className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#101828]">
-            Select elements to edit and style visually
-          </p>
-          <p className="font-[family-name:var(--font-inter)] text-xs font-normal leading-[17px] text-[#475467]">
-            Hold cmd to select multiple elements
-          </p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
