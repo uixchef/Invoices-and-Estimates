@@ -1,11 +1,18 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
-import { ChevronUp } from "lucide-react"
+import {
+  CalendarDays,
+  ChevronUp,
+  ListPlus,
+  Receipt,
+  RefreshCw,
+} from "lucide-react"
 
 import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
 import { CreateWithAiPromptInput } from "@/components/invoices/create-with-ai-prompt-input"
 import { HeroAccent } from "@/components/invoices/hero-accent"
+import { VibeHeroCanvas } from "@/components/invoices/vibe-hero-canvas"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import { cn } from "@/lib/utils"
 
@@ -16,6 +23,65 @@ const HERO_ACCENT_PHRASES = [
   "client-ready",
 ] as const
 
+// Suggested prompts shown as color-coded template badges under the input
+// (pattern ported from the Email AI eyebrow, relabeled for invoices). Each
+// seeds a starter prompt on click.
+const HERO_TEMPLATE_BADGES = [
+  {
+    label: "SaaS subscription",
+    tone: "blue",
+    icon: RefreshCw,
+    prompt:
+      "Create a SaaS subscription invoice with recurring billing, plan tier, seat count, proration, taxes, and payment terms",
+  },
+  {
+    label: "Simple store receipt",
+    tone: "rose",
+    icon: Receipt,
+    prompt:
+      "Design a simple store receipt with itemized products, quantities, unit prices, tax, and total due",
+  },
+  {
+    label: "Monthly statement",
+    tone: "amber",
+    icon: CalendarDays,
+    prompt:
+      "Build a monthly statement with opening balance, dated transactions, payments received, and closing balance",
+  },
+  {
+    label: "Add service items",
+    tone: "emerald",
+    icon: ListPlus,
+    prompt:
+      "Create an invoice with itemized service line items, hourly rates, hours worked, subtotals, and grand total",
+  },
+] as const
+
+// Badges rest neutral (white pill, gray border, dark label) with only the icon
+// carrying the category color. The tint + colored border appear on hover/focus.
+const BADGE_TONES: Record<string, { icon: string; accent: string }> = {
+  blue: {
+    icon: "text-[#2e90fa]",
+    accent:
+      "hover:border-[#b2ddff] hover:bg-[#eff8ff] focus-visible:border-[#b2ddff] focus-visible:bg-[#eff8ff]",
+  },
+  rose: {
+    icon: "text-[#f63d68]",
+    accent:
+      "hover:border-[#fecdd6] hover:bg-[#fff1f3] focus-visible:border-[#fecdd6] focus-visible:bg-[#fff1f3]",
+  },
+  amber: {
+    icon: "text-[#f79009]",
+    accent:
+      "hover:border-[#fedf89] hover:bg-[#fffaeb] focus-visible:border-[#fedf89] focus-visible:bg-[#fffaeb]",
+  },
+  emerald: {
+    icon: "text-[#12b76a]",
+    accent:
+      "hover:border-[#a6f4c5] hover:bg-[#ecfdf3] focus-visible:border-[#a6f4c5] focus-visible:bg-[#ecfdf3]",
+  },
+}
+
 /**
  * Figma: Create with AI panel (3150:138530) — vibe-hero pattern from Email AI.
  */
@@ -25,13 +91,6 @@ export function CreateWithAiPanel() {
   // The hero is open on first paint, so skip the initial mount to avoid stealing
   // focus / scrolling on load — only focus when the user reopens it.
   const didMountRef = useRef(false)
-
-  // Cursor-reactive wash: the section carries CSS vars for the pointer position
-  // and a decaying "energy" value so the purple bloom pulses toward the cursor.
-  const sectionRef = useRef<HTMLElement>(null)
-  const energyRef = useRef(0)
-  const decayRafRef = useRef<number | null>(null)
-  const reducedMotionRef = useRef(false)
 
   useEffect(() => {
     if (!didMountRef.current) {
@@ -49,66 +108,21 @@ export function CreateWithAiPanel() {
     return () => window.cancelAnimationFrame(frame)
   }, [isOpen])
 
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)")
-    reducedMotionRef.current = query.matches
-    const onChange = () => {
-      reducedMotionRef.current = query.matches
-    }
-    query.addEventListener("change", onChange)
-    return () => query.removeEventListener("change", onChange)
-  }, [])
-
-  useEffect(
-    () => () => {
-      if (decayRafRef.current !== null) {
-        window.cancelAnimationFrame(decayRafRef.current)
-      }
+  const applySuggestion = useCallback(
+    (value: string) => {
+      setPrompt(value)
+      // Defer focus until the textarea has the new value so the caret lands at
+      // the end and the hero scrolls the input into view.
+      window.requestAnimationFrame(() => {
+        const textarea = promptRef.current
+        if (!textarea) {
+          return
+        }
+        textarea.focus()
+        textarea.setSelectionRange(value.length, value.length)
+      })
     },
-    []
-  )
-
-  // Bleeds the movement energy back to zero so the bloom settles after the
-  // cursor stops; continued movement keeps topping it up in handlePointerMove.
-  const startDecay = useCallback(() => {
-    if (decayRafRef.current !== null) {
-      return
-    }
-    const tick = () => {
-      energyRef.current = Math.max(0, energyRef.current - 0.018)
-      sectionRef.current?.style.setProperty(
-        "--hero-energy",
-        energyRef.current.toFixed(3)
-      )
-      if (energyRef.current > 0.001) {
-        decayRafRef.current = window.requestAnimationFrame(tick)
-      } else {
-        decayRafRef.current = null
-      }
-    }
-    decayRafRef.current = window.requestAnimationFrame(tick)
-  }, [])
-
-  const handlePointerMove = useCallback(
-    (event: React.PointerEvent<HTMLElement>) => {
-      const el = sectionRef.current
-      if (!el) {
-        return
-      }
-      const rect = el.getBoundingClientRect()
-      const x = ((event.clientX - rect.left) / rect.width) * 100
-      const y = ((event.clientY - rect.top) / rect.height) * 100
-      el.style.setProperty("--hero-cursor-x", `${x.toFixed(2)}%`)
-      el.style.setProperty("--hero-cursor-y", `${y.toFixed(2)}%`)
-
-      if (reducedMotionRef.current) {
-        return
-      }
-      energyRef.current = Math.min(1, energyRef.current + 0.32)
-      el.style.setProperty("--hero-energy", energyRef.current.toFixed(3))
-      startDecay()
-    },
-    [startDecay]
+    [setPrompt]
   )
 
   return (
@@ -123,20 +137,16 @@ export function CreateWithAiPanel() {
     >
       <div className="min-h-0 overflow-hidden">
         <section
-          ref={sectionRef}
           aria-label="Create with AI"
-          onPointerMove={handlePointerMove}
           className={cn(
-            "vibe-hero-banner relative flex flex-col items-center gap-4 overflow-hidden rounded-lg px-6 py-8 md:px-32",
+            "vibe-hero-banner relative flex flex-col items-center gap-4 overflow-hidden rounded-lg px-6 pb-10 pt-10 md:px-32",
             "transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none",
             isOpen
               ? "translate-y-0 opacity-100"
               : "-translate-y-2 opacity-0"
           )}
         >
-          <span className="vibe-hero-water" aria-hidden />
-          <span className="vibe-hero-ripple" aria-hidden />
-          <span className="vibe-hero-cursor" aria-hidden />
+          <VibeHeroCanvas />
 
           <button
             type="button"
@@ -147,24 +157,55 @@ export function CreateWithAiPanel() {
             <ChevronUp className="size-5" aria-hidden />
           </button>
 
-          <div className="vibe-hero-inner relative z-[1] flex w-full max-w-[960px] flex-col items-center gap-4">
-            <span className="hero-eyebrow inline-flex h-9 items-center justify-center gap-0.5 rounded-full border-[0.5px] border-[#bdb4fe] bg-white pl-3 pr-3 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#5b21b6]">
-              <AutoAwesomeIcon className="size-[18px] shrink-0 text-[#5b21b6]" />
-              Layout AI
-            </span>
-
-            <h1 className="hero-title">
-              <span className="hero-title-lead">
-                Let&apos;s create a layout that feels{" "}
+          <div className="vibe-hero-inner relative z-[1] flex w-full max-w-[960px] flex-col items-center gap-6">
+            <div className="flex w-full flex-col items-center gap-3">
+              <span className="hero-eyebrow relative inline-flex h-9 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-[#ddd6fe] bg-[linear-gradient(135deg,#f5f3ff_0%,#ebe9fe_100%)] px-3.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#5b21b6] shadow-[inset_0_1px_#ffffffb3,inset_0_-1px_#5b21b60f,0_1px_2px_#5b21b614]">
+                <AutoAwesomeIcon className="size-[18px] shrink-0 text-[#5b21b6]" />
+                Layout AI
+                <span className="hero-eyebrow__shine" aria-hidden />
               </span>
-              <HeroAccent phrases={HERO_ACCENT_PHRASES} />
-            </h1>
+
+              <h1 className="hero-title">
+                <span className="hero-title-lead">
+                  Let&apos;s create a layout that feels{" "}
+                </span>
+                <HeroAccent phrases={HERO_ACCENT_PHRASES} />
+              </h1>
+            </div>
 
             <CreateWithAiPromptInput
               promptRef={promptRef}
               value={prompt}
               onChange={setPrompt}
             />
+
+            <div
+              className="flex w-full flex-wrap items-center justify-center gap-2"
+              role="group"
+              aria-label="Suggested prompts"
+            >
+              {HERO_TEMPLATE_BADGES.map(({ label, tone, icon: Icon, prompt: seed }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => applySuggestion(seed)}
+                  className={cn(
+                    "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-[#eaecf0] bg-white px-3",
+                    "font-[family-name:var(--font-inter)] text-[13px] font-semibold leading-5 text-[#344054]",
+                    "outline-none transition-[background-color,border-color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
+                    "hover:-translate-y-0.5 hover:shadow-[0_4px_8px_-2px_rgba(16,24,40,0.12)] active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none",
+                    BADGE_TONES[tone].accent
+                  )}
+                >
+                  <Icon
+                    className={cn("size-4 shrink-0", BADGE_TONES[tone].icon)}
+                    strokeWidth={2}
+                    aria-hidden
+                  />
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </section>
       </div>
