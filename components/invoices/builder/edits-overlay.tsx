@@ -220,11 +220,16 @@ export function EditsOverlay() {
       setPos(null)
       return
     }
-    if (!editMode || addingElement) {
+    if (!editMode) {
       setPos(null)
       return
     }
     if (!inspectingLayer) {
+      // Empty state only — it yields to the Add elements palette.
+      if (addingElement) {
+        setPos(null)
+        return
+      }
       setPos(
         clampToViewport({
           left: window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN,
@@ -280,7 +285,11 @@ export function EditsOverlay() {
 
   // Keep the floating overlay inside the viewport on resize.
   useEffect(() => {
-    if ((!editMode && !inspectingLayer) || editsDocked || addingElement) {
+    if (editsDocked || !editMode) {
+      return
+    }
+    // Empty state yields to the Add elements palette; the inspector persists.
+    if (!inspectingLayer && addingElement) {
       return
     }
     const onResize = () => setPos((prev) => (prev ? clampToViewport(prev) : prev))
@@ -357,7 +366,11 @@ export function EditsOverlay() {
     clearSelections()
   }
 
-  const showOverlay = editMode && !addingElement
+  // The inspector overlay is an independent surface: once a layer is selected it
+  // stays open while the user toggles the left panel between Add elements and
+  // Invoice AI. Only the "select an element" empty state hides while the
+  // Add elements palette is open (it would otherwise compete with the palette).
+  const showOverlay = editMode && (Boolean(inspectingLayer) || !addingElement)
 
   if (!showOverlay) {
     return null
@@ -374,7 +387,6 @@ export function EditsOverlay() {
         role="dialog"
         aria-label="Edits"
         onClick={(event) => event.stopPropagation()}
-        onPointerDown={onHeaderPointerDown}
         style={{
           position: "fixed",
           left: pos.left,
@@ -390,7 +402,10 @@ export function EditsOverlay() {
         )}
       >
         <div className="flex flex-col gap-2 px-4 pt-3 pb-3">
-          <div className="flex items-center gap-2">
+          <div
+            onPointerDown={onHeaderPointerDown}
+            className="flex cursor-grab items-center gap-2 active:cursor-grabbing"
+          >
             <p className="min-w-0 flex-1 truncate text-sm font-semibold leading-5 text-[#101828]">
               Edits
             </p>

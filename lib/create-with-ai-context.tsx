@@ -91,7 +91,9 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
   const pendingEditRef = useRef<LayoutBuilderEditSeed | null>(null)
   const pendingBlankRef = useRef(false)
 
-  const [isOpen, setIsOpen] = useState(false)
+  // The create-with-AI hero opens by default and stays open until the user
+  // explicitly collapses it (or a generation hands off to the builder).
+  const [isOpen, setIsOpen] = useState(true)
   const [prompt, setPrompt] = useState("")
   const [attachments, setAttachments] = useState<PromptAttachment[]>([])
 

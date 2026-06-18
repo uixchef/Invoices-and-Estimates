@@ -22,8 +22,15 @@ const HERO_ACCENT_PHRASES = [
 export function CreateWithAiPanel() {
   const { isOpen, close, prompt, setPrompt } = useCreateWithAi()
   const promptRef = useRef<HTMLTextAreaElement>(null)
+  // The hero is open on first paint, so skip the initial mount to avoid stealing
+  // focus / scrolling on load — only focus when the user reopens it.
+  const didMountRef = useRef(false)
 
   useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      return
+    }
     if (!isOpen) {
       return
     }

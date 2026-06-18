@@ -75,6 +75,31 @@ export type BuilderLayerStyle = {
   textAlign?: "left" | "center" | "right" | "justify"
   color?: string
   backgroundColor?: string
+  /**
+   * Page background image (page layer only) — an image URL or a data URL from an
+   * upload. Painted over the background colour and tuned by the fields below.
+   * Surfaced via the page Style tab's Background → Image control (Figma
+   * 3364:53755 / 3364:53164).
+   */
+  backgroundImage?: string
+  /** CSS background-position keyword pair, e.g. "center", "top left". */
+  backgroundPosition?: string
+  /** CSS background-size keyword: "cover" | "contain" | "auto". */
+  backgroundSize?: string
+  /** CSS background-repeat keyword: "no-repeat" | "repeat" | "repeat-x" | "repeat-y". */
+  backgroundRepeat?: string
+  /** Background image opacity 0–100 (composited as a white veil over the image). */
+  backgroundOpacity?: number
+  /** Page watermark (page layer only). Rendered as an overlay on every page. */
+  watermarkType?: "none" | "text" | "image"
+  watermarkText?: string
+  watermarkColor?: string
+  watermarkImage?: string
+  watermarkLayout?: "tiled" | "single"
+  /** Watermark opacity 0–100. */
+  watermarkOpacity?: number
+  /** Watermark rotation in degrees. */
+  watermarkRotation?: number
   letterSpacing?: number
   lineHeight?: number
   /** Box model — per-side padding (px). */

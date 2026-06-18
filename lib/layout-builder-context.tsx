@@ -2194,11 +2194,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     [addSelection]
   )
 
-  // Opening the add-elements palette takes over the panel, so make sure the
-  // panel is visible and the inspector is dismissed.
+  // Opening the add-elements palette takes over the left panel, so make sure the
+  // panel is visible. The inspector overlay is an independent surface and stays
+  // open until the user closes it, so we deliberately leave it untouched here.
   const openAddElements = useCallback(() => {
     setPanelOpen(true)
-    setInspectingLayer(null)
     setAddingElement(true)
   }, [])
 

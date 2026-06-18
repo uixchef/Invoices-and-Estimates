@@ -162,6 +162,23 @@ function styleFromLayer(
   if (style.textAlign) result.textAlign = style.textAlign
   if (style.color) result.color = style.color
   if (style.backgroundColor) result.backgroundColor = style.backgroundColor
+  if (style.backgroundImage) {
+    const url = `url("${style.backgroundImage}")`
+    // Opacity is composited as a white veil layered above the image (CSS can't
+    // set background-image opacity directly), so 0% fades it fully to white.
+    const opacity =
+      style.backgroundOpacity != null
+        ? Math.max(0, Math.min(100, style.backgroundOpacity)) / 100
+        : 1
+    const veil = 1 - opacity
+    result.backgroundImage =
+      veil > 0
+        ? `linear-gradient(rgba(255,255,255,${veil}),rgba(255,255,255,${veil})), ${url}`
+        : url
+    result.backgroundSize = style.backgroundSize ?? "cover"
+    result.backgroundPosition = style.backgroundPosition ?? "center"
+    result.backgroundRepeat = style.backgroundRepeat ?? "no-repeat"
+  }
   if (style.letterSpacing != null) {
     result.letterSpacing = `${style.letterSpacing}px`
   }
@@ -903,6 +920,82 @@ function pageStyleFromComputed(node: HTMLElement): BuilderLayerStyle {
 }
 
 /**
+ * Page watermark overlay (Figma 3364:53164). Stamped over every page when the
+ * page layer's Watermark control is set to text or image. Rendered above the
+ * document flow but click-through so it never blocks selection / editing.
+ */
+function WatermarkOverlay({ style }: { style?: BuilderLayerStyle }) {
+  if (!style || !style.watermarkType || style.watermarkType === "none") {
+    return null
+  }
+  const opacity =
+    style.watermarkOpacity != null
+      ? Math.max(0, Math.min(100, style.watermarkOpacity)) / 100
+      : 1
+  const rotation = style.watermarkRotation ?? 0
+  const tiled = style.watermarkLayout === "tiled"
+
+  if (style.watermarkType === "image") {
+    if (!style.watermarkImage) {
+      return null
+    }
+    return (
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-[1]"
+        style={{
+          opacity,
+          backgroundImage: `url("${style.watermarkImage}")`,
+          backgroundRepeat: tiled ? "repeat" : "no-repeat",
+          backgroundPosition: "center",
+          backgroundSize: tiled ? "auto" : "contain",
+          transform: tiled ? undefined : `rotate(${rotation}deg)`,
+        }}
+      />
+    )
+  }
+
+  const text = style.watermarkText?.trim()
+  if (!text) {
+    return null
+  }
+  const color = style.watermarkColor ?? "#101828"
+  if (tiled) {
+    return (
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-[1] flex flex-wrap content-center items-center justify-center gap-x-10 gap-y-8 overflow-hidden"
+        style={{ opacity }}
+      >
+        {Array.from({ length: 48 }).map((_, index) => (
+          <span
+            key={index}
+            className="whitespace-nowrap text-2xl font-semibold uppercase tracking-wide"
+            style={{ color, transform: `rotate(${rotation}deg)` }}
+          >
+            {text}
+          </span>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center overflow-hidden"
+      style={{ opacity }}
+    >
+      <span
+        className="whitespace-nowrap text-6xl font-bold uppercase tracking-wide"
+        style={{ color, transform: `rotate(${rotation}deg)` }}
+      >
+        {text}
+      </span>
+    </div>
+  )
+}
+
+/**
  * The invoice paper shell — selectable in visual-edit mode so margin, background,
  * padding, border, and sizing apply to every page in the paginated preview.
  */
@@ -924,8 +1017,16 @@ function SelectablePageShell({
     seedLayer,
   } = useLayoutBuilder()
 
-  const appliedStyle = styleFromLayer(layerStyles[PAGE_LAYER_LABEL], false)
-  const mergedStyle = { ...baseStyle, ...appliedStyle }
+  const pageStyle = layerStyles[PAGE_LAYER_LABEL]
+  const appliedStyle = styleFromLayer(pageStyle, false)
+  const hasWatermark = Boolean(
+    pageStyle?.watermarkType && pageStyle.watermarkType !== "none"
+  )
+  const mergedStyle = {
+    ...baseStyle,
+    ...appliedStyle,
+    ...(hasWatermark ? { position: "relative" as const } : null),
+  }
   const selected = selections.some(
     (selection) => selection.label === PAGE_LAYER_LABEL
   )
@@ -947,6 +1048,7 @@ function SelectablePageShell({
     return (
       <div className={className} style={mergedStyle}>
         {children}
+        <WatermarkOverlay style={pageStyle} />
       </div>
     )
   }
@@ -965,6 +1067,7 @@ function SelectablePageShell({
       style={mergedStyle}
     >
       {children}
+      <WatermarkOverlay style={pageStyle} />
     </VisualEditSelector>
   )
 }

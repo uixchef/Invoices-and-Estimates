@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   AlignCenter,
   AlignJustify,
@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
+  ImagePlus,
   Info,
   Italic,
   Link2,
@@ -22,6 +23,7 @@ import {
   Search,
   Trash2,
   Underline,
+  Upload,
   X,
 } from "lucide-react"
 
@@ -128,6 +130,27 @@ const BORDER_STYLES: { label: string; value: NonNullable<BuilderLayerStyle["bord
   { label: "solid", value: "solid" },
   { label: "dashed", value: "dashed" },
   { label: "dotted", value: "dotted" },
+]
+
+/** Background-image display options (Figma 3364:53164). */
+const BG_POSITIONS = [
+  { label: "Center", value: "center" },
+  { label: "Top center", value: "top center" },
+  { label: "Top left", value: "top left" },
+  { label: "Top right", value: "top right" },
+  { label: "Bottom right", value: "bottom right" },
+  { label: "Bottom left", value: "bottom left" },
+  { label: "Bottom center", value: "bottom center" },
+]
+const BG_SIZES = [
+  { label: "Auto", value: "auto" },
+  { label: "Fill page", value: "cover" },
+]
+const BG_REPEATS = [
+  { label: "No repeat", value: "no-repeat" },
+  { label: "Repeat", value: "repeat" },
+  { label: "Repeat-x", value: "repeat-x" },
+  { label: "Repeat-y", value: "repeat-y" },
 ]
 
 const ALIGNMENTS: {
@@ -352,12 +375,15 @@ function Stepper({
   placeholder,
   step = 1,
   min,
+  showControls = true,
   onChange,
 }: {
   value: number | undefined
   placeholder?: string
   step?: number
   min?: number
+  /** Render the −/+ bump buttons. Disable for compact numeric fields (e.g. rotation). */
+  showControls?: boolean
   onChange: (next: number | undefined) => void
 }) {
   const clamp = (next: number) => (min != null ? Math.max(min, next) : next)
@@ -380,24 +406,26 @@ function Stepper({
           NO_SPINNER
         )}
       />
-      <div className="flex shrink-0 items-center">
-        <button
-          type="button"
-          aria-label="Decrease"
-          onClick={() => bump(-step)}
-          className="inline-flex size-5 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-        >
-          <Minus className="size-3.5" aria-hidden />
-        </button>
-        <button
-          type="button"
-          aria-label="Increase"
-          onClick={() => bump(step)}
-          className="inline-flex size-5 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-        >
-          <Plus className="size-3.5" aria-hidden />
-        </button>
-      </div>
+      {showControls ? (
+        <div className="flex shrink-0 items-center">
+          <button
+            type="button"
+            aria-label="Decrease"
+            onClick={() => bump(-step)}
+            className="inline-flex size-5 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+          >
+            <Minus className="size-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            aria-label="Increase"
+            onClick={() => bump(step)}
+            className="inline-flex size-5 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+          >
+            <Plus className="size-3.5" aria-hidden />
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -582,6 +610,521 @@ function ColorField({
 }
 
 /**
+ * Numeric input with a trailing "%" suffix (Figma 3364:52827) — used for
+ * background / watermark opacity. Clamped 0–100.
+ */
+function PercentInput({
+  value,
+  placeholder = "100",
+  onChange,
+}: {
+  value: number | undefined
+  placeholder?: string
+  onChange: (next: number | undefined) => void
+}) {
+  return (
+    <div className={cn(INPUT_SHELL, "pr-0")}>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={0}
+        max={100}
+        value={value ?? ""}
+        placeholder={placeholder}
+        onChange={(event) => {
+          if (event.target.value === "") {
+            onChange(undefined)
+            return
+          }
+          const next = Math.max(0, Math.min(100, Number(event.target.value)))
+          onChange(next)
+        }}
+        className={cn(
+          "min-w-0 flex-1 border-0 bg-transparent p-0 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none placeholder:text-[#98a2b3]",
+          NO_SPINNER
+        )}
+      />
+      <span className="flex h-full shrink-0 items-center border-l border-[#d0d5dd] px-2 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828]">
+        %
+      </span>
+    </div>
+  )
+}
+
+/**
+ * Image preview tile (Figma 3364:52199 / 3364:52809). Shows the current image as
+ * a cover fill with floating circular actions; empty it reads as a dashed drop
+ * target. The pencil opens the source menu; the trash clears the image.
+ */
+function ImagePreviewTile({
+  src,
+  menu,
+  onClear,
+}: {
+  src?: string
+  /** Source picker (Upload / Media library / Attach URL) rendered as the pencil trigger. */
+  menu: React.ReactNode
+  onClear?: () => void
+}) {
+  return (
+    <div
+      className={cn(
+        "relative flex h-[140px] w-full items-start justify-end overflow-hidden rounded-[4px] border p-2",
+        src ? "border-[#eaecf0]" : "border-[#eaecf0] bg-[#f9fafb]"
+      )}
+      style={{
+        backgroundImage: `url("${src ?? "/image-placeholder.png"}")`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }}
+    >
+      <div className="relative z-[1] flex shrink-0 items-center gap-1">
+        {menu}
+        {src && onClear ? (
+          <button
+            type="button"
+            aria-label="Remove image"
+            onClick={onClear}
+            className="inline-flex size-5 items-center justify-center rounded-full border-[0.667px] border-[#d0d5dd] bg-white text-[#475467] shadow-[0px_1px_1.5px_rgba(16,24,40,0.1),0px_1px_1px_rgba(16,24,40,0.06)] outline-none transition-colors hover:text-[#b42318] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+          >
+            <Trash2 className="size-3" aria-hidden />
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Page background control (Figma 3364:53755 / 3364:53164). Renders the
+ * Background section's Color swatch and Image tile. The Image tile's source
+ * menu offers Upload image, Upload from media library, and Attach image url;
+ * picking "Attach image url" reveals the Image url field. Whenever an image is
+ * set, the Position / Size / Repeat / Opacity controls appear and drive the
+ * live page fill.
+ */
+function PageBackgroundField({
+  style,
+  set,
+}: {
+  style: BuilderLayerStyle
+  set: (patch: Partial<BuilderLayerStyle>) => void
+}) {
+  const { showCanvasToast } = useLayoutBuilder()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  // Whether the user explicitly chose "Attach image url" — only then does the
+  // URL text field show (per product direction). Data-URL images are uploads.
+  const [urlMode, setUrlMode] = useState(
+    Boolean(style.backgroundImage && !style.backgroundImage.startsWith("data:"))
+  )
+
+  const hasImage = Boolean(style.backgroundImage)
+
+  const onUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) {
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showCanvasToast("Image must be 10MB or smaller")
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setUrlMode(false)
+      set({
+        backgroundImage: String(reader.result),
+        backgroundPosition: style.backgroundPosition ?? "center",
+        backgroundSize: style.backgroundSize ?? "cover",
+        backgroundRepeat: style.backgroundRepeat ?? "no-repeat",
+        backgroundOpacity: style.backgroundOpacity ?? 100,
+      })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const clearImage = () => {
+    setUrlMode(false)
+    set({
+      backgroundImage: undefined,
+      backgroundPosition: undefined,
+      backgroundSize: undefined,
+      backgroundRepeat: undefined,
+      backgroundOpacity: undefined,
+    })
+  }
+
+  const sourceMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Choose image source"
+          className="inline-flex size-5 items-center justify-center rounded-full border-[0.667px] border-[#d0d5dd] bg-white text-[#475467] shadow-[0px_1px_1.5px_rgba(16,24,40,0.1),0px_1px_1px_rgba(16,24,40,0.06)] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+        >
+          <Pencil className="size-3" aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="z-[80] min-w-[212px] font-[family-name:var(--font-inter)]"
+      >
+        <DropdownMenuItem
+          onSelect={() => fileInputRef.current?.click()}
+          className="flex items-center gap-2 rounded-none px-2 py-1.5 text-sm leading-5 text-[#344054]"
+        >
+          <Upload className="size-4 shrink-0 text-[#667085]" aria-hidden />
+          Upload image
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => showCanvasToast("Media library isn't available yet")}
+          className="flex items-center gap-2 rounded-none px-2 py-1.5 text-sm leading-5 text-[#344054]"
+        >
+          <ImagePlus className="size-4 shrink-0 text-[#667085]" aria-hidden />
+          Upload from media library
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => {
+            setUrlMode(true)
+            if (style.backgroundImage?.startsWith("data:")) {
+              set({ backgroundImage: undefined })
+            }
+            if (style.backgroundSize == null) {
+              set({
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                backgroundRepeat: "no-repeat",
+                backgroundOpacity: 100,
+              })
+            }
+          }}
+          className="flex items-center gap-2 rounded-none px-2 py-1.5 text-sm leading-5 text-[#344054]"
+        >
+          <Link2 className="size-4 shrink-0 text-[#667085]" aria-hidden />
+          Attach image url
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Color */}
+      <label className="flex flex-col gap-1">
+        <FieldLabel>Color</FieldLabel>
+        <ColorField
+          value={style.backgroundColor}
+          onChange={(next) => set({ backgroundColor: next })}
+        />
+      </label>
+
+      {/* Image */}
+      <div className="flex flex-col gap-1">
+        <FieldLabel>Image</FieldLabel>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={onUpload}
+        />
+        <ImagePreviewTile
+          src={style.backgroundImage}
+          menu={sourceMenu}
+          onClear={clearImage}
+        />
+        <p className="font-[family-name:var(--font-inter)] text-xs leading-[17px] text-[#475467]">
+          Upload image of up to 10MB file size.
+        </p>
+      </div>
+
+      {/* Image url — only after "Attach image url" */}
+      {urlMode ? (
+        <label className="flex flex-col gap-1">
+          <FieldLabel>Image url</FieldLabel>
+          <div className={INPUT_SHELL}>
+            <input
+              type="url"
+              inputMode="url"
+              value={style.backgroundImage ?? ""}
+              placeholder="http://www.imageurl.com"
+              aria-label="Background image URL"
+              onChange={(event) =>
+                set({ backgroundImage: event.target.value || undefined })
+              }
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none placeholder:text-[#667085]"
+            />
+          </div>
+        </label>
+      ) : null}
+
+      {/* Display controls — whenever an image is set */}
+      {hasImage ? (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <FieldLabel>Position</FieldLabel>
+              <SelectField
+                value={style.backgroundPosition ?? "center"}
+                options={BG_POSITIONS}
+                onChange={(next) => set({ backgroundPosition: next })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <FieldLabel>Size</FieldLabel>
+              <SelectField
+                value={style.backgroundSize ?? "cover"}
+                options={BG_SIZES}
+                onChange={(next) => set({ backgroundSize: next })}
+              />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <FieldLabel>Repeat</FieldLabel>
+              <SelectField
+                value={style.backgroundRepeat ?? "no-repeat"}
+                options={BG_REPEATS}
+                onChange={(next) => set({ backgroundRepeat: next })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <FieldLabel>Opacity</FieldLabel>
+              <PercentInput
+                value={style.backgroundOpacity ?? 100}
+                onChange={(next) => set({ backgroundOpacity: next })}
+              />
+            </label>
+          </div>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Page watermark control (Figma 3364:53164). A None / Text / Image switcher;
+ * Text reveals a text + colour field, Image a preview tile. Both share the
+ * Layout (Tiled / Single), Opacity, and Rotation row that drives the overlay.
+ */
+function PageWatermarkField({
+  style,
+  set,
+}: {
+  style: BuilderLayerStyle
+  set: (patch: Partial<BuilderLayerStyle>) => void
+}) {
+  const { showCanvasToast } = useLayoutBuilder()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const type = style.watermarkType ?? "none"
+  // Whether the user explicitly chose "Attach image url" — only then does the
+  // watermark URL field show, mirroring the background image source flow.
+  const [urlMode, setUrlMode] = useState(
+    Boolean(style.watermarkImage && !style.watermarkImage.startsWith("data:"))
+  )
+
+  const onUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) {
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showCanvasToast("Image must be 10MB or smaller")
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setUrlMode(false)
+      set({ watermarkImage: String(reader.result) })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const watermarkMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Choose watermark image source"
+          className="inline-flex size-5 items-center justify-center rounded-full border-[0.667px] border-[#d0d5dd] bg-white text-[#475467] shadow-[0px_1px_1.5px_rgba(16,24,40,0.1),0px_1px_1px_rgba(16,24,40,0.06)] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+        >
+          <Pencil className="size-3" aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="z-[80] min-w-[212px] font-[family-name:var(--font-inter)]"
+      >
+        <DropdownMenuItem
+          onSelect={() => fileInputRef.current?.click()}
+          className="flex items-center gap-2 rounded-none px-2 py-1.5 text-sm leading-5 text-[#344054]"
+        >
+          <Upload className="size-4 shrink-0 text-[#667085]" aria-hidden />
+          Upload image
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => showCanvasToast("Media library isn't available yet")}
+          className="flex items-center gap-2 rounded-none px-2 py-1.5 text-sm leading-5 text-[#344054]"
+        >
+          <ImagePlus className="size-4 shrink-0 text-[#667085]" aria-hidden />
+          Upload from media library
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => {
+            setUrlMode(true)
+            if (style.watermarkImage?.startsWith("data:")) {
+              set({ watermarkImage: undefined })
+            }
+          }}
+          className="flex items-center gap-2 rounded-none px-2 py-1.5 text-sm leading-5 text-[#344054]"
+        >
+          <Link2 className="size-4 shrink-0 text-[#667085]" aria-hidden />
+          Attach image url
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* None / Text / Image switcher */}
+      <div className="flex h-8 items-stretch overflow-hidden rounded-[4px] border border-[#d0d5dd]">
+        {(["none", "text", "image"] as const).map((option, index) => (
+          <SegmentToggle
+            key={option}
+            active={type === option}
+            label={`Watermark ${option}`}
+            onClick={() => set({ watermarkType: option })}
+            last={index === 2}
+          >
+            <span className="font-[family-name:var(--font-inter)] text-sm font-semibold capitalize leading-5">
+              {option}
+            </span>
+          </SegmentToggle>
+        ))}
+      </div>
+
+      {type === "text" ? (
+        <>
+          <label className="flex flex-col gap-1">
+            <FieldLabel>Text</FieldLabel>
+            <div className={INPUT_SHELL}>
+              <input
+                type="text"
+                value={style.watermarkText ?? ""}
+                placeholder="Draft"
+                aria-label="Watermark text"
+                onChange={(event) =>
+                  set({ watermarkText: event.target.value || undefined })
+                }
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none placeholder:text-[#667085]"
+              />
+            </div>
+          </label>
+          <label className="flex flex-col gap-1">
+            <FieldLabel>Color</FieldLabel>
+            <ColorField
+              value={style.watermarkColor}
+              onChange={(next) => set({ watermarkColor: next })}
+            />
+          </label>
+        </>
+      ) : null}
+
+      {type === "image" ? (
+        <div className="flex flex-col gap-1">
+          <FieldLabel>Image</FieldLabel>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={onUpload}
+          />
+          <ImagePreviewTile
+            src={style.watermarkImage}
+            menu={watermarkMenu}
+            onClear={() => {
+              setUrlMode(false)
+              set({ watermarkImage: undefined })
+            }}
+          />
+          <p className="font-[family-name:var(--font-inter)] text-xs leading-[17px] text-[#475467]">
+            Upload image of up to 10MB file size.
+          </p>
+          {urlMode ? (
+            <label className="flex flex-col gap-1">
+              <FieldLabel>Image url</FieldLabel>
+              <div className={INPUT_SHELL}>
+                <input
+                  type="url"
+                  inputMode="url"
+                  value={style.watermarkImage ?? ""}
+                  placeholder="http://www.imageurl.com"
+                  aria-label="Watermark image URL"
+                  onChange={(event) =>
+                    set({ watermarkImage: event.target.value || undefined })
+                  }
+                  className="min-w-0 flex-1 border-0 bg-transparent p-0 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none placeholder:text-[#667085]"
+                />
+              </div>
+            </label>
+          ) : null}
+        </div>
+      ) : null}
+
+      {type !== "none" ? (
+        <div className="flex items-start gap-3">
+          <div className="flex flex-1 flex-col gap-1">
+            <FieldLabel>Layout</FieldLabel>
+            <div className="flex h-8 items-center gap-1 rounded-[4px] bg-[#f2f4f7] p-1">
+              {(["tiled", "single"] as const).map((option) => {
+                const active = (style.watermarkLayout ?? "single") === option
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => set({ watermarkLayout: option })}
+                    className={cn(
+                      "inline-flex h-6 flex-1 items-center justify-center rounded-[4px] px-2 font-[family-name:var(--font-inter)] text-sm capitalize leading-5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
+                      active
+                        ? "bg-white font-semibold text-[#101828] shadow-[0px_1px_3px_0px_rgba(16,24,40,0.1),0px_1px_2px_0px_rgba(16,24,40,0.06)]"
+                        : "font-medium text-[#475467]"
+                    )}
+                  >
+                    {option === "tiled" ? "Tiled" : "Single"}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <label className="flex flex-1 flex-col gap-1">
+            <FieldLabel>Opacity</FieldLabel>
+            <PercentInput
+              value={style.watermarkOpacity ?? 100}
+              onChange={(next) => set({ watermarkOpacity: next })}
+            />
+          </label>
+          <label className="flex w-16 shrink-0 flex-col gap-1">
+            <FieldLabel>Rotation</FieldLabel>
+            <Stepper
+              value={style.watermarkRotation}
+              placeholder="-45"
+              showControls={false}
+              onChange={(next) => set({ watermarkRotation: next })}
+            />
+          </label>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/**
  * Edits inspector (Figma 3246:40316 / 3246:56726). Replaces the AI chat with a
  * two-tab property panel for the selected layer:
  *  - Style: typography, colors, spacing, sizing, and border — wired live to the
@@ -626,12 +1169,104 @@ export function VisualEditsPanel() {
   }
 
   return (
-    <StyleTab
-      label={inspectingLayer}
-      style={layerStyles[inspectingLayer] ?? {}}
-      setLayerStyle={setLayerStyle}
-      variant={isPageLayer(inspectingLayer) ? "page" : "default"}
-    />
+    isPageLayer(inspectingLayer) ? (
+      <PageStyleTab
+        label={inspectingLayer}
+        style={layerStyles[inspectingLayer] ?? {}}
+        setLayerStyle={setLayerStyle}
+      />
+    ) : (
+      <StyleTab
+        label={inspectingLayer}
+        style={layerStyles[inspectingLayer] ?? {}}
+        setLayerStyle={setLayerStyle}
+      />
+    )
+  )
+}
+
+/**
+ * Page Style tab (Figma 3364:53755 / 3364:53164). The page shell exposes a
+ * focused set distinct from element styling: outer Margin, the Background fill
+ * (colour / image), and a Watermark overlay. Padding, sizing, typography, and
+ * border are intentionally omitted — they belong to the elements inside.
+ */
+function PageStyleTab({
+  label,
+  style,
+  setLayerStyle,
+}: {
+  label: string
+  style: BuilderLayerStyle
+  setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
+}) {
+  const [marginPerSide, setMarginPerSide] = useState(false)
+  const set = (patch: Partial<BuilderLayerStyle>) => setLayerStyle(label, patch)
+
+  const setMarginSide = (
+    side: "Top" | "Right" | "Bottom" | "Left",
+    next: number | undefined
+  ) => {
+    set({ [`margin${side}`]: next } as Partial<BuilderLayerStyle>)
+  }
+
+  const setMarginAxis = (axis: "horizontal" | "vertical", next: number | undefined) => {
+    if (axis === "horizontal") {
+      set({ marginLeft: next, marginRight: next })
+    } else {
+      set({ marginTop: next, marginBottom: next })
+    }
+  }
+
+  const toggleMarginPerSide = () => {
+    if (marginPerSide) {
+      set({ marginRight: style.marginLeft, marginBottom: style.marginTop })
+    }
+    setMarginPerSide((prev) => !prev)
+  }
+
+  return (
+    <div className="flex flex-col gap-6 pb-4">
+      {/* Spacing — page margin only */}
+      <section className="flex flex-col gap-3">
+        <SectionLabel>Spacing</SectionLabel>
+        <div className="flex flex-col gap-1">
+          <ExpandableFieldLabel
+            expanded={marginPerSide}
+            onToggle={toggleMarginPerSide}
+          >
+            Margin
+          </ExpandableFieldLabel>
+          <SpacingMatrix
+            perSide={marginPerSide}
+            values={{
+              top: style.marginTop,
+              right: style.marginRight,
+              bottom: style.marginBottom,
+              left: style.marginLeft,
+            }}
+            onAxisChange={setMarginAxis}
+            onSideChange={setMarginSide}
+          />
+        </div>
+      </section>
+
+      <PanelDivider />
+
+      {/* Background */}
+      <section className="flex flex-col gap-3">
+        <SectionLabel>Background</SectionLabel>
+        <PageBackgroundField style={style} set={set} />
+      </section>
+
+      <PanelDivider />
+
+      {/* Watermark */}
+      <section className="flex flex-col gap-3">
+        <SectionLabel>Watermark</SectionLabel>
+        <PageWatermarkField style={style} set={set} />
+      </section>
+    </div>
   )
 }
 
@@ -676,8 +1311,7 @@ function ContentTab({
         </section>
       ) : isPage ? (
         <p className="text-sm leading-5 text-[#667085]">
-          Page settings live on the Style tab — margin, background, padding, border,
-          and sizing.
+          Page settings live on the Style tab — margin, background, and watermark.
         </p>
       ) : null}
 
@@ -690,13 +1324,10 @@ function StyleTab({
   label,
   style,
   setLayerStyle,
-  variant = "default",
 }: {
   label: string
   style: BuilderLayerStyle
   setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
-  /** Page shell omits typography — those belong on text layers inside the page. */
-  variant?: "default" | "page"
 }) {
   // Padding & margin start collapsed (uniform H/V); the maximize toggle expands
   // each to per-side editing, matching the medium builder's safe-area control.
@@ -812,8 +1443,6 @@ function StyleTab({
 
   return (
     <div className="flex flex-col gap-6 pb-4">
-      {variant === "page" ? null : (
-        <>
       {/* Typography */}
       <section className="flex flex-col gap-3">
         <SectionLabel>Typography</SectionLabel>
@@ -901,21 +1530,10 @@ function StyleTab({
       </section>
 
       <PanelDivider />
-        </>
-      )}
 
       {/* Colors */}
       <section className="flex flex-col gap-3">
         <SectionLabel>Colors</SectionLabel>
-        {variant === "page" ? (
-          <label className="flex flex-col gap-1">
-            <FieldLabel>Background</FieldLabel>
-            <ColorField
-              value={style.backgroundColor}
-              onChange={(next) => set({ backgroundColor: next })}
-            />
-          </label>
-        ) : (
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1">
             <FieldLabel>Text</FieldLabel>
@@ -929,7 +1547,6 @@ function StyleTab({
             />
           </label>
         </div>
-        )}
       </section>
 
       <PanelDivider />
