@@ -130,15 +130,12 @@ export function VibeHeroCanvas() {
 
       const base = Math.max(width, height)
 
-      // Blur the wave layers so their crest edges bleed away — no visible
-      // outline, just a soft blended flow. The blur is part of the saved
-      // canvas state, so it's scoped to the wave fills only.
-      ctx.save()
-      ctx.filter = `blur(${Math.max(16, base * 0.05)}px)`
+      // Crest edges are softened by a CSS blur on the <canvas> element (see
+      // className) rather than ctx.filter, which isn't reliably honored across
+      // browsers/GPU paths and was leaving hard wave outlines on production.
       for (const w of WAVES) {
         drawWave(w, t)
       }
-      ctx.restore()
 
       // A deeper-purple mass that floats slowly from one end of the hero to the
       // other (with a gentle vertical bob), giving the wash a dynamic focal flow.
@@ -223,6 +220,10 @@ export function VibeHeroCanvas() {
     <canvas
       ref={canvasRef}
       aria-hidden
+      // CSS blur (reliable everywhere) softens the wave crests into a blended
+      // wash; the parent's overflow-hidden clips the blur halo at the edges.
+      // Inline style avoids any Tailwind filter-utility composition surprises.
+      style={{ filter: "blur(40px)" }}
       className="pointer-events-none absolute inset-0 z-0 h-full w-full"
     />
   )
