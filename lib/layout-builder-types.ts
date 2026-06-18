@@ -25,11 +25,12 @@ export type BuilderSelection = {
 /**
  * What kind of layer the Visual edits inspector is pointed at. Text layers are
  * individually editable strings (e.g. "Business name"); containers are
- * sections / structural blocks (e.g. "Totals", "Billing details"); page is the
+ * sections / structural blocks (e.g. "Totals", "Billing details"); structural
+ * is non-text placed blocks like dividers and spacers; page is the invoice
  * invoice paper shell (margin, background, border). Text-only controls — like
  * the Style tab's "Content" field — key off this.
  */
-export type BuilderLayerKind = "text" | "container" | "page"
+export type BuilderLayerKind = "text" | "container" | "page" | "image" | "structural"
 
 /** Stable label for the paginated document paper shell in visual-edit mode. */
 export const PAGE_LAYER_LABEL = "Page"
@@ -76,10 +77,8 @@ export type BuilderLayerStyle = {
   color?: string
   backgroundColor?: string
   /**
-   * Page background image (page layer only) — an image URL or a data URL from an
-   * upload. Painted over the background colour and tuned by the fields below.
-   * Surfaced via the page Style tab's Background → Image control (Figma
-   * 3364:53755 / 3364:53164).
+   * Background / fill image — page background or image-element source. An image URL
+   * or a data URL from an upload.
    */
   backgroundImage?: string
   /** CSS background-position keyword pair, e.g. "center", "top left". */
@@ -100,6 +99,12 @@ export type BuilderLayerStyle = {
   watermarkOpacity?: number
   /** Watermark rotation in degrees. */
   watermarkRotation?: number
+  /** Image-element horizontal alignment (Figma 159:54311). */
+  imageAlign?: "left" | "center" | "right" | "full"
+  /** Image-element sizing mode (Figma 159:54844). */
+  imageSizeMode?: "original" | "fill" | "custom"
+  /** Image-element accessibility label (Figma 156:11504). */
+  imageAlt?: string
   letterSpacing?: number
   lineHeight?: number
   /** Box model — per-side padding (px). */
@@ -131,6 +136,9 @@ export type BuilderLayerStyle = {
 
 /** MIME type for drag-and-drop from the Add elements palette. */
 export const ELEMENT_DRAG_MIME = "application/x-invoice-element"
+
+/** MIME type for reordering placed elements already on the canvas. */
+export const PLACED_ELEMENT_REORDER_MIME = "application/x-placed-element-reorder"
 
 /** Drop anchor within the invoice document body. */
 export type PlacedElementZone =

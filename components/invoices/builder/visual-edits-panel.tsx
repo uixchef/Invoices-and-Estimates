@@ -21,6 +21,7 @@ import {
   Plus,
   Repeat,
   Search,
+  Tag,
   Trash2,
   Underline,
   Upload,
@@ -152,6 +153,21 @@ const BG_REPEATS = [
   { label: "Repeat-x", value: "repeat-x" },
   { label: "Repeat-y", value: "repeat-y" },
 ]
+
+/** Image block alignment (Figma 159:54311). */
+const IMAGE_ALIGNMENTS = [
+  { label: "Left", value: "left" },
+  { label: "Center", value: "center" },
+  { label: "Right", value: "right" },
+  { label: "Full", value: "full" },
+] as const
+
+/** Image block sizing (Figma 159:54844). */
+const IMAGE_SIZE_MODES = [
+  { label: "Original", value: "original" },
+  { label: "Fill", value: "fill" },
+  { label: "Custom", value: "custom" },
+] as const
 
 const ALIGNMENTS: {
   value: NonNullable<BuilderLayerStyle["textAlign"]>
@@ -696,29 +712,66 @@ function ImagePreviewTile({
   )
 }
 
+/** Alt text input for image elements (Figma 156:11504). */
+function AltTextField({
+  value,
+  onChange,
+}: {
+  value: string | undefined
+  onChange: (next: string | undefined) => void
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <FieldLabel>Alt text</FieldLabel>
+      <div
+        className={cn(
+          "flex h-8 w-full overflow-hidden rounded-[4px] border border-[#d0d5dd] bg-white",
+          "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] transition-shadow",
+          "focus-within:border-[#84adff] focus-within:shadow-[0_0_0_4px_#eff4ff,0_1px_2px_rgba(16,24,40,0.05)]"
+        )}
+      >
+        <input
+          type="text"
+          value={value ?? ""}
+          placeholder="Enter alt text"
+          aria-label="Alt text"
+          onChange={(event) => onChange(event.target.value || undefined)}
+          className="min-w-0 flex-1 border-0 bg-transparent px-2 py-2 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828] outline-none placeholder:text-[#667085]"
+        />
+        <div
+          className="flex shrink-0 items-center justify-center self-stretch border-l border-[#d0d5dd] px-2"
+          aria-hidden
+        >
+          <Tag className="size-4 text-[#667085]" />
+        </div>
+      </div>
+    </label>
+  )
+}
+
 /**
- * Page background control (Figma 3364:53755 / 3364:53164). Renders the
- * Background section's Color swatch and Image tile. The Image tile's source
- * menu offers Upload image, Upload from media library, and Attach image url;
- * picking "Attach image url" reveals the Image url field. Whenever an image is
- * set, the Position / Size / Repeat / Opacity controls appear and drive the
- * live page fill.
+ * Image source + display controls shared by page backgrounds and image elements.
  */
-function PageBackgroundField({
+function ImageSourceField({
   style,
   set,
+  showImageLabel = true,
+  showDisplayControls = true,
+  showAltText = false,
 }: {
   style: BuilderLayerStyle
   set: (patch: Partial<BuilderLayerStyle>) => void
+  showImageLabel?: boolean
+  /** Position / Size / Repeat / Opacity — page background only. */
+  showDisplayControls?: boolean
+  /** Alt text field — image elements only (Figma 156:11504). */
+  showAltText?: boolean
 }) {
   const { showCanvasToast } = useLayoutBuilder()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  // Whether the user explicitly chose "Attach image url" — only then does the
-  // URL text field show (per product direction). Data-URL images are uploads.
   const [urlMode, setUrlMode] = useState(
     Boolean(style.backgroundImage && !style.backgroundImage.startsWith("data:"))
   )
-
   const hasImage = Boolean(style.backgroundImage)
 
   const onUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -811,18 +864,8 @@ function PageBackgroundField({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Color */}
-      <label className="flex flex-col gap-1">
-        <FieldLabel>Color</FieldLabel>
-        <ColorField
-          value={style.backgroundColor}
-          onChange={(next) => set({ backgroundColor: next })}
-        />
-      </label>
-
-      {/* Image */}
       <div className="flex flex-col gap-1">
-        <FieldLabel>Image</FieldLabel>
+        {showImageLabel ? <FieldLabel>Image</FieldLabel> : null}
         <input
           ref={fileInputRef}
           type="file"
@@ -840,7 +883,6 @@ function PageBackgroundField({
         </p>
       </div>
 
-      {/* Image url — only after "Attach image url" */}
       {urlMode ? (
         <label className="flex flex-col gap-1">
           <FieldLabel>Image url</FieldLabel>
@@ -850,7 +892,7 @@ function PageBackgroundField({
               inputMode="url"
               value={style.backgroundImage ?? ""}
               placeholder="http://www.imageurl.com"
-              aria-label="Background image URL"
+              aria-label="Image URL"
               onChange={(event) =>
                 set({ backgroundImage: event.target.value || undefined })
               }
@@ -860,8 +902,14 @@ function PageBackgroundField({
         </label>
       ) : null}
 
-      {/* Display controls — whenever an image is set */}
-      {hasImage ? (
+      {showAltText ? (
+        <AltTextField
+          value={style.imageAlt}
+          onChange={(next) => set({ imageAlt: next })}
+        />
+      ) : null}
+
+      {hasImage && showDisplayControls ? (
         <>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
@@ -899,6 +947,105 @@ function PageBackgroundField({
             </label>
           </div>
         </>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Page background control (Figma 3364:53755 / 3364:53164). Renders the
+ * Background section's Color swatch and Image tile. The Image tile's source
+ * menu offers Upload image, Upload from media library, and Attach image url;
+ * picking "Attach image url" reveals the Image url field. Whenever an image is
+ * set, the Position / Size / Repeat / Opacity controls appear and drive the
+ * live page fill.
+ */
+function PageBackgroundField({
+  style,
+  set,
+}: {
+  style: BuilderLayerStyle
+  set: (patch: Partial<BuilderLayerStyle>) => void
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <label className="flex flex-col gap-1">
+        <FieldLabel>Color</FieldLabel>
+        <ColorField
+          value={style.backgroundColor}
+          onChange={(next) => set({ backgroundColor: next })}
+        />
+      </label>
+      <ImageSourceField style={style} set={set} />
+    </div>
+  )
+}
+
+/** Image size control (Figma 159:54844): Original / Fill / Custom + dimension inputs. */
+function ImageSizeField({
+  style,
+  set,
+}: {
+  style: BuilderLayerStyle
+  set: (patch: Partial<BuilderLayerStyle>) => void
+}) {
+  const mode = style.imageSizeMode ?? "custom"
+
+  const setMode = (next: (typeof IMAGE_SIZE_MODES)[number]["value"]) => {
+    if (next === "original") {
+      set({ imageSizeMode: next, backgroundSize: "auto" })
+      return
+    }
+    if (next === "fill") {
+      set({ imageSizeMode: next, backgroundSize: "cover" })
+      return
+    }
+    set({
+      imageSizeMode: next,
+      backgroundSize: style.backgroundSize ?? "cover",
+      width: style.width ?? 80,
+      height: style.height ?? 80,
+    })
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex h-8 items-stretch overflow-hidden rounded-[4px] border border-[#d0d5dd]">
+        {IMAGE_SIZE_MODES.map((option, index) => (
+          <SegmentToggle
+            key={option.value}
+            active={mode === option.value}
+            label={option.label}
+            onClick={() => setMode(option.value)}
+            last={index === IMAGE_SIZE_MODES.length - 1}
+          >
+            <span className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5">
+              {option.label}
+            </span>
+          </SegmentToggle>
+        ))}
+      </div>
+      {mode === "custom" ? (
+        <div className="grid grid-cols-2 gap-4">
+          <label className="flex flex-col gap-1">
+            <FieldLabel>Width</FieldLabel>
+            <Stepper
+              value={style.width}
+              min={0}
+              placeholder="Auto"
+              onChange={(next) => set({ width: next })}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <FieldLabel>Height</FieldLabel>
+            <Stepper
+              value={style.height}
+              min={0}
+              placeholder="80"
+              onChange={(next) => set({ height: next })}
+            />
+          </label>
+        </div>
       ) : null}
     </div>
   )
@@ -1141,7 +1288,12 @@ export function VisualEditsPanel() {
     setLayerStyle,
     layerText,
     setLayerText,
+    placedElements,
   } = useLayoutBuilder()
+
+  const inspectingPlacedKind = placedElements.find(
+    (element) => element.label === inspectingLayer
+  )?.kind
 
   if (!inspectingLayer) {
     return null
@@ -1174,6 +1326,21 @@ export function VisualEditsPanel() {
         label={inspectingLayer}
         style={layerStyles[inspectingLayer] ?? {}}
         setLayerStyle={setLayerStyle}
+      />
+    ) : inspectingLayerKind === "image" ? (
+      <StyleTab
+        label={inspectingLayer}
+        style={layerStyles[inspectingLayer] ?? {}}
+        setLayerStyle={setLayerStyle}
+        variant="image"
+      />
+    ) : inspectingLayerKind === "structural" ? (
+      <StyleTab
+        label={inspectingLayer}
+        style={layerStyles[inspectingLayer] ?? {}}
+        setLayerStyle={setLayerStyle}
+        variant="structural"
+        structuralPlacedKind={inspectingPlacedKind}
       />
     ) : (
       <StyleTab
@@ -1324,11 +1491,19 @@ function StyleTab({
   label,
   style,
   setLayerStyle,
+  variant = "default",
+  structuralPlacedKind,
 }: {
   label: string
   style: BuilderLayerStyle
   setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
+  variant?: "default" | "image" | "structural"
+  structuralPlacedKind?: string
 }) {
+  const isImage = variant === "image"
+  const isStructural = variant === "structural"
+  const isSpacer = isStructural && structuralPlacedKind === "spacer"
+  const showTypography = !isImage && !isStructural
   // Padding & margin start collapsed (uniform H/V); the maximize toggle expands
   // each to per-side editing, matching the medium builder's safe-area control.
   const [paddingPerSide, setPaddingPerSide] = useState(false)
@@ -1443,6 +1618,23 @@ function StyleTab({
 
   return (
     <div className="flex flex-col gap-6 pb-4">
+      {isImage ? (
+        <>
+          <section className="flex flex-col gap-3">
+            <ImageSourceField
+              style={style}
+              set={set}
+              showImageLabel={false}
+              showDisplayControls={false}
+              showAltText
+            />
+          </section>
+          <PanelDivider />
+        </>
+      ) : null}
+
+      {showTypography ? (
+      <>
       {/* Typography */}
       <section className="flex flex-col gap-3">
         <SectionLabel>Typography</SectionLabel>
@@ -1530,10 +1722,29 @@ function StyleTab({
       </section>
 
       <PanelDivider />
+      </>
+      ) : null}
 
       {/* Colors */}
       <section className="flex flex-col gap-3">
         <SectionLabel>Colors</SectionLabel>
+        {isImage ? (
+          <label className="flex flex-col gap-1">
+            <FieldLabel>Block background</FieldLabel>
+            <ColorField
+              value={style.backgroundColor}
+              onChange={(next) => set({ backgroundColor: next })}
+            />
+          </label>
+        ) : isStructural ? (
+          <label className="flex flex-col gap-1">
+            <FieldLabel>{isSpacer ? "Fill color" : "Line color"}</FieldLabel>
+            <ColorField
+              value={style.backgroundColor}
+              onChange={(next) => set({ backgroundColor: next })}
+            />
+          </label>
+        ) : (
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1">
             <FieldLabel>Text</FieldLabel>
@@ -1547,6 +1758,7 @@ function StyleTab({
             />
           </label>
         </div>
+        )}
       </section>
 
       <PanelDivider />
@@ -1601,6 +1813,130 @@ function StyleTab({
       {/* Sizing */}
       <section className="flex flex-col gap-3">
         <SectionLabel>Sizing</SectionLabel>
+        {isImage ? (
+          <>
+            <ImageSizeField style={style} set={set} />
+            <div className="flex flex-col gap-1">
+              <FieldLabel>Alignment</FieldLabel>
+              <div className="flex h-8 items-stretch overflow-hidden rounded-[4px] border border-[#d0d5dd]">
+                {IMAGE_ALIGNMENTS.map((option, index) => (
+                  <SegmentToggle
+                    key={option.value}
+                    active={(style.imageAlign ?? "full") === option.value}
+                    label={`Align ${option.label.toLowerCase()}`}
+                    onClick={() => set({ imageAlign: option.value })}
+                    last={index === IMAGE_ALIGNMENTS.length - 1}
+                  >
+                    <span className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5">
+                      {option.label}
+                    </span>
+                  </SegmentToggle>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <ExpandableFieldLabel
+                expanded={radiusPerCorner}
+                onToggle={toggleRadiusPerCorner}
+              >
+                Corner radius
+              </ExpandableFieldLabel>
+              <RadiusMatrix
+                style={style}
+                collapsedIcon={<IconImg src={CORNER_RADIUS_ALL_ICON} />}
+                icons={{
+                  topLeft: (
+                    <IconImg src={ROUNDED_CORNER_ICON} style={{ transform: "scaleX(-1)" }} />
+                  ),
+                  topRight: <IconImg src={ROUNDED_CORNER_ICON} />,
+                  bottomLeft: (
+                    <IconImg src={ROUNDED_CORNER_ICON} style={{ transform: "rotate(180deg)" }} />
+                  ),
+                  bottomRight: (
+                    <IconImg src={ROUNDED_CORNER_ICON} style={{ transform: "scaleY(-1)" }} />
+                  ),
+                }}
+                perCorner={radiusPerCorner}
+                onCornerChange={setRadiusCorner}
+                onUniformChange={setRadiusUniform}
+              />
+            </div>
+          </>
+        ) : isStructural ? (
+          isSpacer ? (
+            <div className="grid grid-cols-2 gap-4">
+              <label className="flex flex-col gap-1">
+                <FieldLabel>Width</FieldLabel>
+                <Stepper
+                  value={style.width}
+                  min={0}
+                  placeholder="Auto"
+                  onChange={(next) => set({ width: next })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <FieldLabel>Height</FieldLabel>
+                <Stepper
+                  value={style.height}
+                  min={0}
+                  placeholder="24"
+                  onChange={(next) => set({ height: next })}
+                />
+              </label>
+            </div>
+          ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <label className="flex flex-col gap-1">
+                <FieldLabel>Width</FieldLabel>
+                <Stepper
+                  value={style.width}
+                  min={0}
+                  placeholder="Auto"
+                  onChange={(next) => set({ width: next })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <FieldLabel>Height</FieldLabel>
+                <Stepper
+                  value={style.height}
+                  min={0}
+                  placeholder="1"
+                  onChange={(next) => set({ height: next })}
+                />
+              </label>
+            </div>
+            <div className="flex flex-col gap-1">
+              <ExpandableFieldLabel
+                expanded={radiusPerCorner}
+                onToggle={toggleRadiusPerCorner}
+              >
+                Corner radius
+              </ExpandableFieldLabel>
+              <RadiusMatrix
+                style={style}
+                collapsedIcon={<IconImg src={CORNER_RADIUS_ALL_ICON} />}
+                icons={{
+                  topLeft: (
+                    <IconImg src={ROUNDED_CORNER_ICON} style={{ transform: "scaleX(-1)" }} />
+                  ),
+                  topRight: <IconImg src={ROUNDED_CORNER_ICON} />,
+                  bottomLeft: (
+                    <IconImg src={ROUNDED_CORNER_ICON} style={{ transform: "rotate(180deg)" }} />
+                  ),
+                  bottomRight: (
+                    <IconImg src={ROUNDED_CORNER_ICON} style={{ transform: "scaleY(-1)" }} />
+                  ),
+                }}
+                perCorner={radiusPerCorner}
+                onCornerChange={setRadiusCorner}
+                onUniformChange={setRadiusUniform}
+              />
+            </div>
+          </>
+          )
+        ) : (
+        <>
         <div className="grid grid-cols-2 gap-4">
           <label className="flex flex-col gap-1">
             <FieldLabel>Width</FieldLabel>
@@ -1660,6 +1996,8 @@ function StyleTab({
             />
           </div>
         </div>
+        </>
+        )}
       </section>
 
       <PanelDivider />

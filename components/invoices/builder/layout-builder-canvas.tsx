@@ -51,10 +51,13 @@ import type {
 import {
   ELEMENT_DRAG_MIME,
   PAGE_LAYER_LABEL,
+  PLACED_ELEMENT_REORDER_MIME,
 } from "@/lib/layout-builder-types"
 import {
+  getPlacedElementLayerKind,
+  getPlacedElementSeed,
   isMultilinePlacedKind,
-  isTextPlacedKind,
+  isStructuralPlacedKind,
 } from "@/lib/placed-element-defaults"
 import { cn } from "@/lib/utils"
 
@@ -243,6 +246,35 @@ function styleFromLayer(
     result.borderLeftWidth = style.borderLeftWidth ?? 0
   }
   return result
+}
+
+/** Margin-only shell for placed elements — keeps spacing outside the content box. */
+function marginStyleFromLayer(style?: BuilderLayerStyle): CSSProperties | undefined {
+  if (!style) {
+    return undefined
+  }
+  const result: CSSProperties = {}
+  if (style.marginTop != null) result.marginTop = style.marginTop
+  if (style.marginRight != null) result.marginRight = style.marginRight
+  if (style.marginBottom != null) result.marginBottom = style.marginBottom
+  if (style.marginLeft != null) result.marginLeft = style.marginLeft
+  return Object.keys(result).length > 0 ? result : undefined
+}
+
+/** Layer styles applied to the element content box (everything except margin). */
+function contentStyleFromLayer(
+  style?: BuilderLayerStyle,
+  promoteInlineBlock = true
+): CSSProperties | undefined {
+  if (!style) {
+    return undefined
+  }
+  const result = { ...(styleFromLayer(style, promoteInlineBlock) ?? {}) }
+  delete result.marginTop
+  delete result.marginRight
+  delete result.marginBottom
+  delete result.marginLeft
+  return Object.keys(result).length > 0 ? result : undefined
 }
 
 function formatMoney(symbol: string, amount: number): string {
@@ -1177,17 +1209,19 @@ function PlacedEditableText({
   editMode,
   className,
   multiline = false,
+  style,
 }: {
   value: string
   onChange: (next: string) => void
   editMode: boolean
   className?: string
   multiline?: boolean
+  style?: CSSProperties
 }) {
   if (!editMode) {
     if (multiline) {
       return (
-        <div className={className}>
+        <div className={className} style={style}>
           {value.split("\n").map((line, index) => (
             <p key={index} className={index > 0 ? "mt-1" : undefined}>
               {line}
@@ -1196,7 +1230,11 @@ function PlacedEditableText({
         </div>
       )
     }
-    return <span className={className}>{value}</span>
+    return (
+      <span className={className} style={style}>
+        {value}
+      </span>
+    )
   }
 
   return (
@@ -1205,6 +1243,7 @@ function PlacedEditableText({
       suppressContentEditableWarning
       role="textbox"
       spellCheck={false}
+      style={style}
       onBlur={(event) => {
         const next = multiline
           ? (event.currentTarget.innerText ?? "").trimEnd()
@@ -1235,13 +1274,17 @@ function PlacedElementView({
   element,
   editMode,
   onContentChange,
+  layerStyle,
 }: {
   element: PlacedElement
   editMode: boolean
   onContentChange: (content: string) => void
+  layerStyle?: BuilderLayerStyle
 }) {
   const { kind, content } = element
   const multiline = isMultilinePlacedKind(kind)
+  const textStyle = contentStyleFromLayer(layerStyle)
+  const blockStyle = contentStyleFromLayer(layerStyle, false)
 
   const editable = (className: string) => (
     <PlacedEditableText
@@ -1250,36 +1293,159 @@ function PlacedElementView({
       editMode={editMode}
       multiline={multiline}
       className={className}
+      style={textStyle}
     />
   )
 
   if (kind === "divider") {
-    return <div className="h-px w-full bg-[#eaecf0]" aria-hidden />
+    return (
+      <div
+        className="w-full"
+        style={{
+          display: "block",
+          width: "100%",
+          boxSizing: "border-box",
+          ...blockStyle,
+          height: layerStyle?.height ?? 1,
+          minHeight: 1,
+          backgroundColor: layerStyle?.backgroundColor ?? "#eaecf0",
+        }}
+        aria-hidden
+      />
+    )
   }
 
   if (kind === "spacer") {
-    return <div className="h-6 w-full" aria-hidden />
-  }
-
-  if (kind === "image") {
+    const hasFill = Boolean(layerStyle?.backgroundColor)
     return (
       <div
         className={cn(
-          "flex h-32 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[#d0d5dd] bg-[#f9fafb]",
-          editMode && "hover:border-[#84adff] hover:bg-[#f5f8ff]"
+          "w-full",
+          editMode && !hasFill && "border border-dashed border-[#d0d5dd]"
+        )}
+        style={{
+          display: "block",
+          boxSizing: "border-box",
+          ...blockStyle,
+          width: layerStyle?.width ?? "100%",
+          height: layerStyle?.height ?? 24,
+          minHeight: 1,
+          backgroundColor: layerStyle?.backgroundColor,
+        }}
+        aria-hidden
+      />
+    )
+  }
+
+  if (kind === "image") {
+    const applied = blockStyle
+    const hasImage = Boolean(layerStyle?.backgroundImage)
+    const imageAlign = layerStyle?.imageAlign ?? "full"
+    const sizeMode = layerStyle?.imageSizeMode ?? "custom"
+
+    const shellStyle: React.CSSProperties = applied ? { ...applied } : {}
+    delete shellStyle.backgroundImage
+    delete shellStyle.backgroundSize
+    delete shellStyle.backgroundPosition
+    delete shellStyle.backgroundRepeat
+
+    shellStyle.backgroundColor =
+      layerStyle?.backgroundColor ?? (hasImage ? undefined : "#f9fafb")
+
+    if (sizeMode === "fill") {
+      shellStyle.width = "100%"
+      if (layerStyle?.height != null) {
+        shellStyle.height = layerStyle.height
+      } else {
+        shellStyle.minHeight = 80
+      }
+    } else if (sizeMode === "custom") {
+      shellStyle.width = layerStyle?.width ?? 80
+      shellStyle.height = layerStyle?.height ?? 80
+    } else {
+      shellStyle.width = undefined
+      shellStyle.height = undefined
+      shellStyle.maxWidth = "100%"
+      shellStyle.minHeight = hasImage ? undefined : 80
+    }
+
+    const imageFillStyle: React.CSSProperties = {}
+    if (applied?.backgroundImage) {
+      imageFillStyle.backgroundImage = applied.backgroundImage
+      imageFillStyle.backgroundSize = applied.backgroundSize ?? "cover"
+      imageFillStyle.backgroundPosition = applied.backgroundPosition ?? "center"
+      imageFillStyle.backgroundRepeat = applied.backgroundRepeat ?? "no-repeat"
+    }
+
+    const shellClassName = cn(
+      "overflow-hidden rounded-md border",
+      hasImage
+        ? "border-[#eaecf0]"
+        : "flex flex-col items-center justify-center gap-2 border-dashed border-[#d0d5dd]",
+      editMode && !hasImage && "hover:border-[#84adff]"
+    )
+
+    const imageAlt = layerStyle?.imageAlt?.trim() ?? ""
+
+    const box = (
+      <div className={shellClassName} style={shellStyle}>
+        {hasImage ? (
+          sizeMode === "original" ? (
+            <img
+              src={layerStyle?.backgroundImage}
+              alt={imageAlt}
+              className="block h-auto max-w-full"
+              style={{
+                opacity:
+                  layerStyle?.backgroundOpacity != null
+                    ? Math.max(0, Math.min(100, layerStyle.backgroundOpacity)) / 100
+                    : 1,
+              }}
+            />
+          ) : (
+            <div
+              className="size-full min-h-0"
+              style={imageFillStyle}
+              {...(imageAlt
+                ? { role: "img" as const, "aria-label": imageAlt }
+                : { "aria-hidden": true })}
+            />
+          )
+        ) : (
+          <>
+            <ImageIcon className="size-8 text-[#98a2b3]" aria-hidden />
+            <span className="font-[family-name:var(--font-inter)] text-sm text-[#667085]">
+              {editMode ? "Replace image" : "Image placeholder"}
+            </span>
+          </>
+        )}
+      </div>
+    )
+
+    if (imageAlign === "full") {
+      return box
+    }
+
+    return (
+      <div
+        className={cn(
+          "flex w-full",
+          imageAlign === "left" && "justify-start",
+          imageAlign === "center" && "justify-center",
+          imageAlign === "right" && "justify-end"
         )}
       >
-        <ImageIcon className="size-8 text-[#98a2b3]" aria-hidden />
-        <span className="font-[family-name:var(--font-inter)] text-sm text-[#667085]">
-          {editMode ? "Replace image" : "Image placeholder"}
-        </span>
+        {box}
       </div>
     )
   }
 
   if (kind === "button") {
     return (
-      <span className="inline-flex h-9 items-center rounded border border-[#d0d5dd] bg-white px-4 font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054] shadow-[0_1px_2px_rgba(16,24,40,0.05)]">
+      <span
+        className="inline-flex h-9 items-center rounded border border-[#d0d5dd] bg-white px-4 font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054] shadow-[0_1px_2px_rgba(16,24,40,0.05)]"
+        style={textStyle}
+      >
         {editable("inline")}
       </span>
     )
@@ -1288,7 +1454,7 @@ function PlacedElementView({
   if (kind.startsWith("columns-")) {
     const count = Number.parseInt(kind.split("-")[1] ?? "1", 10)
     return (
-      <div className="flex w-full gap-4">
+      <div className="flex w-full gap-4" style={blockStyle}>
         {Array.from({ length: count }).map((_, index) => (
           <div key={index} className="min-w-0 flex-1">
             {editable(
@@ -1302,7 +1468,10 @@ function PlacedElementView({
 
   if (kind === "table") {
     return (
-      <div className="w-full overflow-hidden rounded border border-[#eaecf0]">
+      <div
+        className="w-full overflow-hidden rounded border border-[#eaecf0]"
+        style={blockStyle}
+      >
         <div className="grid grid-cols-[1fr_56px_80px] gap-3 border-b border-[#eaecf0] bg-[#fcfcfd] px-3 py-2 font-[family-name:var(--font-inter)] text-xs font-semibold uppercase tracking-wide text-[#98a2b3]">
           <span>Description</span>
           <span className="text-right">Qty</span>
@@ -1326,7 +1495,10 @@ function PlacedElementView({
   if (kind === "list") {
     const items = content.split("\n").filter(Boolean)
     return (
-      <ul className="list-disc space-y-1 pl-5 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]">
+      <ul
+        className="list-disc space-y-1 pl-5 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]"
+        style={textStyle}
+      >
         {items.map((item, index) => (
           <li key={index}>
             {editMode ? (
@@ -1339,6 +1511,7 @@ function PlacedElementView({
                 }}
                 editMode
                 className="inline"
+                style={textStyle}
               />
             ) : (
               item
@@ -1351,7 +1524,10 @@ function PlacedElementView({
 
   if (kind === "quote") {
     return (
-      <blockquote className="border-l-2 border-[#84adff] pl-3 font-[family-name:var(--font-inter)] text-sm italic leading-5 text-[#667085]">
+      <blockquote
+        className="border-l-2 border-[#84adff] pl-3 font-[family-name:var(--font-inter)] text-sm italic leading-5 text-[#667085]"
+        style={textStyle}
+      >
         {editable("block")}
       </blockquote>
     )
@@ -1359,7 +1535,10 @@ function PlacedElementView({
 
   if (kind === "container") {
     return (
-      <div className="rounded border border-[#eaecf0] bg-[#fcfcfd] p-4">
+      <div
+        className="rounded border border-[#eaecf0] bg-[#fcfcfd] p-4"
+        style={blockStyle}
+      >
         {editable(
           "font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]"
         )}
@@ -1374,6 +1553,181 @@ function PlacedElementView({
 }
 
 /**
+ * A dropped palette element wired into the Visual edits inspector — same
+ * selection ring, toolbar actions, and property panel as native canvas layers.
+ */
+function SelectablePlacedElement({ element }: { element: PlacedElement }) {
+  const {
+    inspectingLayer,
+    selectLayer,
+    seedLayer,
+    isLayerEditing,
+    layerText,
+    layerStyles,
+    updatePlacedElementContent,
+    duplicatePlacedElement,
+    removePlacedElement,
+    canMovePlacedElement,
+    movePlacedElement,
+    reorderPlacedElement,
+    registerLayerMover,
+  } = useLayoutBuilder()
+  const [pendingRemove, setPendingRemove] = useState(false)
+  const nodeRef = useRef<HTMLDivElement>(null)
+
+  const label = element.label
+  const displayContent = layerText[label] ?? element.content
+  const layerStyle = layerStyles[label]
+  const isSelected = inspectingLayer === label
+  const shellStyle = marginStyleFromLayer(layerStyle)
+  const layerKind = getPlacedElementLayerKind(element.kind)
+  const canUp = canMovePlacedElement(element.id, "up")
+  const canDown = canMovePlacedElement(element.id, "down")
+
+  useEffect(() => {
+    registerLayerMover(label, {
+      canUp,
+      canDown,
+      up: () => movePlacedElement(element.id, "up"),
+      down: () => movePlacedElement(element.id, "down"),
+    })
+    return () => registerLayerMover(label, null)
+  }, [
+    label,
+    element.id,
+    canUp,
+    canDown,
+    movePlacedElement,
+    registerLayerMover,
+  ])
+
+  const openInspector = () => {
+    if (element.kind === "image" || isStructuralPlacedKind(element.kind)) {
+      seedLayer(
+        label,
+        getPlacedElementSeed(element.kind, displayContent)
+      )
+    } else {
+      const node = nodeRef.current
+      if (node) {
+        const cs = window.getComputedStyle(node)
+        const align = ["left", "center", "right", "justify"].includes(cs.textAlign)
+          ? (cs.textAlign as BuilderLayerStyle["textAlign"])
+          : "left"
+        seedLayer(label, {
+          content: displayContent,
+          style: {
+            fontFamily: cs.fontFamily,
+            fontSize: Math.round(parseFloat(cs.fontSize)) || undefined,
+            fontStyle: cs.fontStyle === "italic" ? "italic" : "normal",
+            fontWeight: Number(cs.fontWeight) || undefined,
+            textAlign: align,
+            color: cs.color,
+          },
+        })
+      }
+    }
+    selectLayer(label, layerKind)
+  }
+
+  const leftActions: SelectorAction[] = [
+    {
+      icon: <Move />,
+      label: `Drag to move ${label}`,
+      onClick: () => {},
+      draggable: true,
+      onDragStart: (event) => {
+        event.dataTransfer.setData(PLACED_ELEMENT_REORDER_MIME, element.id)
+        event.dataTransfer.effectAllowed = "move"
+      },
+    },
+    {
+      icon: <ArrowUp />,
+      label: `Move ${label} up`,
+      onClick: () => movePlacedElement(element.id, "up"),
+      disabled: !canUp,
+    },
+    {
+      icon: <ArrowDown />,
+      label: `Move ${label} down`,
+      onClick: () => movePlacedElement(element.id, "down"),
+      disabled: !canDown,
+    },
+  ]
+
+  return (
+    <>
+      <VisualEditSelector
+        label={label}
+        selected={isSelected}
+        working={isLayerEditing(label)}
+        onSelect={openInspector}
+        leftActions={leftActions}
+        rightActions={[
+          {
+            icon: <Copy />,
+            label: `Duplicate ${label}`,
+            onClick: () => duplicatePlacedElement(element.id),
+          },
+          {
+            icon: <Trash2 />,
+            label: `Delete ${label}`,
+            onClick: () => setPendingRemove(true),
+          },
+        ]}
+        onReorderDragOver={(event) => {
+          if (event.dataTransfer.types.includes(PLACED_ELEMENT_REORDER_MIME)) {
+            event.preventDefault()
+            event.dataTransfer.dropEffect = "move"
+          }
+        }}
+        onReorderDrop={(event) => {
+          const dragged = event.dataTransfer.getData(PLACED_ELEMENT_REORDER_MIME)
+          if (dragged) {
+            event.preventDefault()
+            reorderPlacedElement(dragged, element.id)
+          }
+        }}
+        className="block"
+      >
+        <div ref={nodeRef} style={shellStyle}>
+          <PlacedElementView
+            element={
+              displayContent === element.content
+                ? element
+                : { ...element, content: displayContent }
+            }
+            editMode
+            layerStyle={layerStyle}
+            onContentChange={(content) =>
+              updatePlacedElementContent(element.id, content)
+            }
+          />
+        </div>
+      </VisualEditSelector>
+      <ConfirmationDialog
+        open={pendingRemove}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingRemove(false)
+          }
+        }}
+        title="Delete element"
+        description={getDeleteConfirmationDescription(element.label)}
+        confirmLabel={DELETE_CONFIRMATION_LABEL}
+        cancelLabel={DELETE_CANCEL_LABEL}
+        variant="destructive"
+        onConfirm={() => {
+          removePlacedElement(element.id)
+          setPendingRemove(false)
+        }}
+        onCancel={() => setPendingRemove(false)}
+      />
+    </>
+  )
+}
+
+/**
  * Drop target between document sections. Invisible until an element is dragged
  * over — then shows a 1.5px insertion line. Renders placed element placeholders
  * after drop.
@@ -1383,11 +1737,10 @@ function ElementDropZone({ zone }: { zone: PlacedElementZone }) {
     placedElements,
     addPlacedElement,
     updatePlacedElementContent,
-    removePlacedElement,
     editMode,
+    layerStyles,
   } = useLayoutBuilder()
   const [dragOver, setDragOver] = useState(false)
-  const [pendingRemove, setPendingRemove] = useState<PlacedElement | null>(null)
   const zoneElements = placedElements.filter((element) => element.zone === zone)
 
   const acceptDrag = (event: React.DragEvent) => {
@@ -1419,34 +1772,25 @@ function ElementDropZone({ zone }: { zone: PlacedElementZone }) {
 
   return (
     <div className="flex flex-col gap-2">
-      {zoneElements.map((element) => (
-        <div
-          key={element.id}
-          className={cn(
-            "group/placed relative",
-            editMode &&
-              "rounded-sm ring-1 ring-transparent hover:ring-[#9b8afb]/40"
-          )}
-        >
-          {editMode ? (
-            <button
-              type="button"
-              aria-label={`Remove ${element.label}`}
-              onClick={() => setPendingRemove(element)}
-              className="absolute -right-1 -top-1 z-10 inline-flex size-6 items-center justify-center rounded-full border border-[#eaecf0] bg-white text-[#667085] opacity-0 shadow-sm outline-none transition-opacity hover:border-[#fda29b] hover:text-[#b42318] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[#155eef]/40 group-hover/placed:opacity-100"
-            >
-              <Trash2 className="size-3.5" aria-hidden />
-            </button>
-          ) : null}
-          <PlacedElementView
-            element={element}
-            editMode={editMode}
-            onContentChange={(content) =>
-              updatePlacedElementContent(element.id, content)
-            }
-          />
-        </div>
-      ))}
+      {zoneElements.map((element) =>
+        editMode ? (
+          <SelectablePlacedElement key={element.id} element={element} />
+        ) : (
+          <div
+            key={element.id}
+            style={marginStyleFromLayer(layerStyles[element.label])}
+          >
+            <PlacedElementView
+              element={element}
+              editMode={false}
+              layerStyle={layerStyles[element.label]}
+              onContentChange={(content) =>
+                updatePlacedElementContent(element.id, content)
+              }
+            />
+          </div>
+        )
+      )}
 
       {/* Transparent hit target; only the 1.5px line shows while dragging over. */}
       <div
@@ -1464,31 +1808,6 @@ function ElementDropZone({ zone }: { zone: PlacedElementZone }) {
           )}
         />
       </div>
-
-      <ConfirmationDialog
-        open={pendingRemove !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingRemove(null)
-          }
-        }}
-        title="Delete element"
-        description={
-          pendingRemove
-            ? getDeleteConfirmationDescription(pendingRemove.label)
-            : null
-        }
-        confirmLabel={DELETE_CONFIRMATION_LABEL}
-        cancelLabel={DELETE_CANCEL_LABEL}
-        variant="destructive"
-        onConfirm={() => {
-          if (pendingRemove) {
-            removePlacedElement(pendingRemove.id)
-          }
-          setPendingRemove(null)
-        }}
-        onCancel={() => setPendingRemove(null)}
-      />
     </div>
   )
 }
@@ -3376,112 +3695,6 @@ function BlankDropZone({
   )
 }
 
-/** A placed block on the blank page: inline-editable, with a hover remove control. */
-function BlankPlacedElement({ element }: { element: PlacedElement }) {
-  const {
-    inspectingLayer,
-    inspectLayer,
-    seedLayer,
-    isLayerEditing,
-    layerText,
-    layerStyles,
-    updatePlacedElementContent,
-    duplicatePlacedElement,
-    removePlacedElement,
-  } = useLayoutBuilder()
-  const [pendingRemove, setPendingRemove] = useState(false)
-  const nodeRef = useRef<HTMLDivElement>(null)
-
-  // Inspector / inline edits win for display, mirroring the AI-flow layers so a
-  // dropped element behaves identically once it lands on the page.
-  const label = element.label
-  const displayContent = layerText[label] ?? element.content
-  // Selected ring tracks the open Visual edits inspector — we deliberately don't
-  // push a composer selection chip here (keeps the AiComposer unchanged).
-  const isSelected = inspectingLayer === label
-  const appliedStyle = styleFromLayer(layerStyles[label])
-
-  // Capture the element's live content + computed typography on first inspect so
-  // the Visual edits panel opens pre-filled, exactly like the AI-flow layers.
-  const openInspector = () => {
-    const node = nodeRef.current
-    if (node) {
-      const cs = window.getComputedStyle(node)
-      const align = ["left", "center", "right", "justify"].includes(cs.textAlign)
-        ? (cs.textAlign as BuilderLayerStyle["textAlign"])
-        : "left"
-      seedLayer(label, {
-        content: displayContent,
-        style: {
-          fontFamily: cs.fontFamily,
-          fontSize: Math.round(parseFloat(cs.fontSize)) || undefined,
-          fontStyle: cs.fontStyle === "italic" ? "italic" : "normal",
-          fontWeight: Number(cs.fontWeight) || undefined,
-          textAlign: align,
-          color: cs.color,
-        },
-      })
-    }
-    inspectLayer(label, isTextPlacedKind(element.kind) ? "text" : "container")
-  }
-
-  return (
-    <>
-      <VisualEditSelector
-        label={label}
-        selected={isSelected}
-        working={isLayerEditing(label)}
-        onSelect={openInspector}
-        rightActions={[
-          {
-            icon: <Copy />,
-            label: `Duplicate ${label}`,
-            onClick: () => duplicatePlacedElement(element.id),
-          },
-          {
-            icon: <Trash2 />,
-            label: `Delete ${label}`,
-            onClick: () => setPendingRemove(true),
-          },
-        ]}
-        className="block"
-      >
-        <div ref={nodeRef} style={appliedStyle}>
-          <PlacedElementView
-            element={
-              displayContent === element.content
-                ? element
-                : { ...element, content: displayContent }
-            }
-            editMode
-            onContentChange={(content) =>
-              updatePlacedElementContent(element.id, content)
-            }
-          />
-        </div>
-      </VisualEditSelector>
-      <ConfirmationDialog
-        open={pendingRemove}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingRemove(false)
-          }
-        }}
-        title="Delete element"
-        description={getDeleteConfirmationDescription(element.label)}
-        confirmLabel={DELETE_CONFIRMATION_LABEL}
-        cancelLabel={DELETE_CANCEL_LABEL}
-        variant="destructive"
-        onConfirm={() => {
-          removePlacedElement(element.id)
-          setPendingRemove(false)
-        }}
-        onCancel={() => setPendingRemove(false)}
-      />
-    </>
-  )
-}
-
 /**
  * The blank build-from-scratch page: a white invoice-sized sheet that only ever
  * holds the elements the user drops (no invoice scaffold). Drop seams between
@@ -3515,7 +3728,7 @@ function BlankPage() {
               <BlankDropZone index={0} />
               {placedElements.map((element, elementIndex) => (
                 <Fragment key={element.id}>
-                  <BlankPlacedElement element={element} />
+                  <SelectablePlacedElement element={element} />
                   {elementIndex < placedElements.length - 1 ? (
                     <BlankDropZone index={elementIndex + 1} />
                   ) : null}

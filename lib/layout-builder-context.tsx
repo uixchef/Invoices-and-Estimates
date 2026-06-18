@@ -32,7 +32,11 @@ import {
   buildReasoning,
   buildRecommendations,
 } from "@/lib/builder-narrative"
-import { getDefaultPlacedContent } from "@/lib/placed-element-defaults"
+import {
+  getDefaultPlacedContent,
+  getPlacedElementLayerKind,
+  getPlacedElementSeed,
+} from "@/lib/placed-element-defaults"
 import { getDefaultBuilderMediumId } from "@/lib/mediums-data"
 import { findDocumentSource } from "@/lib/invoice-sources"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
@@ -1119,6 +1123,10 @@ type LayoutBuilderContextValue = {
   removePlacedElement: (id: string) => void
   /** Inserts a copy of a placed element directly after the original. */
   duplicatePlacedElement: (id: string) => void
+  canMovePlacedElement: (id: string, direction: "up" | "down") => boolean
+  movePlacedElement: (id: string, direction: "up" | "down") => void
+  /** Drops a dragged placed element before the target within the same zone. */
+  reorderPlacedElement: (draggedId: string, targetId: string) => void
 
   /**
    * "Start from blank" session: the builder opened on its empty state with no
@@ -1317,6 +1325,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const canvasToastTimerRef = useRef<number | null>(null)
 
   const placedElementCounterRef = useRef(0)
+  /** Opens the inspector after the dropped element commits to the canvas. */
+  const pendingPlacedInspectRef = useRef<PlacedElement | null>(null)
   const historyPastRef = useRef<BuilderHistorySnapshot[]>([])
   const historyFutureRef = useRef<BuilderHistorySnapshot[]>([])
   const applyingHistoryRef = useRef(false)
@@ -1912,6 +1922,16 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     })
   }, [codeOverride])
 
+  /** Enter visual edit mode without clearing the current inspector selection. */
+  const enterEditMode = useCallback(() => {
+    if (codeOverride !== null) {
+      return
+    }
+    setPreviewOpen(true)
+    setEditMode(true)
+    setAddingElement(false)
+  }, [codeOverride])
+
   // Detaching snapshots the current generated code as the editable buffer and
   // tears down structured-edit affordances so the two models can't silently
   // diverge while the user edits raw code.
@@ -2206,49 +2226,6 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     setAddingElement(false)
   }, [])
 
-  const addPlacedElement = useCallback(
-    ({
-      kind,
-      label,
-      zone,
-      index,
-    }: {
-      kind: string
-      label: string
-      zone: PlacedElementZone
-      index?: number
-    }) => {
-      pushHistory()
-      placedElementCounterRef.current += 1
-      const id = `placed-${placedElementCounterRef.current}`
-
-      setPlacedElements((current) => {
-        const sameKind = current.filter((element) => element.kind === kind)
-        const displayLabel =
-          sameKind.length > 0 ? `${label} ${sameKind.length + 1}` : label
-
-        const next: PlacedElement = {
-          id,
-          kind,
-          label: displayLabel,
-          zone,
-          content: getDefaultPlacedContent(kind),
-        }
-
-        if (index == null) {
-          return [...current, next]
-        }
-        // Positional insert for the blank build-from-scratch page (drop between
-        // existing blocks). The blank session stays blank — the page just
-        // accumulates the elements the user drops, no invoice scaffold.
-        const copy = [...current]
-        copy.splice(Math.max(0, Math.min(index, copy.length)), 0, next)
-        return copy
-      })
-    },
-    [pushHistory]
-  )
-
   const updatePlacedElementContent = useCallback(
     (id: string, content: string) => {
       pushHistory()
@@ -2295,6 +2272,64 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     [pushHistory]
   )
 
+  const placedElementZonePosition = useCallback(
+    (elements: PlacedElement[], id: string) => {
+      const index = elements.findIndex((element) => element.id === id)
+      if (index === -1) {
+        return null
+      }
+      const zone = elements[index].zone
+      const zoneIndices = elements
+        .map((element, elementIndex) => ({ element, elementIndex }))
+        .filter(({ element }) => element.zone === zone)
+        .map(({ elementIndex }) => elementIndex)
+      const indexInZone = zoneIndices.indexOf(index)
+      if (indexInZone === -1) {
+        return null
+      }
+      return { zoneIndices, indexInZone }
+    },
+    []
+  )
+
+  const canMovePlacedElement = useCallback(
+    (id: string, direction: "up" | "down") => {
+      const position = placedElementZonePosition(placedElements, id)
+      if (!position) {
+        return false
+      }
+      const { zoneIndices, indexInZone } = position
+      return direction === "up"
+        ? indexInZone > 0
+        : indexInZone < zoneIndices.length - 1
+    },
+    [placedElementZonePosition, placedElements]
+  )
+
+  const movePlacedElement = useCallback(
+    (id: string, direction: "up" | "down") => {
+      pushHistory()
+      setPlacedElements((current) => {
+        const position = placedElementZonePosition(current, id)
+        if (!position) {
+          return current
+        }
+        const { zoneIndices, indexInZone } = position
+        const targetInZone =
+          direction === "up" ? indexInZone - 1 : indexInZone + 1
+        if (targetInZone < 0 || targetInZone >= zoneIndices.length) {
+          return current
+        }
+        const index = zoneIndices[indexInZone]
+        const otherIndex = zoneIndices[targetInZone]
+        const next = [...current]
+        ;[next[index], next[otherIndex]] = [next[otherIndex], next[index]]
+        return next
+      })
+    },
+    [placedElementZonePosition, pushHistory]
+  )
+
   const seedLayer = useCallback(
     (label: string, seed: { content: string; style: BuilderLayerStyle }) => {
       // First seed wins as the reset baseline (later inspects keep live edits).
@@ -2312,6 +2347,99 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       )
     },
     []
+  )
+
+  const openPlacedElementInspector = useCallback(
+    (element: PlacedElement) => {
+      enterEditMode()
+      seedLayer(element.label, getPlacedElementSeed(element.kind, element.content))
+      selectLayer(element.label, getPlacedElementLayerKind(element.kind))
+    },
+    [enterEditMode, selectLayer, seedLayer]
+  )
+
+  const addPlacedElement = useCallback(
+    ({
+      kind,
+      label,
+      zone,
+      index,
+    }: {
+      kind: string
+      label: string
+      zone: PlacedElementZone
+      index?: number
+    }) => {
+      pushHistory()
+      placedElementCounterRef.current += 1
+      const id = `placed-${placedElementCounterRef.current}`
+
+      const current = documentStateRef.current.placedElements
+      const sameKind = current.filter((element) => element.kind === kind)
+      const displayLabel =
+        sameKind.length > 0 ? `${label} ${sameKind.length + 1}` : label
+
+      const created: PlacedElement = {
+        id,
+        kind,
+        label: displayLabel,
+        zone,
+        content: getDefaultPlacedContent(kind),
+      }
+
+      pendingPlacedInspectRef.current = created
+
+      setPlacedElements((existing) => {
+        if (index == null) {
+          return [...existing, created]
+        }
+        const copy = [...existing]
+        copy.splice(Math.max(0, Math.min(index, copy.length)), 0, created)
+        return copy
+      })
+    },
+    [pushHistory]
+  )
+
+  useEffect(() => {
+    const pending = pendingPlacedInspectRef.current
+    if (!pending) {
+      return
+    }
+    if (!placedElements.some((element) => element.id === pending.id)) {
+      return
+    }
+    pendingPlacedInspectRef.current = null
+    openPlacedElementInspector(pending)
+  }, [placedElements, openPlacedElementInspector])
+
+  const reorderPlacedElement = useCallback(
+    (draggedId: string, targetId: string) => {
+      if (draggedId === targetId) {
+        return
+      }
+      const dragged = placedElements.find((element) => element.id === draggedId)
+      pushHistory()
+      setPlacedElements((current) => {
+        const draggedIndex = current.findIndex((element) => element.id === draggedId)
+        const targetIndex = current.findIndex((element) => element.id === targetId)
+        if (draggedIndex === -1 || targetIndex === -1) {
+          return current
+        }
+        if (current[draggedIndex].zone !== current[targetIndex].zone) {
+          return current
+        }
+        const draggedElement = current[draggedIndex]
+        const next = current.filter((element) => element.id !== draggedId)
+        const newTargetIndex = next.findIndex((element) => element.id === targetId)
+        next.splice(newTargetIndex < 0 ? next.length : newTargetIndex, 0, draggedElement)
+        return next
+      })
+      if (dragged) {
+        openPlacedElementInspector(dragged)
+      }
+    },
+    [openPlacedElementInspector, placedElements, pushHistory]
   )
 
   // Compares a layer's live content/style/rules/copies against the seeded
@@ -2995,6 +3123,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       updatePlacedElementContent,
       removePlacedElement,
       duplicatePlacedElement,
+      canMovePlacedElement,
+      movePlacedElement,
+      reorderPlacedElement,
       isBlankSession,
       promptFocusToken,
       focusPrompt,
@@ -3102,6 +3233,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       updatePlacedElementContent,
       removePlacedElement,
       duplicatePlacedElement,
+      canMovePlacedElement,
+      movePlacedElement,
+      reorderPlacedElement,
       isBlankSession,
       promptFocusToken,
       focusPrompt,

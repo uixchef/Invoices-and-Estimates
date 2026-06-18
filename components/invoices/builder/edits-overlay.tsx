@@ -239,6 +239,13 @@ export function EditsOverlay() {
       return
     }
     setPromptValue("")
+    setPos((prev) =>
+      prev ??
+      clampToViewport({
+        left: window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN,
+        top: 96,
+      })
+    )
     let frame = 0
     const place = () => {
       const target = document.querySelector(

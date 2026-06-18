@@ -950,10 +950,10 @@ export function InvoiceAiPanel({
       </div>
       )}
 
-      {/* The docked composer is a chat affordance — hidden in the Add elements
-          palette (a drag-and-drop surface) and in the blank welcome state, which
-          carries its own prompt input. */}
-      {adding || blankWelcome ? null : (
+      {/* The docked composer stays visible while the Add elements palette is
+          open (Figma 3147:23660). Hidden only in the blank welcome state,
+          which carries its own prompt input. */}
+      {blankWelcome ? null : (
         <div className="relative flex flex-col gap-2">
           {feedbackToast ? <FeedbackToast message={feedbackToast} /> : null}
           <AiComposer />
