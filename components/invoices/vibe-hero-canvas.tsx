@@ -4,40 +4,38 @@ import { useEffect, useRef } from "react"
 
 /**
  * Animated purple "vibe" wash for the Create with AI hero, rendered on a
- * <canvas> (replaces the earlier layered-CSS backdrop). Soft violet metaballs
- * drift on looping sinusoidal paths and a cursor-reactive bloom swells toward
- * the pointer. An elliptical mask feathers the wash so it melts into the panel
- * edges and keeps the headline area legible.
+ * <canvas> (replaces the earlier layered-CSS backdrop). Several translucent
+ * sine-wave layers travel across each other to read as flowing water, and a
+ * cursor-reactive bloom swells toward the pointer. An elliptical mask feathers
+ * the wash so it melts into the panel edges and keeps the headline legible.
  *
  * Honors prefers-reduced-motion (renders one static frame, no pointer energy)
  * and is devicePixelRatio-correct.
  */
 
-type Blob = {
-  /** Base center, amplitude, angular speed, and phase in normalized space. */
-  cx: number
-  cy: number
-  ax: number
-  ay: number
-  sx: number
-  sy: number
-  px: number
-  py: number
-  /** Radius as a fraction of the larger canvas dimension. */
-  r: number
-  /** Base color as "r,g,b" and peak alpha. */
+type Wave = {
+  /** Baseline (vertical rest position) and crest amplitude, as height fractions. */
+  base: number
+  amp: number
+  /** Wavelength as a fraction of width (smaller = more crests). */
+  len: number
+  /** Horizontal travel speed in rad/s; sign sets direction. */
+  speed: number
+  /** How far below the baseline the fill fades out (height fraction). */
+  fade: number
+  /** Starting phase offset and color "r,g,b" + peak alpha. */
+  phase: number
   color: string
   alpha: number
 }
 
-// Spread across the panel (not piled in the center) and kept low-alpha so the
-// wash stays airy and "floats" instead of stacking into a dense purple core.
-const BLOBS: Blob[] = [
-  { cx: 0.2, cy: 0.34, ax: 0.1, ay: 0.08, sx: 0.24, sy: 0.18, px: 0, py: 1.2, r: 0.34, color: "139,92,246", alpha: 0.2 },
-  { cx: 0.8, cy: 0.38, ax: 0.11, ay: 0.09, sx: 0.2, sy: 0.27, px: 2.1, py: 0.4, r: 0.32, color: "167,139,250", alpha: 0.18 },
-  { cx: 0.3, cy: 0.72, ax: 0.12, ay: 0.1, sx: 0.17, sy: 0.22, px: 4.0, py: 2.6, r: 0.3, color: "167,139,250", alpha: 0.16 },
-  { cx: 0.74, cy: 0.7, ax: 0.11, ay: 0.09, sx: 0.29, sy: 0.19, px: 1.0, py: 3.3, r: 0.3, color: "139,92,246", alpha: 0.16 },
-  { cx: 0.5, cy: 0.48, ax: 0.18, ay: 0.13, sx: 0.14, sy: 0.18, px: 3.0, py: 1.8, r: 0.26, color: "168,150,255", alpha: 0.12 },
+// Layered like rolling water: different baselines, wavelengths, and opposing
+// travel directions so the crests interfere and flow. Low alpha keeps it airy.
+const WAVES: Wave[] = [
+  { base: 0.34, amp: 0.05, len: 1.0, speed: -0.5, fade: 0.5, phase: 4.2, color: "167,139,250", alpha: 0.1 },
+  { base: 0.44, amp: 0.06, len: 0.85, speed: 0.5, fade: 0.42, phase: 0, color: "139,92,246", alpha: 0.16 },
+  { base: 0.54, amp: 0.075, len: 1.2, speed: -0.38, fade: 0.45, phase: 1.6, color: "167,139,250", alpha: 0.14 },
+  { base: 0.62, amp: 0.05, len: 0.6, speed: 0.66, fade: 0.4, phase: 3.1, color: "168,150,255", alpha: 0.1 },
 ]
 
 export function VibeHeroCanvas() {
@@ -95,6 +93,36 @@ export function VibeHeroCanvas() {
       ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2)
     }
 
+    // Fills the area under a traveling sine curve with a downward-fading
+    // gradient, so the moving crest reads as a flowing water surface.
+    const drawWave = (w: Wave, t: number) => {
+      const baseY = w.base * height
+      const ampPx = w.amp * height * (1 + 0.18 * Math.sin(t * 0.3 + w.phase))
+      const step = Math.max(6, width / 96)
+      ctx.beginPath()
+      ctx.moveTo(0, height)
+      ctx.lineTo(0, baseY)
+      for (let x = 0; x <= width; x += step) {
+        const y =
+          baseY +
+          Math.sin((x / width / w.len) * Math.PI * 2 + t * w.speed + w.phase) *
+            ampPx
+        ctx.lineTo(x, y)
+      }
+      ctx.lineTo(width, height)
+      ctx.closePath()
+      const gradient = ctx.createLinearGradient(
+        0,
+        baseY - ampPx,
+        0,
+        baseY + w.fade * height
+      )
+      gradient.addColorStop(0, `rgba(${w.color},${w.alpha})`)
+      gradient.addColorStop(1, `rgba(${w.color},0)`)
+      ctx.fillStyle = gradient
+      ctx.fill()
+    }
+
     const render = (t: number) => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, width, height)
@@ -102,24 +130,21 @@ export function VibeHeroCanvas() {
 
       const base = Math.max(width, height)
 
-      for (const b of BLOBS) {
-        // Layer two out-of-phase sines per axis so each blob wanders on an
-        // organic, looping path (rather than a flat back-and-forth), and pulse
-        // the radius so the wash swells and contracts like water.
-        const x =
-          (b.cx +
-            Math.sin(t * b.sx + b.px) * b.ax +
-            Math.cos(t * b.sx * 0.5 + b.py) * b.ax * 0.45) *
-          width
-        const y =
-          (b.cy +
-            Math.cos(t * b.sy + b.py) * b.ay +
-            Math.sin(t * b.sy * 0.6 + b.px) * b.ay * 0.5) *
-          height
-        const radius =
-          b.r * base * (1 + 0.08 * Math.sin(t * (b.sx + b.sy) + b.px))
-        drawBlob(x, y, radius, b.color, b.alpha)
+      // Blur the wave layers so their crest edges bleed away — no visible
+      // outline, just a soft blended flow. The blur is part of the saved
+      // canvas state, so it's scoped to the wave fills only.
+      ctx.save()
+      ctx.filter = `blur(${Math.max(16, base * 0.05)}px)`
+      for (const w of WAVES) {
+        drawWave(w, t)
       }
+      ctx.restore()
+
+      // A deeper-purple mass that floats slowly from one end of the hero to the
+      // other (with a gentle vertical bob), giving the wash a dynamic focal flow.
+      const travelX = 0.5 + 0.42 * Math.sin(t * 0.18)
+      const travelY = 0.48 + 0.07 * Math.sin(t * 0.27 + 1.0)
+      drawBlob(travelX * width, travelY * height, 0.46 * base, "124,58,237", 0.3)
 
       if (energy > 0.001) {
         drawBlob(
