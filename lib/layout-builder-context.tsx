@@ -58,11 +58,13 @@ import {
   type GeneratedLayout,
   type GeneratedLineItem,
   type LayoutBuilderEditSeed,
+  PAGE_LAYER_LABEL,
   type PlacedElement,
   type PlacedElementZone,
 } from "@/lib/layout-builder-types"
 import type { LayoutRow } from "@/lib/layouts-data"
 import { layoutEditSeedFromRow } from "@/lib/layout-edit-seed"
+import { pageStyleFromComputed } from "@/lib/page-layer-style"
 
 /** Simulated generation latency until the layout-generation API is wired in. */
 const SIMULATED_THINKING_MS = 7000
@@ -980,6 +982,8 @@ type LayoutBuilderContextValue = {
    */
   editMode: boolean
   toggleEditMode: () => void
+  /** Opens the Page properties overlay and enables visual edit mode. */
+  openPageProperties: () => void
   updateLayout: (patch: Partial<GeneratedLayout>) => void
 
   /**
@@ -2380,6 +2384,27 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     [enterEditMode, messages.length, selectLayer, seedLayer]
   )
 
+  const openPageProperties = useCallback(() => {
+    if (codeOverride !== null) {
+      return
+    }
+    enterEditMode()
+    if (typeof document !== "undefined") {
+      const node = document.querySelector(
+        `[data-layer="${PAGE_LAYER_LABEL}"]`
+      )
+      if (node instanceof HTMLElement) {
+        seedLayer(PAGE_LAYER_LABEL, {
+          content: "",
+          style: pageStyleFromComputed(node),
+        })
+      } else {
+        seedLayer(PAGE_LAYER_LABEL, { content: "", style: {} })
+      }
+    }
+    selectLayer(PAGE_LAYER_LABEL, "page")
+  }, [codeOverride, enterEditMode, seedLayer, selectLayer])
+
   const addPlacedElement = useCallback(
     ({
       kind,
@@ -3100,6 +3125,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       panelMaxWidth: PANEL_MAX_WIDTH,
       editMode: effective.editMode,
       toggleEditMode,
+      openPageProperties,
       updateLayout,
       selections,
       addSelection,
@@ -3210,6 +3236,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       panelWidth,
       editMode,
       toggleEditMode,
+      openPageProperties,
       updateLayout,
       selections,
       addSelection,

@@ -59,6 +59,7 @@ import {
   isMultilinePlacedKind,
   isStructuralPlacedKind,
 } from "@/lib/placed-element-defaults"
+import { pageStyleFromComputed } from "@/lib/page-layer-style"
 import { cn } from "@/lib/utils"
 
 /** DnD payload type for reordering top-level document sections via the grip. */
@@ -919,37 +920,6 @@ const DOCUMENT_PAGE_GAP = 24
 
 const DOCUMENT_PAPER_SHELL =
   "mx-auto flex w-full flex-col overflow-hidden rounded-[4px] bg-white shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]"
-
-function parsePx(value: string): number | undefined {
-  const parsed = Math.round(parseFloat(value))
-  return Number.isFinite(parsed) && parsed !== 0 ? parsed : undefined
-}
-
-/** Reads box-model values from a live page shell for the inspector baseline. */
-function pageStyleFromComputed(node: HTMLElement): BuilderLayerStyle {
-  const cs = window.getComputedStyle(node)
-  const radius = parsePx(cs.borderTopLeftRadius)
-  return {
-    backgroundColor:
-      cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)"
-        ? cs.backgroundColor
-        : undefined,
-    marginTop: parsePx(cs.marginTop),
-    marginRight: parsePx(cs.marginRight),
-    marginBottom: parsePx(cs.marginBottom),
-    marginLeft: parsePx(cs.marginLeft),
-    paddingTop: parsePx(cs.paddingTop),
-    paddingRight: parsePx(cs.paddingRight),
-    paddingBottom: parsePx(cs.paddingBottom),
-    paddingLeft: parsePx(cs.paddingLeft),
-    width: parsePx(cs.width),
-    height: parsePx(cs.height),
-    radiusTopLeft: radius,
-    radiusTopRight: radius,
-    radiusBottomRight: radius,
-    radiusBottomLeft: radius,
-  }
-}
 
 /**
  * Page watermark overlay (Figma 3364:53164). Stamped over every page when the

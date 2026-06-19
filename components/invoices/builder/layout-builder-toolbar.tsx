@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 
 import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
+import { Settings04Icon } from "@/components/icons/settings-04-icon"
 import { DocumentSourcePicker } from "@/components/invoices/builder/document-source-picker"
 import {
   Tooltip,
@@ -21,6 +22,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
+import { PAGE_LAYER_LABEL } from "@/lib/layout-builder-types"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { cn } from "@/lib/utils"
 
@@ -211,6 +213,9 @@ export function LayoutBuilderToolbar() {
     undo,
     redo,
     isBlankSession,
+    openPageProperties,
+    inspectingLayer,
+    isCodeDetached,
   } = useLayoutBuilder()
 
   // The Invoice AI button represents the AI conversation view in the left panel.
@@ -231,6 +236,7 @@ export function LayoutBuilderToolbar() {
   // Add elements tool is available from the empty state (status === "idle")
   // even before anything has been generated.
   const canAddElements = canEdit || isBlankSession
+  const pagePropertiesActive = inspectingLayer === PAGE_LAYER_LABEL
 
   return (
     <div className="relative flex h-11 w-full shrink-0 items-center gap-4 border-b border-[#d0d5dd] bg-white px-4 py-1">
@@ -353,6 +359,16 @@ export function LayoutBuilderToolbar() {
         <div className="h-4 w-px bg-[#d0d5dd]" />
         <ToolbarIconButton aria-label="Download" disabled={!canEdit}>
           <Download aria-hidden />
+        </ToolbarIconButton>
+        <div className="h-4 w-px bg-[#d0d5dd]" />
+        <ToolbarIconButton
+          aria-label="Properties"
+          tooltip="Properties"
+          active={pagePropertiesActive}
+          disabled={!canEdit || isCodeDetached}
+          onClick={openPageProperties}
+        >
+          <Settings04Icon className="size-4" />
         </ToolbarIconButton>
       </div>
     </div>
