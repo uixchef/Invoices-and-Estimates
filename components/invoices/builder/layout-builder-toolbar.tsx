@@ -22,7 +22,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
-import { PAGE_LAYER_LABEL } from "@/lib/layout-builder-types"
 import { useMediumsStore } from "@/lib/mediums-store"
 import { cn } from "@/lib/utils"
 
@@ -216,6 +215,8 @@ export function LayoutBuilderToolbar() {
     openPageProperties,
     inspectingLayer,
     isCodeDetached,
+    placedElements,
+    hasGeneratedOnce,
   } = useLayoutBuilder()
 
   // The Invoice AI button represents the AI conversation view in the left panel.
@@ -236,7 +237,12 @@ export function LayoutBuilderToolbar() {
   // Add elements tool is available from the empty state (status === "idle")
   // even before anything has been generated.
   const canAddElements = canEdit || isBlankSession
-  const pagePropertiesActive = inspectingLayer === PAGE_LAYER_LABEL
+  // Highlight while any layer's properties are open; click always navigates to Page.
+  const propertiesActive = inspectingLayer !== null
+  // Page properties are available once a layout is ready, or in build-from-scratch
+  // once the canvas has content (dropped elements or a completed AI build).
+  const canOpenProperties =
+    (canEdit || placedElements.length > 0 || hasGeneratedOnce) && !isCodeDetached
 
   return (
     <div className="relative flex h-11 w-full shrink-0 items-center gap-4 border-b border-[#d0d5dd] bg-white px-4 py-1">
@@ -364,8 +370,8 @@ export function LayoutBuilderToolbar() {
         <ToolbarIconButton
           aria-label="Properties"
           tooltip="Properties"
-          active={pagePropertiesActive}
-          disabled={!canEdit || isCodeDetached}
+          active={propertiesActive}
+          disabled={!canOpenProperties}
           onClick={openPageProperties}
         >
           <Settings04Icon className="size-4" />

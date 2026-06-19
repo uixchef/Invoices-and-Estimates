@@ -59,7 +59,12 @@ const PANEL_WASH =
  * first generation. Sending here hands off to the normal generate flow, which
  * clears the blank session and takes over the docked composer for follow-ups.
  */
-export function AiWelcomeState() {
+export function AiWelcomeState({
+  dockedComposer = false,
+}: {
+  /** When true, the panel's docked composer owns the prompt — hide suggestions + input. */
+  dockedComposer?: boolean
+}) {
   const { sendMessage, promptFocusToken } = useLayoutBuilder()
   const [value, setValue] = useState("")
   const [modelId, setModelId] = useState(AI_MODELS[0].id)
@@ -81,15 +86,19 @@ export function AiWelcomeState() {
 
   // Canvas "Generate with AI" CTA (and panel reopen) pull focus here.
   useEffect(() => {
-    if (promptFocusToken > 0) {
-      textareaRef.current?.focus()
+    if (dockedComposer || promptFocusToken <= 0) {
+      return
     }
-  }, [promptFocusToken])
+    textareaRef.current?.focus()
+  }, [dockedComposer, promptFocusToken])
 
   // Land focus on the prompt once the disclosure settles, matching the final
   // (focused) frame of the reveal. Skipped under reduced-motion-friendly timing
   // by focusing near-immediately when the user prefers less animation.
   useEffect(() => {
+    if (dockedComposer) {
+      return
+    }
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
@@ -101,7 +110,7 @@ export function AiWelcomeState() {
       }
     }, delay)
     return () => window.clearTimeout(timer)
-  }, [])
+  }, [dockedComposer])
 
   const canSend = value.trim().length > 0
 
@@ -146,6 +155,7 @@ export function AiWelcomeState() {
         </p>
       </div>
 
+      {dockedComposer ? null : (
       <div className="flex w-full flex-col">
         {/* Suggested starting points — connected to the top of the prompt input
             (rounded-t, no bottom border) so they read as one surface. */}
@@ -320,6 +330,7 @@ export function AiWelcomeState() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }

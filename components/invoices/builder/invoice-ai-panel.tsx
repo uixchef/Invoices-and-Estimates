@@ -402,6 +402,7 @@ function AiComposer() {
     placedElements,
     previewVersionId,
     exitVersionPreview,
+    promptFocusToken,
   } = useLayoutBuilder()
   const [value, setValue] = useState("")
   const [modelId, setModelId] = useState(AI_MODELS[0].id)
@@ -433,6 +434,14 @@ function AiComposer() {
   useLayoutEffect(() => {
     syncHeight()
   }, [syncHeight, value])
+
+  // Canvas "Generate with AI" CTA focuses the docked composer when it owns
+  // the prompt during a blank welcome with canvas content.
+  useEffect(() => {
+    if (promptFocusToken > 0) {
+      textareaRef.current?.focus()
+    }
+  }, [promptFocusToken])
 
   const isGenerating = status === "thinking"
   const isReasoning = status === "reasoning"
@@ -759,22 +768,22 @@ export function InvoiceAiPanel({
     preThoughtDurationSec,
     preReasoning,
     receivedAnswers,
-    inspectingLayer,
     addingElement,
     closeAddElements,
-    editMode,
     isBlankSession,
+    placedElements,
   } = useLayoutBuilder()
   const scrollRef = useRef<HTMLDivElement>(null)
-  const inspecting = inspectingLayer !== null
   const adding = addingElement
-  // Edit empty state lives in the floating overlay — the left panel keeps the
-  // Invoice AI thread visible while the user picks an element on the canvas.
-  const editsEmpty = editMode && !inspecting && !adding
+  const hasUserPrompt = messages.some((message) => message.role === "user")
+  const welcomeHasCanvasContent = placedElements.length > 0
   // "Start from blank" welcome state (Figma 3268:37411) — greeting + suggestions
-  // + prompt input. Yields to the palette/inspector if the user opens those.
-  const blankWelcome =
-    isBlankSession && status === "idle" && !inspecting && !adding && !editsEmpty
+  // + prompt input. Stays up until the first prompt is sent; canvas actions
+  // (drop elements, open properties, edit mode) do not dismiss it. Yields only
+  // to the Add elements palette. Once elements exist, the docked composer
+  // (Edit + layer badges) takes over the prompt while the welcome hero stays.
+  const blankWelcome = isBlankSession && !hasUserPrompt && !adding
+  const showComposer = !blankWelcome || welcomeHasCanvasContent
   const lastTurnRef = useRef<HTMLDivElement>(null)
   // Drives the spacer min-height on the latest turn so its prompt can always be
   // scrolled to the very top of the viewport, the way Cursor pins each turn.
@@ -815,7 +824,7 @@ export function InvoiceAiPanel({
   // the latest turn, not scrolled to the top replaying the whole history. Pin
   // the last turn to the top of the viewport — the same resting place as a new
   // prompt — once per entry. The flag resets whenever the chat is hidden.
-  const showChat = !adding && !inspecting && !blankWelcome
+  const showChat = !adding && !blankWelcome
   const didEntryScrollRef = useRef(false)
   useLayoutEffect(() => {
     if (!showChat) {
@@ -844,7 +853,7 @@ export function InvoiceAiPanel({
       <div
         className={cn(
           "flex flex-col gap-3 px-4 pt-4",
-          blankWelcome ? "pb-4" : "pb-0"
+          blankWelcome && !welcomeHasCanvasContent ? "pb-4" : "pb-0"
         )}
       >
         <div className="flex items-center gap-2">
@@ -868,7 +877,7 @@ export function InvoiceAiPanel({
       {adding ? (
         <AddElementsPanel />
       ) : blankWelcome ? (
-        <AiWelcomeState />
+        <AiWelcomeState dockedComposer={welcomeHasCanvasContent} />
       ) : (
       <div
         ref={scrollRef}
@@ -952,14 +961,15 @@ export function InvoiceAiPanel({
       )}
 
       {/* The docked composer stays visible while the Add elements palette is
-          open (Figma 3147:23660). Hidden only in the blank welcome state,
-          which carries its own prompt input. */}
-      {blankWelcome ? null : (
+          open (Figma 3147:23660). Hidden only in the blank welcome state
+          before anything is on canvas — welcome carries its own prompt then.
+          Once elements exist, the composer returns with Edit + layer badges. */}
+      {showComposer ? (
         <div className="relative flex flex-col gap-2">
           {feedbackToast ? <FeedbackToast message={feedbackToast} /> : null}
           <AiComposer />
         </div>
-      )}
+      ) : null}
     </aside>
   )
 }
