@@ -263,7 +263,7 @@ export function DocumentSourcePicker() {
 
                 {invoices.length > 0 ? (
                   <>
-                    <SectionHeader>Actual invoices</SectionHeader>
+                    <SectionHeader>Your invoices</SectionHeader>
                     {invoices.map((source) => (
                       <SourceRow
                         key={source.id}
