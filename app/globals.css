@@ -492,10 +492,10 @@ nextjs-portal:has([role="dialog"]) > * {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 0;
   width: 100%;
-  white-space: nowrap;
   font-family: var(--font-inter), Inter, sans-serif;
   font-size: 28px;
   font-weight: 400;
@@ -504,7 +504,6 @@ nextjs-portal:has([role="dialog"]) > * {
 }
 
 .hero-title-lead {
-  flex-shrink: 0;
   font-size: 32px;
   font-weight: 500;
   color: #344054;

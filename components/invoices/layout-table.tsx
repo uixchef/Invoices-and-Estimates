@@ -330,13 +330,16 @@ export function LayoutTable({
   return (
     <div
       className={cn(
-        "grid w-full max-h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded border border-[#d0d5dd] bg-white",
+        "flex w-full max-h-full flex-col overflow-hidden rounded border border-[#d0d5dd] bg-white",
         isEmpty || needsPagination ? "min-h-0 flex-1" : "h-fit"
       )}
     >
-      <div className="overflow-x-auto">
+      {/* Single scroll container so the header and body rows share one
+          horizontal scroll position; the header stays pinned vertically while
+          the body scrolls underneath. */}
+      <div className="min-h-0 flex-1 overflow-auto overscroll-y-contain">
         <div className="min-w-[760px]">
-          <div className={TABLE_COLUMNS}>
+          <div className={cn(TABLE_COLUMNS, "sticky top-0 z-10")}>
             <TableHeaderCell
               icon={FileText}
               label="Name"
@@ -352,11 +355,7 @@ export function LayoutTable({
             />
             <TableHeaderCell filterDefinitions={filterDefinitions} last />
           </div>
-        </div>
-      </div>
 
-      <div className="min-h-0 overflow-auto overscroll-y-contain">
-        <div className="min-w-[760px]">
           {isEmpty ? (
             <div className="flex min-h-[360px] items-center justify-center px-4 py-16">
               <LayoutsEmptyState

@@ -229,13 +229,13 @@ export function CreateWithAiPromptInput({
   }, [attachments.length, syncTextareaHeight, value])
 
   return (
-    <div className="hero-prompt-slot w-full rounded-2xl shadow-[0_12px_16px_-4px_rgba(16,24,40,0.08),0_4px_6px_-2px_rgba(16,24,40,0.03)]">
+    <div className="hero-prompt-slot w-full rounded-2xl">
       <div
         className={cn(
           "prompt-bar flex flex-col gap-6 rounded-2xl border bg-white p-4 transition-[border-color,box-shadow] duration-150",
           isFocused
-            ? "border-[#9b8afb] shadow-[0_1px_2px_rgba(16,24,40,0.05),0_0_0_4px_#d9d6fe]"
-            : "border-[#bdb4fe] shadow-[0_1px_2px_rgba(16,24,40,0.05),0_0_0_4px_#ebe9fe]"
+            ? "border-[rgba(124,58,237,0.7)] shadow-[0_0_0_4px_rgba(196,181,253,0.4),0_12px_32px_-12px_rgba(76,29,149,0.25),0_2px_6px_rgba(16,24,40,0.06)]"
+            : "border-[#d0d5dd]/70 shadow-[0_12px_32px_-12px_rgba(76,29,149,0.18),0_2px_6px_rgba(16,24,40,0.04)]"
         )}
       >
         <label className="sr-only" htmlFor="create-with-ai-prompt">
