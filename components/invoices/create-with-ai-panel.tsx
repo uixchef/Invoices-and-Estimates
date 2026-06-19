@@ -128,10 +128,12 @@ export function CreateWithAiPanel() {
   return (
     <div
       className={cn(
+        // When collapsed, -mb-6 cancels the parent gap-6 so the toolbar group
+        // sits flush with no phantom space above it.
         "grid transition-[grid-template-rows,opacity,margin-bottom] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none",
         isOpen
           ? "mb-0 grid-rows-[1fr] opacity-100"
-          : "-mb-3 grid-rows-[0fr] opacity-0 pointer-events-none"
+          : "-mb-6 grid-rows-[0fr] opacity-0 pointer-events-none"
       )}
       aria-hidden={!isOpen}
     >
