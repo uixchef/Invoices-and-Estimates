@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { ChevronDown, ChevronUp, CornerDownLeft } from "lucide-react"
+import { ChevronDown, ChevronLeft, CornerDownLeft } from "lucide-react"
 
 import {
   DropdownMenu,
@@ -514,9 +514,6 @@ export function AiQuestions({
 
   const total = questions.length
   const activeQuestion = questions[activeIndex]
-  // A clipped glimpse of the upcoming question peeks below the active one for
-  // context (no scrolling — navigation stays on the header controls).
-  const nextQuestion = questions[activeIndex + 1]
 
   const canContinue = useMemo(() => {
     if (!activeQuestion) {
@@ -568,7 +565,6 @@ export function AiQuestions({
   }
 
   const goPrev = () => setActiveIndex((index) => Math.max(index - 1, 0))
-  const goNext = () => setActiveIndex((index) => Math.min(index + 1, total - 1))
 
   return (
     <div
@@ -576,52 +572,55 @@ export function AiQuestions({
         "flex w-full flex-col overflow-hidden border border-[#bdb4fe] font-[family-name:var(--font-inter)]",
         "bg-gradient-to-b from-[#ebe9fe] to-[#fafaff]",
         docked
-          ? "rounded-t-lg border-b-0"
-          : "max-w-[480px] rounded-lg",
+          ? "max-h-[min(420px,50vh)] rounded-t-lg border-b-0"
+          : "max-h-[min(520px,80vh)] max-w-[480px] rounded-lg",
         className
       )}
     >
-      <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-3">
-        <div className="flex min-w-0 items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/icons/help-center.png"
-            alt=""
-            aria-hidden
-            width={20}
-            height={20}
-            className="size-5 shrink-0"
-          />
-          <span className="truncate text-base font-semibold leading-6 text-[#475467]">
-            {title}
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={goPrev}
-            disabled={activeIndex === 0}
-            aria-label="Previous question"
-            className="inline-flex size-6 items-center justify-center rounded text-[#475467] outline-none transition-colors hover:bg-[#ffffff80] disabled:cursor-not-allowed disabled:text-[#d0d5dd] focus-visible:ring-2 focus-visible:ring-[#bdb4fe]"
-          >
-            <ChevronUp className="size-4" aria-hidden />
-          </button>
-          <span className="text-sm font-medium leading-5 text-[#475467]">
+      <div className="flex shrink-0 flex-col gap-3 px-4 pt-4 pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/icons/help-center.png"
+              alt=""
+              aria-hidden
+              width={20}
+              height={20}
+              className="size-5 shrink-0"
+            />
+            <span className="truncate text-base font-semibold leading-6 text-[#475467]">
+              {title}
+            </span>
+          </div>
+          <span className="shrink-0 text-sm font-medium leading-5 text-[#475467]">
             {activeIndex + 1} of {total}
           </span>
-          <button
-            type="button"
-            onClick={goNext}
-            disabled={isLast}
-            aria-label="Next question"
-            className="inline-flex size-6 items-center justify-center rounded text-[#475467] outline-none transition-colors hover:bg-[#ffffff80] disabled:cursor-not-allowed disabled:text-[#d0d5dd] focus-visible:ring-2 focus-visible:ring-[#bdb4fe]"
-          >
-            <ChevronDown className="size-4" aria-hidden />
-          </button>
         </div>
+
+        {/* Pill Progress Steps (Figma 3399:51744) — feedforward for how many
+            questions remain. Completed steps read purple/300, the current step
+            purple/600, and upcoming steps gray/300. */}
+        {total > 1 ? (
+          <div className="flex items-center gap-1" aria-hidden>
+            {questions.map((question, index) => (
+              <span
+                key={question.id}
+                className={cn(
+                  "h-0.5 flex-1 rounded-full transition-colors",
+                  index < activeIndex
+                    ? "bg-[#bdb4fe]"
+                    : index === activeIndex
+                      ? "bg-[#6938ef]"
+                      : "bg-[#d0d5dd]"
+                )}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
 
-      <div className="flex flex-col gap-6 px-4 pb-4 pt-1">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-1">
         {activeQuestion ? (
           <QuestionBlock
             key={activeQuestion.id}
@@ -645,52 +644,47 @@ export function AiQuestions({
             }
           />
         ) : null}
-
-        {nextQuestion ? (
-          <div
-            aria-hidden
-            inert
-            className="pointer-events-none relative max-h-[88px] overflow-hidden"
-          >
-            <QuestionBlock
-              key={nextQuestion.id}
-              question={nextQuestion}
-              index={activeIndex + 1}
-              active={false}
-              answers={answers}
-              otherText={otherText}
-              onActivate={() => {}}
-              onAnswer={() => {}}
-              onOther={() => {}}
-            />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-b from-transparent to-[#fafaff]" />
-          </div>
-        ) : null}
       </div>
 
-      <div className="flex items-center justify-end gap-1 bg-[#fafaff] px-4 pb-4 pt-3">
+      <div className="flex shrink-0 items-center justify-between gap-1 bg-[#fafaff] px-4 pb-4 pt-3">
         <button
           type="button"
-          onClick={onSkip}
-          className="flex h-8 items-center justify-center rounded-[4px] px-2.5 text-[13px] font-semibold leading-[18px] text-[#5925dc] outline-none transition-colors hover:bg-[#ffffff80] focus-visible:ring-2 focus-visible:ring-[#bdb4fe]"
-        >
-          Skip
-        </button>
-        <button
-          type="button"
-          onClick={handleContinue}
-          disabled={!canContinue}
+          onClick={goPrev}
+          disabled={activeIndex === 0}
           className={cn(
-            "flex h-8 items-center justify-center gap-2 rounded-[4px] border px-2.5 text-[13px] font-semibold leading-[18px] text-white outline-none transition-colors",
-            "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] focus-visible:ring-2 focus-visible:ring-[#bdb4fe]",
-            canContinue
-              ? "border-[#6938ef] bg-[#6938ef] hover:bg-[#5925dc]"
-              : "cursor-not-allowed border-[#d9d6fe] bg-[#d9d6fe]"
+            "flex h-8 items-center justify-center gap-1 rounded-[4px] pl-1.5 pr-2.5 text-[13px] font-semibold leading-[18px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#bdb4fe]",
+            activeIndex === 0
+              ? "invisible"
+              : "text-[#475467] hover:bg-[#ffffff80]"
           )}
         >
-          Continue
-          <CornerDownLeft className="size-4" aria-hidden />
+          <ChevronLeft className="size-4" aria-hidden />
+          Back
         </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onSkip}
+            className="flex h-8 items-center justify-center rounded-[4px] px-2.5 text-[13px] font-semibold leading-[18px] text-[#5925dc] outline-none transition-colors hover:bg-[#ffffff80] focus-visible:ring-2 focus-visible:ring-[#bdb4fe]"
+          >
+            Skip
+          </button>
+          <button
+            type="button"
+            onClick={handleContinue}
+            disabled={!canContinue}
+            className={cn(
+              "flex h-8 items-center justify-center gap-2 rounded-[4px] border px-2.5 text-[13px] font-semibold leading-[18px] text-white outline-none transition-colors",
+              "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] focus-visible:ring-2 focus-visible:ring-[#bdb4fe]",
+              canContinue
+                ? "border-[#6938ef] bg-[#6938ef] hover:bg-[#5925dc]"
+                : "cursor-not-allowed border-[#d9d6fe] bg-[#d9d6fe]"
+            )}
+          >
+            {isLast ? "Done" : "Continue"}
+            <CornerDownLeft className="size-4" aria-hidden />
+          </button>
+        </div>
       </div>
     </div>
   )
