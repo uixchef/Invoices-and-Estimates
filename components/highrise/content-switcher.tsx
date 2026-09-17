@@ -72,7 +72,7 @@ export function ContentSwitcher<T extends string>({
       role="group"
       aria-label={ariaLabel}
       className={cn(
-        "flex h-9 overflow-hidden rounded-[4px] border border-[#d0d5dd]",
+        "flex h-9 overflow-hidden rounded-[8px] border border-[#d0d5dd]",
         iconOnly ? "w-auto shrink-0" : "w-full",
         className
       )}

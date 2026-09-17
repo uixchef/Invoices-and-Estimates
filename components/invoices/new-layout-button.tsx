@@ -21,6 +21,7 @@ export function NewLayoutButton() {
       <Button
         type="button"
         variant="primary"
+        className="rounded-[8px]"
         onClick={() => setMediumDialogOpen(true)}
       >
         <Plus className="size-5 shrink-0" strokeWidth={2} aria-hidden />

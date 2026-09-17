@@ -30,7 +30,7 @@ function AutoAwesomeIcon(props: SVGProps<SVGSVGElement>) {
  */
 const createWithAiButtonVariants = cva(
   [
-    "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded border px-3.5 py-2",
+    "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-[8px] border px-3.5 py-2",
     "font-[family-name:var(--font-inter)] text-base font-semibold leading-6",
     "transition-colors focus-visible:outline-none",
     "border-[#bdb4fe] bg-white text-[#5925dc] shadow-[0_1px_2px_rgba(16,24,40,0.05)]",

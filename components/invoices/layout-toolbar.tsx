@@ -119,7 +119,7 @@ export function LayoutToolbar({
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search layouts"
             aria-label="Search layouts"
-            className="h-9 pl-8 font-[family-name:var(--font-inter)] text-base leading-6 shadow-[0_1px_2px_rgba(16,24,40,0.05)]"
+            className="h-9 rounded-[6px] pl-8 font-[family-name:var(--font-inter)] text-base leading-6 shadow-[0_1px_2px_rgba(16,24,40,0.05)]"
           />
         </div>
 

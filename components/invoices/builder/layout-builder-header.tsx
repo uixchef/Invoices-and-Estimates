@@ -25,7 +25,7 @@ function HeaderIconButton({
     <button
       type="button"
       className={cn(
-        "inline-flex size-9 shrink-0 items-center justify-center rounded-[4px] border border-[#d0d5dd] bg-white text-[#475467]",
+        "inline-flex size-9 shrink-0 items-center justify-center rounded-[8px] border border-[#d0d5dd] bg-white text-[#475467]",
         "shadow-[0_1px_2px_rgba(16,24,40,0.05)] outline-none transition-colors",
         "hover:bg-[#f9fafb] hover:text-[#1d2939] focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
         className
@@ -187,7 +187,7 @@ export function LayoutBuilderHeader() {
         <Button
           type="button"
           variant="primary"
-          className="h-9 px-2.5 py-1.5"
+          className="h-9 rounded-[8px] px-2.5 py-1.5"
           onClick={handlePublish}
           disabled={!canPublish}
           title={

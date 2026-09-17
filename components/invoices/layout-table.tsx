@@ -1,17 +1,12 @@
 "use client"
 
 import {
-  Calendar,
   Copy,
   Eye,
-  FileText,
-  Flag,
   ListFilter,
   MoreVertical,
   Pencil,
-  Tag,
   Trash2,
-  type LucideIcon,
 } from "lucide-react"
 import { FilterDropdownPopover } from "@/components/filters/filter-bar"
 import { LayoutsEmptyState } from "@/components/invoices/layouts-empty-state"
@@ -69,7 +64,6 @@ type LayoutTableProps = {
 }
 
 function TableHeaderCell({
-  icon: Icon,
   label,
   filterId,
   filterDefinitions,
@@ -81,7 +75,6 @@ function TableHeaderCell({
   onFilterDraftIdsChange,
   last = false,
 }: {
-  icon?: LucideIcon
   label?: string
   filterId?: LayoutFilterType
   filterDefinitions: Record<LayoutFilterType, FilterDefinition>
@@ -108,9 +101,6 @@ function TableHeaderCell({
       )}
     >
       <div className="flex min-w-0 flex-1 items-center gap-1">
-        {Icon ? (
-          <Icon className="size-4 shrink-0 text-[#101828]" aria-hidden />
-        ) : null}
         {label ? (
           <span className="min-w-0 flex-1 truncate font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">
             {label}
@@ -341,15 +331,13 @@ export function LayoutTable({
         <div className="min-w-[760px]">
           <div className={cn(TABLE_COLUMNS, "sticky top-0 z-10")}>
             <TableHeaderCell
-              icon={FileText}
               label="Name"
               filterDefinitions={filterDefinitions}
             />
-            <TableHeaderCell icon={Tag} label="Type" {...filterProps("type")} />
-            <TableHeaderCell icon={FileText} label="Paper type" {...filterProps("medium")} />
-            <TableHeaderCell icon={Flag} label="Status" {...filterProps("status")} />
+            <TableHeaderCell label="Type" {...filterProps("type")} />
+            <TableHeaderCell label="Paper type" {...filterProps("medium")} />
+            <TableHeaderCell label="Status" {...filterProps("status")} />
             <TableHeaderCell
-              icon={Calendar}
               label="Updated on"
               filterDefinitions={filterDefinitions}
             />
