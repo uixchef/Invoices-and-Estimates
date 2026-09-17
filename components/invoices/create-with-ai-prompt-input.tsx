@@ -51,29 +51,54 @@ function PromptAttachmentChip({
   attachment: PromptAttachment
   onRemove: (id: string) => void
 }) {
+  const removeLabel = `Remove ${attachment.name}`
+
+  if (attachment.usedForGeneration && attachment.previewUrl) {
+    return (
+      <div
+        role="listitem"
+        title={attachment.name}
+        className="group relative size-12 shrink-0 overflow-hidden rounded-md bg-[#f2f4f7]"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={attachment.previewUrl}
+          alt=""
+          className="size-full object-cover"
+        />
+        <button
+          type="button"
+          aria-label={removeLabel}
+          onClick={() => onRemove(attachment.id)}
+          className={cn(
+            "absolute right-0.5 top-0.5 inline-flex size-5 items-center justify-center rounded-full bg-black/55 text-white outline-none",
+            "opacity-0 transition-opacity duration-150 hover:bg-black/75",
+            "group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100",
+            "focus-visible:ring-2 focus-visible:ring-white",
+            "motion-reduce:transition-none [@media(hover:none)]:opacity-100"
+          )}
+        >
+          <X className="size-3" aria-hidden />
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div
+      role="listitem"
       className={cn(
         "inline-flex h-8 max-w-full items-center gap-2 rounded-md bg-[#f2f4f7] py-1 pl-1 pr-2",
         "font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#344054]"
       )}
     >
-      {attachment.usedForGeneration && attachment.previewUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={attachment.previewUrl}
-          alt=""
-          className="size-6 shrink-0 rounded object-cover"
-        />
-      ) : (
-        <span className="flex size-6 shrink-0 items-center justify-center rounded bg-white text-[#667085]">
-          <FileText className="size-3.5" aria-hidden />
-        </span>
-      )}
+      <span className="flex size-6 shrink-0 items-center justify-center rounded bg-white text-[#667085]">
+        <FileText className="size-3.5" aria-hidden />
+      </span>
       <span className="min-w-0 truncate">{attachment.name}</span>
       <button
         type="button"
-        aria-label={`Remove ${attachment.name}`}
+        aria-label={removeLabel}
         onClick={() => onRemove(attachment.id)}
         className="inline-flex size-5 shrink-0 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:bg-[#eaecf0] hover:text-[#344054] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
       >
