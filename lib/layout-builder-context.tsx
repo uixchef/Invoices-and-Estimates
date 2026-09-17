@@ -65,6 +65,7 @@ import {
 import type { LayoutRow } from "@/lib/layouts-data"
 import { layoutEditSeedFromRow } from "@/lib/layout-edit-seed"
 import { pageStyleFromComputed } from "@/lib/page-layer-style"
+import { resolveInitialVisualStyle } from "@/lib/portfolio-walkthrough-prompt"
 
 /** Simulated generation latency until the layout-generation API is wired in. */
 const SIMULATED_THINKING_MS = 7000
@@ -489,13 +490,7 @@ function deriveLayout(
   answers: AiAnswers | null,
   documentType: BuilderDocumentType
 ): GeneratedLayout {
-  const styleAnswer =
-    typeof answers?.style === "string" ? answers.style : "modern"
-  const style: BuilderVisualStyle = (
-    ["minimal", "modern", "classic", "bold", "branded"] as BuilderVisualStyle[]
-  ).includes(styleAnswer as BuilderVisualStyle)
-    ? (styleAnswer as BuilderVisualStyle)
-    : "modern"
+  const style = resolveInitialVisualStyle(prompt, answers?.style)
 
   const currencyId =
     typeof answers?.currency === "string" ? answers.currency : "usd"
