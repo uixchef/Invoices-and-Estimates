@@ -683,12 +683,10 @@ export function LayoutDocument({
 }
 
 /**
- * Frames a `LayoutDocument` as a sheet of paper: a page sized to the medium's
- * real aspect ratio (A4 / US Letter), centred on a neutral mat with a soft
- * elevation, and scaled to contain within the available area so it never
- * stretches into a tall full-bleed strip. The document fits the page width and
- * longer templates scroll inside the page frame, so the silhouette always reads
- * as a page — the mental model the preview panel needs to communicate.
+ * Frames a `LayoutDocument` as a sheet of paper on a neutral mat. The page is
+ * scaled to the mat width and grows to its full content height — no scroll
+ * inside the white page. When the layout is taller than the panel, only the
+ * gray mat scrolls.
  */
 const PAGE_MAT_PADDING = 24
 
@@ -702,58 +700,47 @@ export function LayoutPagePreview({
   className?: string
 }) {
   const matRef = useRef<HTMLDivElement>(null)
-  const [box, setBox] = useState<{ width: number; height: number } | null>(null)
+  const [matWidth, setMatWidth] = useState<number | null>(null)
 
   useLayoutEffect(() => {
     const node = matRef.current
     if (!node) {
       return
     }
-    const update = () =>
-      setBox({ width: node.clientWidth, height: node.clientHeight })
+    const update = () => setMatWidth(node.clientWidth)
     const observer = new ResizeObserver(update)
     observer.observe(node)
     update()
     return () => observer.disconnect()
   }, [])
 
-  const aspect = pageProfile.widthPx / pageProfile.heightPx
-
-  // Contain the page within the mat (minus padding) at the paper aspect ratio:
-  // start width-bound, fall back to height-bound when that would overflow.
-  let pageWidth = 0
-  let pageHeight = 0
-  if (box) {
-    const availWidth = Math.max(box.width - PAGE_MAT_PADDING * 2, 0)
-    const availHeight = Math.max(box.height - PAGE_MAT_PADDING * 2, 0)
-    pageWidth = availWidth
-    pageHeight = pageWidth / aspect
-    if (pageHeight > availHeight) {
-      pageHeight = availHeight
-      pageWidth = pageHeight * aspect
-    }
-  }
+  const pageWidth =
+    matWidth !== null
+      ? Math.max(matWidth - PAGE_MAT_PADDING * 2, 0)
+      : 0
 
   return (
     <div
       ref={matRef}
       className={cn(
-        "flex h-full w-full items-center justify-center overflow-hidden bg-[#f2f4f7]",
+        "h-full w-full overflow-y-auto overflow-x-hidden bg-[#f2f4f7]",
         className
       )}
       style={{ padding: PAGE_MAT_PADDING }}
     >
-      {box && pageWidth > 0 ? (
-        <div
-          className="overflow-y-auto rounded-[6px] bg-white ring-1 ring-[#eaecf0] shadow-[0_12px_24px_-6px_rgba(16,24,40,0.16),0_4px_8px_-4px_rgba(16,24,40,0.08)]"
-          style={{ width: pageWidth, height: pageHeight }}
-        >
-          <LayoutThumbnail
-            layout={layout}
-            pageProfile={pageProfile}
-            flow
-            className="w-full"
-          />
+      {pageWidth > 0 ? (
+        <div className="flex min-h-full items-center justify-center">
+          <div
+            className="rounded-[6px] bg-white ring-1 ring-[#eaecf0] shadow-[0_12px_24px_-6px_rgba(16,24,40,0.16),0_4px_8px_-4px_rgba(16,24,40,0.08)]"
+            style={{ width: pageWidth }}
+          >
+            <LayoutThumbnail
+              layout={layout}
+              pageProfile={pageProfile}
+              flow
+              className="w-full"
+            />
+          </div>
         </div>
       ) : null}
     </div>
