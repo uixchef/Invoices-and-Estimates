@@ -16,7 +16,7 @@ const SHOW_MEDIUMS_NAV = false
  */
 export function InvoiceLayoutHeader() {
   return (
-    <div className="flex w-full flex-col justify-center border-b border-[#d0d5dd] bg-white px-4 py-2">
+    <div className="flex w-full flex-col justify-center border-b border-gray-200 bg-white px-4 py-2">
       <div className="flex w-full flex-col items-start justify-between gap-4 md:flex-row md:items-center md:gap-12">
         <div className="min-w-0 flex-1">
           <h2 className="font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">

@@ -72,7 +72,7 @@ export function Topbar() {
   return (
     <header className="w-full min-w-0 bg-white">
       <div className="flex w-full min-w-0 flex-col gap-0">
-        <div className="relative border-b border-[#d0d5dd] bg-white">
+        <div className="relative border-b border-gray-200 bg-white">
           <div className="flex w-full flex-col gap-3 px-4 py-2 md:h-10 md:flex-row md:items-stretch md:justify-between md:gap-12 md:py-0">
             <div className="flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-center md:gap-3">
               <h1 className="shrink-0 text-xl font-semibold leading-[30px] tracking-normal text-[#101828]">

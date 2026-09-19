@@ -177,7 +177,7 @@ export function LayoutCard({ item }: { item: LayoutRow }) {
     <article
       className={cn(
         "group flex w-full flex-col gap-3 overflow-hidden rounded-lg border p-4 transition-colors",
-        "border-[#d0d5dd] bg-white",
+        "border-gray-200 bg-white",
         "hover:border-[#84adff] hover:bg-[#f5f8ff]",
         "focus-within:border-[#84adff] focus-within:bg-[#f5f8ff]"
       )}
