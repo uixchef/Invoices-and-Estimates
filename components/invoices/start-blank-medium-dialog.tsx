@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
@@ -51,7 +52,6 @@ export function StartBlankMediumDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        aria-describedby={undefined}
         onOpenAutoFocus={(event) => event.preventDefault()}
         className="max-w-[400px] overflow-hidden p-0"
       >
@@ -77,6 +77,9 @@ export function StartBlankMediumDialog({
             </DialogClose>
           </div>
         </div>
+        <DialogDescription className="sr-only">
+          Choose a paper size to start your layout from a blank page.
+        </DialogDescription>
 
         <div className="flex flex-col gap-1 p-4 pt-2">
           <div
