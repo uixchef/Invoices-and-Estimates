@@ -61,9 +61,22 @@ test("ambient hero field uses approved purple tokens and no hue rotation", () =>
 
 test("hero hard-edge feathering is preserved", () => {
   const field = css.slice(css.indexOf(".vibe-hero-field {"), css.indexOf(".vibe-hero-ambient {"))
-  assert.match(field, /mask-image:\s*linear-gradient/)
+  assert.match(field, /mask-image:/)
+  assert.match(field, /90deg/)
+  assert.match(field, /180deg/)
+  assert.match(field, /#000 32%/)
+  assert.match(field, /#000 70%/)
+  assert.match(field, /mask-composite:\s*intersect/)
   assert.match(field, /transparent 0%/)
   assert.match(field, /transparent 100%/)
+})
+
+test("idle ambient masses are not clip-boxed before the field mask", () => {
+  const ambient = css.slice(
+    css.indexOf(".vibe-hero-ambient {"),
+    css.indexOf(".vibe-hero-ambient__mist,")
+  )
+  assert.doesNotMatch(ambient, /overflow:\s*hidden/)
 })
 
 test("idle ambient field has no React RAF or interval loop", () => {
