@@ -19,6 +19,7 @@ import { filterRows } from "@/lib/filter-layouts"
 import type { LayoutRow } from "@/lib/layouts-data"
 import { useLayoutClone } from "@/lib/layout-clone-context"
 import { useLayoutCreate } from "@/lib/layout-create-context"
+import { useLayoutCatalog } from "@/lib/layout-catalog-context"
 import { useLayoutDelete } from "@/lib/layout-delete-context"
 import { getBuilderMediumPresets } from "@/lib/mediums-data"
 import { compareByMostRecent } from "@/lib/sort-by-updated"
@@ -30,13 +31,14 @@ type LayoutsListPageProps = {
 export function LayoutsListPage({ rows }: LayoutsListPageProps) {
   const { clonedLayouts } = useLayoutClone()
   const { createdLayouts } = useLayoutCreate()
+  const { mergeRows } = useLayoutCatalog()
   const { isRemoved } = useLayoutDelete()
   const visibleRows = useMemo(
     () =>
-      [...createdLayouts, ...clonedLayouts, ...rows].filter(
+      mergeRows([...createdLayouts, ...clonedLayouts, ...rows]).filter(
         (row) => !isRemoved(row.id)
       ),
-    [createdLayouts, clonedLayouts, isRemoved, rows]
+    [createdLayouts, clonedLayouts, isRemoved, mergeRows, rows]
   )
   const filterDefinitions = useMemo(
     () => buildLayoutFilterDefinitions(getBuilderMediumPresets()),
@@ -67,6 +69,11 @@ export function LayoutsListPage({ rows }: LayoutsListPageProps) {
   const filtered = useMemo(() => {
     const result = filterRows(visibleRows, selections, searchQuery)
     return [...result].sort((a, b) => {
+      const aDraft = a.id.startsWith("layout-draft-")
+      const bDraft = b.id.startsWith("layout-draft-")
+      if (aDraft !== bDraft) {
+        return aDraft ? -1 : 1
+      }
       if (sort === "updated") {
         return compareByMostRecent(a, b)
       }

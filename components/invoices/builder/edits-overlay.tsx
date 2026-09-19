@@ -37,7 +37,14 @@ import { AiQuestions } from "@/components/ai/ai-questions"
 import { VisualEditsPanel } from "@/components/invoices/builder/visual-edits-panel"
 import { EditsEmptyState } from "@/components/invoices/builder/edits-empty-state"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
+import { showsInspectorClarification } from "@/lib/clarification-copy"
+import {
+  effectiveInspectorTab,
+  inspectorPropertyGroups,
+} from "@/lib/element-properties"
 import { isPageLayer } from "@/lib/layout-builder-types"
+import { authoredKeyFromId } from "@/lib/native-instance-id"
+import { visibleLayerTitle } from "@/lib/saved-items"
 import { cn } from "@/lib/utils"
 
 /** "More options" menu glyphs (Untitled UI). Pre-coloured PNGs served from
@@ -95,7 +102,12 @@ export function EditsOverlay() {
     editMode,
     toggleEditMode,
     addingElement,
+    browsingBrand,
+    browsingSavedItems,
+    browsingVersionHistory,
     inspectingLayer,
+    inspectingLayerKind,
+    inspectingDisplayLabel,
     inspectLayer,
     clearSelections,
     editsTab,
@@ -107,9 +119,12 @@ export function EditsOverlay() {
     sendScopedEdit,
     status,
     questions,
+    clarificationAskedCount,
+    clarificationAskableCount,
+    clarificationSurface,
+    clarificationTargetId,
     submitAnswers,
     skipQuestions,
-    aiEditingLayer,
     selectLayer,
     duplicateLayer,
     requestDeleteLayer,
@@ -123,7 +138,16 @@ export function EditsOverlay() {
     canMoveLayer,
     moveLayer,
     showCanvasToast,
+    panelOpen,
+    panelWidth,
+    placedElements,
+    documentEditingLocked,
   } = useLayoutBuilder()
+  const inspectingTitle = visibleLayerTitle(
+    inspectingLayer,
+    placedElements,
+    inspectingDisplayLabel
+  )
 
   // "More options" menu open state. Computing the parent-layer lookup only while
   // open keeps the DOM query off the common render path.
@@ -155,8 +179,11 @@ export function EditsOverlay() {
   // attached to the element being edited.
   const scopedAsking =
     status === "asking" &&
-    aiEditingLayer !== null &&
-    aiEditingLayer === inspectingLayer
+    showsInspectorClarification(
+      clarificationSurface,
+      clarificationTargetId,
+      inspectingLayer
+    )
 
   // The questions card only has an overlay presentation, so it should never show
   // inside the docked "full view" column. When a scoped question arrives while
@@ -193,20 +220,45 @@ export function EditsOverlay() {
     startTop: number
   } | null>(null)
 
+  const inspectingPlaced = placedElements.find(
+    (element) => element.label === inspectingLayer || element.id === inspectingLayer
+  )
+  const inspectingAuthoredKey = inspectingPlaced
+    ? undefined
+    : authoredKeyFromId(inspectingLayer ?? "")
+  const inspectorGroups = inspectorPropertyGroups({
+    layerId: inspectingLayer,
+    authoredKey: inspectingAuthoredKey,
+    kind: inspectingLayerKind,
+    placed: inspectingPlaced,
+  })
+  const activeInspectorTab = effectiveInspectorTab(
+    editsTab,
+    inspectorGroups
+  )
+
   const clampToViewport = useCallback((next: Point): Point => {
     const node = panelRef.current
     const width = node?.offsetWidth ?? PANEL_WIDTH
     const height = node?.offsetHeight ?? 480
-    const maxLeft = Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN)
+    const minLeft =
+      panelOpen ? panelWidth + 16 : VIEWPORT_MARGIN
+    const maxLeft = Math.max(minLeft, window.innerWidth - width - VIEWPORT_MARGIN)
     const maxTop = Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN)
     return {
-      left: Math.min(Math.max(VIEWPORT_MARGIN, next.left), maxLeft),
+      left: Math.min(Math.max(minLeft, next.left), maxLeft),
       top: Math.min(Math.max(VIEWPORT_MARGIN, next.top), maxTop),
     }
-  }, [])
+  }, [panelOpen, panelWidth])
 
-  // Docking is a per-selection choice — clear it once nothing is selected so the
-  // next selection opens floating again.
+  useEffect(() => {
+    if (inspectorGroups.length === 0) {
+      return
+    }
+    if (!inspectorGroups.includes(editsTab)) {
+      setEditsTab(activeInspectorTab)
+    }
+  }, [activeInspectorTab, editsTab, inspectorGroups, setEditsTab])
   useEffect(() => {
     if (!inspectingLayer) {
       setEditsDocked(false)
@@ -226,7 +278,7 @@ export function EditsOverlay() {
     }
     if (!inspectingLayer) {
       // Empty state only — it yields to the Add elements palette.
-      if (addingElement) {
+      if (addingElement || browsingBrand || browsingSavedItems || browsingVersionHistory) {
         setPos(null)
         return
       }
@@ -247,11 +299,17 @@ export function EditsOverlay() {
       })
     )
     let frame = 0
+    let attempts = 0
     const place = () => {
       const target = document.querySelector(
-        `[data-layer="${CSS.escape(inspectingLayer)}"]`
+        `[data-element-id="${CSS.escape(inspectingLayer)}"], [data-layer="${CSS.escape(inspectingLayer)}"]`
       )
       const panelHeight = panelRef.current?.offsetHeight ?? 480
+      if (!target && attempts < 10) {
+        attempts += 1
+        frame = requestAnimationFrame(place)
+        return
+      }
       if (!target) {
         // No element found — drop it top-right of the viewport as a fallback.
         setPos(
@@ -263,11 +321,14 @@ export function EditsOverlay() {
         return
       }
       const rect = target.getBoundingClientRect()
-      // Prefer the right of the element; fall back to the left when there's no
-      // room, then clamp into the viewport either way.
+      const parkedRight = window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN
       const rightLeft = rect.right + ANCHOR_GAP
       const fitsRight = rightLeft + PANEL_WIDTH + VIEWPORT_MARGIN <= window.innerWidth
-      const left = fitsRight ? rightLeft : rect.left - ANCHOR_GAP - PANEL_WIDTH
+      const left = addingElement || browsingBrand || browsingSavedItems || browsingVersionHistory
+        ? parkedRight
+        : fitsRight
+          ? rightLeft
+          : rect.left - ANCHOR_GAP - PANEL_WIDTH
       // Vertically align the overlay's top with the element, nudged up slightly
       // so the header sits near the selection's top edge.
       const top = rect.top - 8
@@ -288,7 +349,7 @@ export function EditsOverlay() {
     return () => cancelAnimationFrame(frame)
     // Re-anchor only when the selected layer changes or docking toggles off.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inspectingLayer, editsDocked, editMode, addingElement])
+  }, [inspectingLayer, editsDocked, editMode, addingElement, browsingBrand, browsingSavedItems, browsingVersionHistory])
 
   // Keep the floating overlay inside the viewport on resize.
   useEffect(() => {
@@ -296,13 +357,13 @@ export function EditsOverlay() {
       return
     }
     // Empty state yields to the Add elements palette; the inspector persists.
-    if (!inspectingLayer && addingElement) {
+    if (!inspectingLayer && (addingElement || browsingBrand || browsingSavedItems || browsingVersionHistory)) {
       return
     }
     const onResize = () => setPos((prev) => (prev ? clampToViewport(prev) : prev))
     window.addEventListener("resize", onResize)
     return () => window.removeEventListener("resize", onResize)
-  }, [inspectingLayer, editsDocked, editMode, addingElement, clampToViewport])
+  }, [inspectingLayer, editsDocked, editMode, addingElement, browsingBrand, browsingSavedItems, browsingVersionHistory, clampToViewport])
 
   // Closest ancestor layer of the inspected element (for "Select parent").
   // Resolved from the DOM only while the menu is open; null disables the action.
@@ -311,10 +372,11 @@ export function EditsOverlay() {
       return null
     }
     const node = document.querySelector(
-      `[data-layer="${CSS.escape(inspectingLayer)}"]`
+      `[data-element-id="${CSS.escape(inspectingLayer)}"], [data-layer="${CSS.escape(inspectingLayer)}"]`
     )
-    const parent = node?.parentElement?.closest("[data-layer]")
-    const label = parent?.getAttribute("data-layer")
+    const parent = node?.parentElement?.closest("[data-element-id], [data-layer]")
+    const label =
+      parent?.getAttribute("data-element-id") ?? parent?.getAttribute("data-layer")
     return label && label !== inspectingLayer ? label : null
   }, [moreOpen, inspectingLayer])
 
@@ -377,7 +439,7 @@ export function EditsOverlay() {
   // stays open while the user toggles the left panel between Add elements and
   // Invoice AI. Only the "select an element" empty state hides while the
   // Add elements palette is open (it would otherwise compete with the palette).
-  const showOverlay = editMode && (Boolean(inspectingLayer) || !addingElement)
+  const showOverlay = editMode && (Boolean(inspectingLayer) || (!addingElement && !browsingBrand && !browsingSavedItems && !browsingVersionHistory))
 
   if (!showOverlay) {
     return null
@@ -466,8 +528,10 @@ export function EditsOverlay() {
     <AiQuestions
       key={questions.map((question) => question.id).join("|")}
       questions={questions}
+      progressAskedCount={clarificationAskedCount}
+      progressAskableCount={clarificationAskableCount}
       onComplete={submitAnswers}
-      onSkip={skipQuestions}
+      onUseJudgment={skipQuestions}
       className="shadow-[0px_20px_24px_-4px_rgba(16,24,40,0.08),0px_8px_8px_-4px_rgba(16,24,40,0.03)]"
     />
   )
@@ -487,7 +551,7 @@ export function EditsOverlay() {
 
   const copyCode = () => {
     const node = document.querySelector(
-      `[data-layer="${CSS.escape(inspectingLayer)}"]`
+      `[data-element-id="${CSS.escape(inspectingLayer)}"], [data-layer="${CSS.escape(inspectingLayer)}"]`
     )
     const code = node instanceof HTMLElement ? node.outerHTML : inspectingLayer
     void navigator.clipboard?.writeText(code)
@@ -495,7 +559,7 @@ export function EditsOverlay() {
   }
 
   const isPage = isPageLayer(inspectingLayer)
-  const visibleTabs = isPage ? TABS.filter((tab) => tab.id === "style") : TABS
+  const visibleTabs = TABS.filter((tab) => inspectorGroups.includes(tab.id))
 
   const moreMenuGroups: MoreMenuItem[][] = isPage
     ? [
@@ -634,7 +698,7 @@ export function EditsOverlay() {
             editsDocked ? "text-base leading-6" : "text-sm leading-5"
           )}
         >
-          {inspectingLayer}
+          {inspectingTitle}
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {hasLayerChanges(inspectingLayer) ? (
@@ -748,7 +812,7 @@ export function EditsOverlay() {
         </div>
       </div>
 
-      {/* Tabs (Figma 3246:46487). Page layer only exposes Style. */}
+      {/* Tabs. Hidden when only one group is available (Page, or a single-group element). */}
       {visibleTabs.length > 1 ? (
       <div
         role="tablist"
@@ -756,7 +820,7 @@ export function EditsOverlay() {
         className="flex items-center gap-1 rounded-[4px] bg-[#f2f4f7] p-1"
       >
         {visibleTabs.map((tab) => {
-          const active = editsTab === tab.id
+          const active = activeInspectorTab === tab.id
           return (
             <button
               key={tab.id}
@@ -794,6 +858,7 @@ export function EditsOverlay() {
           ref={promptRef}
           value={promptValue}
           rows={1}
+          disabled={documentEditingLocked}
           onChange={(event) => {
             setPromptValue(event.target.value)
             resizePrompt()
@@ -873,6 +938,7 @@ export function EditsOverlay() {
           ref={panelRef}
           role="dialog"
           aria-label={`Edit ${inspectingLayer}`}
+          inert={documentEditingLocked ? true : undefined}
           style={{ width: DOCK_WIDTH }}
           className={cn(
             "mr-4 flex h-full shrink-0 flex-col overflow-hidden rounded-[12px] bg-white",
@@ -881,7 +947,8 @@ export function EditsOverlay() {
             // Apple-style scale/maximize: grows from the right edge with a snappy
             // settle (iOS sheet curve) rather than a slow linear slide.
             "origin-right transition-[opacity,transform] duration-[260ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
-            dockExpanded ? "scale-100 opacity-100" : "scale-95 opacity-0"
+            dockExpanded ? "scale-100 opacity-100" : "scale-95 opacity-0",
+            documentEditingLocked && "pointer-events-none"
           )}
         >
           {propertyPanel}
@@ -923,6 +990,7 @@ export function EditsOverlay() {
       ref={panelRef}
       role="dialog"
       aria-label={`Edit ${inspectingLayer}`}
+      inert={documentEditingLocked ? true : undefined}
       onClick={(event) => event.stopPropagation()}
       style={{
         position: "fixed",
@@ -935,7 +1003,8 @@ export function EditsOverlay() {
         "z-[70] flex flex-col overflow-hidden rounded-[12px] border border-[#eaecf0] bg-white",
         "font-[family-name:var(--font-inter)]",
         "shadow-[0px_20px_24px_-4px_rgba(16,24,40,0.08),0px_8px_8px_-4px_rgba(16,24,40,0.03)]",
-        "animate-in fade-in-0 zoom-in-95 duration-200 ease-out motion-reduce:animate-none"
+        "animate-in fade-in-0 zoom-in-95 duration-200 ease-out motion-reduce:animate-none",
+        documentEditingLocked && "pointer-events-none"
       )}
     >
       {panelContents}

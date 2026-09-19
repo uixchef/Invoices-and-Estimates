@@ -1,6 +1,8 @@
 const integrationsAppUrlDefault =
   "https://payment-integrations.vercel.app/integrations"
 
+export const SHELL_UNAVAILABLE_LABEL = "Not available in this prototype"
+
 export const PAYMENTS_HUB_DEFAULTS = {
   overview:
     process.env.NEXT_PUBLIC_OVERVIEW_APP_URL ??

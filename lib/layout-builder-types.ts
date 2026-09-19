@@ -1,3 +1,6 @@
+import type { AiTodoItem } from "@/components/ai/ai-todo-list"
+import type { LayoutFamilyId } from "@/lib/layout-family"
+
 /** Routes where the layout builder runs without hub sidebar or payments top nav. */
 export const LAYOUT_BUILDER_ROUTE = "/invoices/layouts/builder"
 
@@ -11,6 +14,15 @@ export type BuilderReferenceImage = {
   previewUrl: string
 }
 
+/** Immutable representation of a file submitted with an Invoice AI turn. */
+export type BuilderSubmittedAttachment = {
+  id: string
+  name: string
+  mimeType: string
+  previewUrl: string
+  kind: "image" | "file"
+}
+
 /**
  * An invoice element the user picked in visual-edit mode to attach to the next
  * prompt as context — surfaced as a removable chip in the composer, mirroring
@@ -20,6 +32,8 @@ export type BuilderSelection = {
   id: string
   /** Human label shown on the chip, e.g. "Business name", "Item 1 description". */
   label: string
+  /** Inspect key when it differs from the visible label (placed element ids). */
+  layer?: string
 }
 
 /**
@@ -156,6 +170,18 @@ export type PlacedElement = {
   zone: PlacedElementZone
   /** Editable placeholder copy — seeded on drop, updated in visual edit mode. */
   content: string
+  /** Independent copy for multi-column blocks. */
+  columns?: string[]
+  /** Destination for a placed button. */
+  href?: string
+  /** When true, this block is the invoice line-items table (data-bound). */
+  bindToLineItems?: boolean
+  /** Nested layout: parent container/columns id. */
+  parentId?: string
+  /** Column index when parent is a columns block. */
+  slot?: number
+  /** Invoice field this text block displays. */
+  bindField?: string
 }
 
 /**
@@ -167,6 +193,13 @@ export type LayoutBuilderSeed = {
   mediumId: string
   modelId: string
   references: BuilderReferenceImage[]
+  /** Full submitted files for the creation turn, including PDFs. */
+  attachments?: BuilderSubmittedAttachment[]
+  primaryReferenceId?: string | null
+  referenceAnalysis?: {
+    dominantHex: string
+    suggestedFamily: LayoutFamilyId
+  }
 }
 
 /**
@@ -185,19 +218,27 @@ export type LayoutBuilderEditSeed = {
   seed: number
 }
 
-import type { AiTodoItem } from "@/components/ai/ai-todo-list"
-
 export type BuilderUserMessage = {
   id: string
   role: "user"
   text: string
   references: BuilderReferenceImage[]
+  /** Full submitted set for this turn (images + PDFs). Independent of later drafts. */
+  attachments?: BuilderSubmittedAttachment[]
+  /**
+   * Creation-turn visual source. Independent of attachment array order.
+   * Follow-up turns omit this — extra images are request context only.
+   */
+  primaryReferenceId?: string | null
+  /** Clarification replies are conversational, not new generation prompts. */
+  kind?: "prompt" | "clarification-answer"
 }
 
 /** A clarifying question and the answer(s) the user gave for it. */
 export type BuilderReceivedAnswer = {
   prompt: string
   values: string[]
+  acknowledgement?: string
 }
 
 /**
@@ -248,7 +289,17 @@ export type BuilderDocumentType = (typeof BUILDER_DOCUMENT_TYPES)[number]
 export const DEFAULT_LAYOUT_NAME = "New layout"
 
 export type BuilderVisualStyle =
+  | "studio"
+  | "editorial"
+  | "swiss"
+  | "atelier"
+  | "statement"
+  | "ledger"
+  | "brand"
   | "minimal"
+  | "soft"
+  | "luxury"
+  | "compact"
   | "modern"
   | "classic"
   | "bold"
@@ -258,6 +309,16 @@ export type GeneratedLineItem = {
   description: string
   qty: number
   rate: number
+}
+
+/** Structured demo payment fields — never baked into a raster. */
+export type GeneratedPaymentDetails = {
+  bankName: string
+  accountName: string
+  accountNumber: string
+  routingNumber: string
+  payUrl: string
+  payLabel: string
 }
 
 /**
@@ -290,7 +351,34 @@ export type GeneratedLayout = {
   taxRate: number
   /** Fraction (0–1) discounted off the subtotal when `sections.discount`. */
   discountRate: number
+  payment: GeneratedPaymentDetails
   documentNumber: string
   issueDate: string
   dueDate: string
+  /**
+   * Native blocks added from Add elements. Same model the canvas, inspector,
+   * undo stack, and later AI edits all read — not a parallel overlay.
+   */
+  blocks?: PlacedElement[]
+  /** Applied Brand Board selection. Identity only — never the layout family. */
+  brand?: {
+    boardId: string | null
+    themeId: string
+    typeId: string
+  }
+  /**
+   * Optional intensified theme overlay. Wins over the catalog theme while
+   * keeping `brand` identity (board / pairing) intact.
+   */
+  brandTheme?: {
+    id: string
+    name: string
+    primary: string
+    accent: string
+    surface: string
+    strongSurface: string
+    text: string
+    mutedText: string
+    border: string
+  }
 }

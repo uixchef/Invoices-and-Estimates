@@ -5,6 +5,8 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent,
+  type PointerEvent,
   type ReactNode,
 } from "react"
 import { Plus } from "lucide-react"
@@ -26,11 +28,13 @@ import { cn } from "@/lib/utils"
 export type SelectorAction = {
   icon: ReactNode
   label: string
-  onClick: () => void
+  onClick: (event?: PointerEvent<HTMLButtonElement> | MouseEvent<HTMLButtonElement>) => void
   disabled?: boolean
   /** Turns the button into a drag handle (e.g. the section "move" grip). */
   draggable?: boolean
   onDragStart?: (event: React.DragEvent) => void
+  onPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void
+  saveTrigger?: boolean
 }
 
 const TOOLBAR_BASE =
@@ -42,11 +46,13 @@ function ToolbarButton({ action }: { action: SelectorAction }) {
       type="button"
       aria-label={action.label}
       title={action.label}
+      data-save-item-trigger={action.saveTrigger ? "true" : undefined}
       draggable={action.draggable}
       onDragStart={action.onDragStart}
+      onPointerDown={action.onPointerDown}
       onClick={(event) => {
         event.stopPropagation()
-        action.onClick()
+        action.onClick(event)
       }}
       disabled={action.disabled}
       className={cn(
@@ -63,6 +69,8 @@ function ToolbarButton({ action }: { action: SelectorAction }) {
 
 export function VisualEditSelector({
   label,
+  displayLabel,
+  authoredKey,
   selected = false,
   working = false,
   scope = "field",
@@ -77,6 +85,10 @@ export function VisualEditSelector({
   children,
 }: {
   label: string
+  /** Visible badge when it should differ from the inspect key. */
+  displayLabel?: string
+  /** Stable semantic slot. Independent of `label` and `displayLabel`. */
+  authoredKey?: string
   selected?: boolean
   /**
    * Names the hover group so nested selectors don't leak each other's badges.
@@ -110,8 +122,7 @@ export function VisualEditSelector({
   children: ReactNode
 }) {
   const { openAddElements } = useLayoutBuilder()
-  const [hovered, setHovered] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLElement>(null)
   const [width, setWidth] = useState(Number.POSITIVE_INFINITY)
 
   // Selectors expose a "+" that opens the add-elements palette, so inserting an
@@ -123,8 +134,8 @@ export function VisualEditSelector({
         ...leftActions,
         {
           icon: <Plus />,
-          label: `Add element near ${label}`,
-          onClick: openAddElements,
+          label: `Add element near ${displayLabel ?? label}`,
+          onClick: () => openAddElements(),
         },
       ]
     : leftActions
@@ -146,7 +157,7 @@ export function VisualEditSelector({
   // Tools belong to the "hover over the selected layer" state. The scoped
   // "Describe your edit" prompt now lives in the draggable edits overlay that
   // opens beside the selection, so it's no longer docked here.
-  const showChrome = selected && hovered
+  const showChrome = selected
 
   // A toolbar is p-1 padding (8px) + N×16px buttons + gaps. When both toolbars
   // can't sit side by side without overlapping, merge them into one.
@@ -174,13 +185,19 @@ export function VisualEditSelector({
       ? "hidden group-hover/selsection:flex group-has-[[data-sel]:hover]/selsection:hidden"
       : "hidden group-hover/sel:flex group-has-[[data-sel]:hover]/sel:hidden"
 
+  // Sections are block-level containers and render as a <div>; fields live
+  // inline inside <p> tags in the family document, so they must render as a
+  // <span> to avoid invalid HTML (<p> cannot contain a nested <div>).
+  const Tag = scope === "section" ? "div" : "span"
+
   return (
-    <div
-      ref={rootRef}
+    <Tag
+      ref={rootRef as React.Ref<HTMLDivElement>}
       data-sel
+      data-element-id={label}
+      data-authored-key={authoredKey}
+      data-layer-label={displayLabel ?? label}
       data-layer={label}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       // Deepest element wins: stop the click from bubbling to ancestor
       // selectors so picking a child doesn't also select its container.
       onClick={(event) => {
@@ -209,17 +226,17 @@ export function VisualEditSelector({
           edge ring matches the selector's 4px radius; both overlays are inert. */}
       {working ? (
         <>
-          <div
+          <Tag
             aria-hidden
             className="canvas-working-highlight pointer-events-none absolute inset-0 z-[14]"
             style={{ borderRadius: 4 }}
           />
-          <div
+          <Tag
             aria-hidden
             className="canvas-working-shimmer pointer-events-none absolute inset-0 z-[15]"
             style={{ borderRadius: 4 }}
           />
-          <div
+          <Tag
             aria-hidden
             className="canvas-working-edge pointer-events-none absolute inset-0 z-[15]"
             style={{ borderRadius: 4, padding: 2 }}
@@ -230,7 +247,7 @@ export function VisualEditSelector({
       {showChrome && mergeToolbars ? (
         // Narrow element: a single combined bar (arrange + clipboard) so the
         // controls stay fully visible instead of overlapping.
-        <div className={cn(TOOLBAR_BASE, "left-0 rounded-t-[4px]")}>
+        <Tag className={cn(TOOLBAR_BASE, "left-0 rounded-t-[4px]")}>
           {effectiveLeftActions.map((action) => (
             <ToolbarButton key={action.label} action={action} />
           ))}
@@ -241,23 +258,23 @@ export function VisualEditSelector({
           {rightActions.map((action) => (
             <ToolbarButton key={action.label} action={action} />
           ))}
-        </div>
+        </Tag>
       ) : (
         <>
           {showChrome && effectiveLeftActions.length > 0 ? (
-            <div className={cn(TOOLBAR_BASE, "left-0 rounded-t-[4px]")}>
+            <Tag className={cn(TOOLBAR_BASE, "left-0 rounded-t-[4px]")}>
               {effectiveLeftActions.map((action) => (
                 <ToolbarButton key={action.label} action={action} />
               ))}
-            </div>
+            </Tag>
           ) : null}
 
           {showChrome && rightActions.length > 0 ? (
-            <div className={cn(TOOLBAR_BASE, "right-0 rounded-t-[4px]")}>
+            <Tag className={cn(TOOLBAR_BASE, "right-0 rounded-t-[4px]")}>
               {rightActions.map((action) => (
                 <ToolbarButton key={action.label} action={action} />
               ))}
-            </div>
+            </Tag>
           ) : null}
         </>
       )}
@@ -266,15 +283,15 @@ export function VisualEditSelector({
           outline so it sits on the ring, not inside the element (Figma
           3341:176351). Selected shows it always; otherwise it follows the
           deepest-only hover. */}
-      <div
+      <Tag
         className={cn(
           "absolute bottom-[-19px] right-[-1px]",
           badgeClass,
           selected ? "flex" : hoverBadgeClass
         )}
       >
-        {label}
-      </div>
-    </div>
+        {displayLabel ?? label}
+      </Tag>
+    </Tag>
   )
 }

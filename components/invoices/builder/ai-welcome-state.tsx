@@ -1,17 +1,20 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 import {
   AtSign,
   BookOpen,
   ChevronDown,
-  Image as ImageIcon,
-  Paperclip,
   Send,
-  Upload,
 } from "lucide-react"
 
 import { AutoAwesomeGradientIcon } from "@/components/icons/auto-awesome-icon"
+import {
+  BuilderAttachMenu,
+  BuilderAttachmentStrip,
+  BuilderComposerDropTarget,
+  MEDIA_LIBRARY_UNAVAILABLE_MESSAGE,
+} from "@/components/invoices/builder/builder-composer-attachments"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,7 +22,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { AI_MODELS } from "@/lib/ai-models"
+import {
+  builderComposerCanSend,
+  snapshotComposerAttachments,
+} from "@/lib/builder-attachments"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
+import { PRODUCT_DISCLAIMER } from "@/lib/product-name"
+import { analyzeReferenceImage } from "@/lib/reference-layout"
+import { fileForPrimaryAnalysis } from "@/lib/reference-roles"
 import { cn } from "@/lib/utils"
 
 /**
@@ -65,11 +75,29 @@ export function AiWelcomeState({
   /** When true, the panel's docked composer owns the prompt — hide suggestions + input. */
   dockedComposer?: boolean
 }) {
-  const { sendMessage, promptFocusToken } = useLayoutBuilder()
-  const [value, setValue] = useState("")
-  const [modelId, setModelId] = useState(AI_MODELS[0].id)
+  const {
+    sendMessage,
+    promptFocusToken,
+    showFeedbackToast,
+    composerDraftText,
+    composerDraftAttachments,
+    composerDraftModelId,
+    setComposerDraftText,
+    setComposerDraftModelId,
+    addComposerDraftFiles,
+    removeComposerDraftAttachment,
+    setComposerDraftPrimary,
+    clearComposerDraft,
+    composerDraftPrimaryReferenceId,
+  } = useLayoutBuilder()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const value = composerDraftText
+  const attachments = composerDraftAttachments
+  const addFiles = addComposerDraftFiles
+  const remove = removeComposerDraftAttachment
+  const clear = clearComposerDraft
+  const modelId = composerDraftModelId
+  const setModelId = setComposerDraftModelId
   const activeModel =
     AI_MODELS.find((model) => model.id === modelId) ?? AI_MODELS[0]
 
@@ -82,7 +110,7 @@ export function AiWelcomeState({
     textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`
   }
 
-  useLayoutEffect(syncHeight, [value])
+  useLayoutEffect(syncHeight, [value, attachments.length])
 
   // Canvas "Generate with AI" CTA (and panel reopen) pull focus here.
   useEffect(() => {
@@ -112,18 +140,47 @@ export function AiWelcomeState({
     return () => window.clearTimeout(timer)
   }, [dockedComposer])
 
-  const canSend = value.trim().length > 0
+  const canSend = builderComposerCanSend({
+    text: value,
+    attachmentCount: attachments.length,
+    status: "idle",
+    scopedQuestionLocksComposer: false,
+  })
 
   const handleSend = () => {
     if (!canSend) {
       return
     }
-    sendMessage(value)
-    setValue("")
+    const draft = attachments
+    const prompt = value
+    void (async () => {
+      let referenceAnalysis = undefined
+      const firstImage = fileForPrimaryAnalysis(
+        draft,
+        composerDraftPrimaryReferenceId
+      )
+      if (firstImage) {
+        try {
+          referenceAnalysis = await analyzeReferenceImage(firstImage)
+        } catch {
+          referenceAnalysis = undefined
+        }
+      }
+      const submitted = await snapshotComposerAttachments(draft)
+      const queued = sendMessage(prompt, submitted, {
+        referenceAnalysis,
+        primaryReferenceId: composerDraftPrimaryReferenceId,
+      })
+      if (!queued) {
+        return
+      }
+      setComposerDraftText("")
+      clear()
+    })()
   }
 
   const pickSuggestion = (text: string) => {
-    setValue(text)
+    setComposerDraftText(text)
     const textarea = textareaRef.current
     if (textarea) {
       textarea.focus()
@@ -192,7 +249,8 @@ export function AiWelcomeState({
         </div>
 
         {/* Prompt input (Figma 21:446461). Sending kicks off the first build. */}
-        <div
+        <BuilderComposerDropTarget
+          onFiles={addFiles}
           className="welcome-disclose flex flex-col gap-2.5 rounded-[8px] border border-[#9b8afb] bg-white p-2 shadow-[0_12px_8px_rgba(16,24,40,0.08),0_4px_3px_rgba(16,24,40,0.03)] focus-within:border-[#9b8afb]"
           style={{ animationDelay: "180ms" }}
         >
@@ -212,7 +270,7 @@ export function AiWelcomeState({
             ref={textareaRef}
             id="builder-welcome-prompt"
             value={value}
-            onChange={(event) => setValue(event.target.value)}
+            onChange={(event) => setComposerDraftText(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault()
@@ -228,52 +286,21 @@ export function AiWelcomeState({
             )}
           />
 
-          <div className="flex items-center gap-1">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
-              multiple
-              className="hidden"
-              onChange={(event) => {
-                event.target.value = ""
-              }}
-            />
+          <BuilderAttachmentStrip
+            attachments={attachments}
+            onRemove={remove}
+            primaryReferenceId={composerDraftPrimaryReferenceId}
+            showReferenceRoles
+            onSetPrimary={setComposerDraftPrimary}
+          />
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Attach file"
-                  className={cn(
-                    "inline-flex size-6 items-center justify-center rounded-[4px] text-[#667085] outline-none transition-colors",
-                    "hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-                  )}
-                >
-                  <Paperclip className="size-4" aria-hidden />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="min-w-[220px]"
-              >
-                <DropdownMenuItem
-                  className="gap-2.5 px-3 py-2"
-                  onSelect={() => fileInputRef.current?.click()}
-                >
-                  <Upload className="size-4 text-[#667085]" aria-hidden />
-                  <span className="font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054]">
-                    Upload file
-                  </span>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="gap-2.5 px-3 py-2">
-                  <ImageIcon className="size-4 text-[#667085]" aria-hidden />
-                  <span className="font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054]">
-                    Add from media library
-                  </span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          <div className="flex items-center gap-1">
+            <BuilderAttachMenu
+              onPickFiles={addFiles}
+              onMediaLibrary={() =>
+                showFeedbackToast(MEDIA_LIBRARY_UNAVAILABLE_MESSAGE)
+              }
+            />
 
             <div className="min-w-px flex-1" />
 
@@ -328,7 +355,10 @@ export function AiWelcomeState({
               <Send className="size-3.5" aria-hidden />
             </button>
           </div>
-        </div>
+        </BuilderComposerDropTarget>
+        <p className="mt-3 text-center font-[family-name:var(--font-inter)] text-xs font-normal leading-4 text-[#475467]">
+          {PRODUCT_DISCLAIMER}
+        </p>
       </div>
       )}
     </div>

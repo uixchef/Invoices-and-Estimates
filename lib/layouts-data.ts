@@ -100,7 +100,16 @@ export const RECENT_DRAFT_ROWS: LayoutRow[] = Array.from(
 
     return {
       id: `layout-draft-${number}`,
-      name: `Layout ${number}`,
+      name: [
+        "Meridian Press",
+        "Northwind Studio",
+        "Verve",
+        "Harbor Index",
+        "Vale Atelier",
+        "Ironwood Ledger",
+        "Northwind Studio",
+        "Harbor Index",
+      ][index] ?? `Layout ${number}`,
       type: "Invoice",
       mediumId: pick(BUILDER_PAPER_PRESETS, index * 5 + 1).id,
       status: "Draft",

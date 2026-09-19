@@ -38,7 +38,7 @@ type TypeConfig = {
 
 const TYPE_CONFIG: Record<Exclude<AiActionType, "processing">, TypeConfig> = {
   thinking: { icon: Brain, label: "Thinking...", shimmer: true, expandable: true },
-  thought: { icon: Hourglass, label: null, shimmer: false, expandable: true },
+  thought: { icon: Hourglass, label: "Understanding your request", shimmer: false, expandable: true },
   planning: {
     icon: FastForward,
     label: "Planning next moves...",
@@ -91,7 +91,7 @@ function ProcessingDots() {
 
 export function AiInAction({
   type,
-  durationSec,
+  durationSec: _durationSec,
   label: labelOverride,
   children,
   defaultExpanded = false,
@@ -105,10 +105,7 @@ export function AiInAction({
 
   const config = TYPE_CONFIG[type]
   const Icon = config.icon
-  const label =
-    labelOverride ??
-    config.label ??
-    `Thought for ${Math.max(0, durationSec ?? 0)}s`
+  const label = labelOverride ?? config.label ?? "Understanding your request"
   const hasContent = config.expandable && Boolean(children)
   const isExpanded = hasContent && expanded
 

@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -28,16 +29,124 @@ import {
 } from "@/lib/delete-confirmation-copy"
 import {
   buildCompletionSummary,
+  buildEditSummary,
   buildPostReasoning,
   buildReasoning,
   buildRecommendations,
+  buildTodoLabels,
+  buildWorkingNarrative,
+  type NarrativeRequest,
 } from "@/lib/builder-narrative"
+import {
+  defaultColumnContents,
+  insertPlacedElement,
+  inspectorTabForKind,
+  nextPlacedId,
+  nextPlacedLabel,
+  resolveTableAdd,
+} from "@/lib/placed-elements"
+import { applyBlockPrompt } from "@/lib/placed-element-prompt"
+import {
+  endDocumentAction,
+  executeDocumentAction,
+  matchDocumentAction,
+  tryBeginDocumentAction,
+  type DocumentActionExtras,
+  type DocumentActionGate,
+} from "@/lib/document-actions"
+import {
+  applyStyleOverride,
+  clearMergedLayerRule,
+  effectiveInspectorTab,
+  inspectorPropertyGroups,
+  mergeLayerRule,
+  parseScopedStylePrompt,
+} from "@/lib/element-properties"
+import {
+  insertChildAt,
+  insertRootAt,
+  relocatePlacedElement as relocatePlacedTree,
+  removePlacedTree,
+  canNestInside,
+  type DropDest,
+} from "@/lib/placed-tree"
 import {
   getDefaultPlacedContent,
   getPlacedElementLayerKind,
   getPlacedElementSeed,
 } from "@/lib/placed-element-defaults"
-import { getDefaultBuilderMediumId } from "@/lib/mediums-data"
+import { demoPaymentDetails } from "@/lib/demo-payment"
+import { applyPromptEdit, mergeLayoutContent } from "@/lib/layout-prompt-edit"
+import {
+  loadCustomBoards,
+  saveCustomBoards,
+  resolveFamilyBrand,
+  selectionFromBoard,
+  brandLayoutEditsFromSelection,
+  isBrandApplyNoop,
+  resolvePaintedLayout,
+  type BrandBoard,
+  type BrandSelection,
+  type ResolvedFamilyBrand,
+} from "@/lib/brand-boards"
+import {
+  createSavedDefinition,
+  deleteSavedDefinition,
+  duplicateSavedDefinition,
+  duplicatePlacedDocument,
+  findPlacedByInspectKey,
+  insertSavedIntoDocument,
+  loadSavedItems,
+  persistSavedItems,
+  renameSavedDefinition,
+  replaceAvailabilityFor,
+  replaceSelectedWithSaved,
+  serializeSelection,
+  type SavedItemDefinition,
+  type SavedItemNode,
+  type SavePopoverAnchor,
+} from "@/lib/saved-items"
+import {
+  addComposerDraftFiles,
+  discardComposerDraft,
+  emptyComposerDraft,
+  removeComposerDraftAttachment,
+  setComposerDraftPrimary as nextComposerDraftPrimary,
+  setComposerDraftText as nextComposerDraftText,
+  setComposerDraftModelId as nextComposerDraftModelId,
+  type ComposerDraft,
+} from "@/lib/composer-draft"
+import type { PromptAttachment } from "@/lib/create-with-ai-types"
+import { attachmentFeedbackMessages } from "@/lib/prompt-attachments"
+import {
+  appendDocumentVersion,
+  canRestoreDocumentVersion,
+  currentDocumentVersionId,
+  findDocumentVersion,
+  fingerprintDocumentSnapshot,
+  historyToUndoSnapshot,
+  matchingDocumentVersionId,
+  MAX_DOCUMENT_VERSIONS,
+  nextDocumentVersionId,
+  persistableDocumentVersions,
+  syncDocumentVersionIdCounter,
+  type DocumentVersion,
+  type DocumentVersionMeta,
+  type DocumentVersionSnapshot,
+} from "@/lib/document-versions"
+import { documentMutationsLocked as documentMutationsLockedState } from "@/lib/document-edit-guard"
+import { PRODUCT_UNREACHABLE } from "@/lib/product-name"
+import {
+  imageReferencesFromSubmitted,
+  persistableUserMessage,
+  resolveBuilderGenerationPrompt,
+} from "@/lib/builder-attachments"
+import {
+  canCompareReferenceResult,
+  creationComparisonSource,
+  creationUsedVisualReference,
+} from "@/lib/reference-comparison"
+import { getDefaultBuilderMediumId, getMediumName } from "@/lib/mediums-data"
 import { findDocumentSource } from "@/lib/invoice-sources"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
 import {
@@ -50,22 +159,78 @@ import {
   type BuilderLayerStyle,
   type BuilderRuleKind,
   type BuilderMessage,
-  type BuilderReferenceImage,
+  type BuilderUserMessage,
   type BuilderReceivedAnswer,
   type BuilderSelection,
   type BuilderStatus,
+  type BuilderSubmittedAttachment,
   type BuilderVisualStyle,
   type GeneratedLayout,
-  type GeneratedLineItem,
   type LayoutBuilderEditSeed,
   PAGE_LAYER_LABEL,
   type PlacedElement,
   type PlacedElementZone,
 } from "@/lib/layout-builder-types"
+import { authoredKeyFromId, compatibilityKeys, displayLabelForSlot, isHiddenLayer } from "@/lib/native-instance-id"
 import type { LayoutRow } from "@/lib/layouts-data"
 import { layoutEditSeedFromRow } from "@/lib/layout-edit-seed"
-import { pageStyleFromComputed } from "@/lib/page-layer-style"
-import { resolveInitialVisualStyle } from "@/lib/portfolio-walkthrough-prompt"
+import { useLayoutCatalogOptional } from "@/lib/layout-catalog-context"
+import {
+  catalogRowFromDocument,
+  loadSavedLayoutRecords,
+  newSavedLayoutId,
+  previewLayoutForRow,
+  stripEphemeralDocument,
+} from "@/lib/layout-document-store"
+import {
+  DRAFT_IDENTITY_BY_ID,
+  identityForFamily,
+  lineItemsForFamily,
+} from "@/lib/document-identities"
+import {
+  FAMILY_PROMPT_PHRASE,
+  dashboardFamilyForLayoutId,
+  normalizeLayoutStyle,
+  resolveAccentColor,
+  resolveInitialVisualStyle,
+} from "@/lib/layout-family"
+import {
+  acknowledgementForAnswer,
+  interpretFreeformAnswer,
+  type ClarificationSurface,
+} from "@/lib/clarification-copy"
+import {
+  applyClarificationLayoutEffects,
+  answersToDecisions,
+  applyAnswersToDecisions,
+  DECIDE_VALUE,
+  decisionsToAnswers,
+  discountRateFromValue,
+  inferClarificationKind,
+  planClarification,
+  questionsOrNull,
+  resolvedForScopedClarification,
+  type ResolvedDecision,
+} from "@/lib/clarification"
+import {
+  reconstructLayoutFromReference,
+  type ReferenceAnalysis,
+} from "@/lib/reference-layout"
+import {
+  activatePortfolioCapture,
+  getBuilderNow,
+  getCaptureBlueprint,
+  getReasoningDelayMs,
+  getThinkingDelayMs,
+  isIntendedCaptureMounted,
+  isPortfolioCaptureActive,
+  nextCaptureMessageId,
+  primeCaptureMessageCounter,
+  readPortfolioCaptureRequest,
+  shouldPersistBuilderSession,
+  shouldSkipSimulatedTimers,
+  syncCaptureDom,
+} from "@/lib/portfolio-capture"
 
 /** Simulated generation latency until the layout-generation API is wired in. */
 const SIMULATED_THINKING_MS = 7000
@@ -110,8 +275,12 @@ type PersistedBuilderSession = {
   layerDuplicates: Record<string, number>
   placedElements: PlacedElement[]
   codeOverride: string | null
+  catalogId?: string | null
   /** Per-turn version snapshots so eye/undo stay functional after a reload. */
   versionSnapshots: Record<string, VersionSnapshot>
+  /** Document version timeline (not chat, not undo). */
+  documentVersions?: DocumentVersion[]
+  // Unsent Invoice AI composer drafts (text + File blobs) stay in memory only.
 }
 
 /** Undo/redo captures document-editing state only (not panel chrome or chat). */
@@ -139,6 +308,15 @@ function cloneHistorySnapshot(
   return structuredClone(snapshot)
 }
 
+function documentVersionTarget(label: string) {
+  const authored = authoredKeyFromId(label)
+  if (authored) {
+    const slot = authored.split("/").pop() ?? authored
+    return displayLabelForSlot(slot)
+  }
+  return label
+}
+
 /**
  * Frozen document state captured when an assistant turn settles, keyed by that
  * turn's message id. Lets the user preview the canvas "as of that prompt" (eye
@@ -152,275 +330,72 @@ type VersionSnapshot = BuilderHistorySnapshot & {
 /** Short "thinking" pass shown (with streaming reasoning) before questions. */
 const REASONING_MS = 2600
 
-/**
- * Clarifying questions the assistant asks before generating, so the layout
- * matches the user's intent on the first pass (Cursor-style).
- */
-const BUILDER_QUESTIONS: AiQuestion[] = [
-  {
-    id: "focus",
-    type: "text",
-    prompt: "What should this layout emphasise?",
-    placeholder: "e.g. clean branding, itemised detail, payment terms…",
-  },
-  {
-    id: "style",
-    type: "single-select",
-    prompt: "Pick a visual style",
-    required: true,
-    options: [
-      { id: "minimal", label: "Minimal" },
-      { id: "modern", label: "Modern" },
-      { id: "classic", label: "Classic" },
-      { id: "bold", label: "Bold" },
-    ],
-    allowOther: true,
-  },
-  {
-    id: "sections",
-    type: "multi-select",
-    prompt: "Which sections should be included?",
-    options: [
-      { id: "logo", label: "Logo & branding" },
-      { id: "items", label: "Itemised table" },
-      { id: "taxes", label: "Taxes & discounts" },
-      { id: "notes", label: "Notes" },
-      { id: "terms", label: "Payment terms" },
-    ],
-    allowOther: true,
-  },
-  {
-    id: "currency",
-    type: "select",
-    prompt: "Default currency",
-    placeholder: "Select currency",
-    options: [
-      { id: "usd", label: "USD ($)" },
-      { id: "eur", label: "EUR (€)" },
-      { id: "gbp", label: "GBP (£)" },
-      { id: "inr", label: "INR (₹)" },
-    ],
-  },
-  {
-    id: "line-items",
-    type: "stepper",
-    prompt: "How many sample line items?",
-    options: ["1", "2", "3", "4", "5"],
-  },
-]
-
-/**
- * Words that signal an under-specified refinement ("make it nicer") versus a
- * concrete instruction ("change the header font to bold"). Used to decide
- * whether a follow-up needs clarification before we regenerate.
- *
- * Stands in for a model confidence/uncertainty signal until the API is wired in.
- */
-const FOLLOW_UP_VAGUE_TERMS = [
-  "better",
-  "nicer",
-  "cleaner",
-  "improve",
-  "improvement",
-  "fix",
-  "change",
-  "update",
-  "redo",
-  "tweak",
-  "adjust",
-  "polish",
-  "something",
-  "stuff",
-  "etc",
-  "more",
-  "less",
-  "different",
-  "redesign",
-]
-
-const FOLLOW_UP_CONCRETE_TERMS = [
-  "color",
-  "colour",
-  "font",
-  "logo",
-  "header",
-  "footer",
-  "table",
-  "column",
-  "row",
-  "tax",
-  "discount",
-  "total",
-  "currency",
-  "margin",
-  "padding",
-  "spacing",
-  "align",
-  "size",
-  "date",
-  "address",
-  "border",
-  "background",
-  "section",
-  "notes",
-  "terms",
-]
-
-/** Style adjectives that signal the user already has a visual direction. */
-const STYLE_HINT_TERMS = [
-  "minimal",
-  "modern",
-  "classic",
-  "bold",
-  "clean",
-  "simple",
-  "elegant",
-  "professional",
-  "corporate",
-  "playful",
-  "luxury",
-  "vintage",
-  "sleek",
-  "colorful",
-  "colourful",
-]
-
-/** Section keywords that signal the user already named what to include. */
-const SECTION_HINT_TERMS = [
-  "logo",
-  "brand",
-  "item",
-  "table",
-  "tax",
-  "discount",
-  "note",
-  "term",
-  "payment",
-  "total",
-  "column",
-  "qr",
-  "signature",
-]
-
-const CURRENCY_HINT_RE = /\b(usd|eur|gbp|inr|dollar|euro|pound|rupee)\b|[$€£₹]/i
-
-/**
- * Scales the *initial* clarifying questions to what the prompt is actually
- * missing instead of always asking the full set. A detailed brief (or a
- * reference image plus a few words) generates straight away; a sparse prompt
- * still gets the questions it needs. Returns `null` to skip questions entirely.
- *
- * Stands in for a model confidence signal until the generation API is wired in.
- */
-function buildInitialQuestions(
-  text: string,
-  hasReferences: boolean
-): AiQuestion[] | null {
-  const normalized = text.trim().toLowerCase()
-  const wordCount = normalized
-    ? normalized.split(/\s+/).filter(Boolean).length
-    : 0
-
-  // A reference image carries strong intent; with even a short prompt, generate.
-  if (hasReferences && wordCount >= 3) {
-    return null
-  }
-
-  const hasStyle = STYLE_HINT_TERMS.some((term) => normalized.includes(term))
-  const hasSections = SECTION_HINT_TERMS.some((term) =>
-    normalized.includes(term)
-  )
-  const hasCurrency = CURRENCY_HINT_RE.test(text)
-  const signals = [hasStyle, hasSections, hasCurrency].filter(Boolean).length
-
-  // Specific enough to act on directly: a longer brief with a couple of
-  // concrete signals, or three signals regardless of length.
-  if ((wordCount >= 12 && signals >= 2) || signals >= 3) {
-    return null
-  }
-
-  // Otherwise ask only for the gaps. Style/sections/currency are dropped when
-  // the prompt already implies them; the open "focus" + line-item count are
-  // kept only for genuinely sparse prompts.
-  const missing = BUILDER_QUESTIONS.filter((question) => {
-    if (question.id === "style") return !hasStyle
-    if (question.id === "sections") return !hasSections
-    if (question.id === "currency") return !hasCurrency
-    return wordCount < 8
+function questionsForPrompt(
+  prompt: string,
+  options: {
+    hasReference?: boolean
+    generatedOnce?: boolean
+    isScopedElement?: boolean
+    hasBrandBoard?: boolean
+    resolved?: ResolvedDecision[]
+    askedCount?: number
+    round?: number
+  } = {}
+): {
+  questions: AiQuestion[] | null
+  resolved: ResolvedDecision[]
+  askableCount: number
+} {
+  const kind = inferClarificationKind({
+    hasGeneratedOnce: options.generatedOnce ?? false,
+    hasReference: options.hasReference ?? false,
+    isScopedElement: options.isScopedElement ?? false,
+    prompt,
   })
-
-  return missing.length > 0 ? missing : null
+  const resolvedForPlan = options.isScopedElement
+    ? resolvedForScopedClarification(options.resolved ?? [])
+    : (options.resolved ?? [])
+  const plan = planClarification({
+    prompt,
+    kind,
+    hasReference: options.hasReference ?? false,
+    hasBrandBoard: options.hasBrandBoard ?? false,
+    paperKnown: true,
+    documentTypeKnown: true,
+    generatedOnce: options.generatedOnce ?? false,
+    resolved: resolvedForPlan,
+    askedCount: options.askedCount ?? 0,
+    round: options.round ?? 0,
+  })
+  return {
+    questions: questionsOrNull(plan),
+    resolved: plan.resolved,
+    askableCount: plan.askableCount,
+  }
 }
 
-/**
- * Returns a scoped clarification set when a follow-up reads as ambiguous, or
- * `null` when the request is specific enough to generate from directly.
- */
-function buildFollowUpQuestions(text: string): AiQuestion[] | null {
-  const normalized = text.trim().toLowerCase()
-  if (!normalized) {
-    return null
+function narrativeRequestFromTurn(
+  messages: BuilderMessage[],
+  mediumId: string | null,
+  answers: AiAnswers | null,
+  layout?: GeneratedLayout | null
+): NarrativeRequest {
+  const lastUser = [...messages]
+    .reverse()
+    .find((message) => message.role === "user")
+  const firstUser = messages.find((message) => message.role === "user")
+  const userCount = messages.filter((message) => message.role === "user").length
+  const prompt = lastUser?.text ?? ""
+  return {
+    prompt,
+    hasReference: (firstUser?.references.length ?? 0) > 0,
+    isFollowUp: userCount > 1,
+    paperName: mediumId ? getMediumName(mediumId) : "A4",
+    family:
+      layout?.style ??
+      resolveInitialVisualStyle(firstUser?.text ?? prompt, answers?.style),
   }
-
-  const wordCount = normalized.split(/\s+/).filter(Boolean).length
-  const hasVague = FOLLOW_UP_VAGUE_TERMS.some((term) =>
-    normalized.includes(term)
-  )
-  const hasConcrete = FOLLOW_UP_CONCRETE_TERMS.some((term) =>
-    normalized.includes(term)
-  )
-
-  // Any concrete instruction is actioned directly. Only clarify when there's no
-  // concrete signal and the request is either very short or explicitly vague.
-  const isUncertain = !hasConcrete && (wordCount < 5 || hasVague)
-  if (!isUncertain) {
-    return null
-  }
-
-  return [
-    {
-      id: "clarify-target",
-      type: "single-select",
-      prompt: "Which part should I focus on?",
-      required: true,
-      options: [
-        { id: "header", label: "Header & branding" },
-        { id: "items", label: "Line items table" },
-        { id: "totals", label: "Totals, taxes & discounts" },
-        { id: "footer", label: "Notes & footer" },
-        { id: "whole", label: "The whole layout" },
-      ],
-      allowOther: true,
-    },
-    {
-      id: "clarify-goal",
-      type: "single-select",
-      prompt: "What outcome are you after?",
-      options: [
-        { id: "cleaner", label: "Make it cleaner / simpler" },
-        { id: "compact", label: "More compact" },
-        { id: "detailed", label: "More detailed" },
-        { id: "brand", label: "Match my brand" },
-      ],
-    },
-    {
-      id: "clarify-detail",
-      type: "text",
-      prompt: "Anything specific I should know?",
-      placeholder: "Optional — add detail so I get it right the first time.",
-    },
-  ]
 }
-
-/** Cursor-style plan the assistant works through while generating a layout. */
-const BUILDER_TODO_LABELS = [
-  "Analyse prompt & requirements",
-  "Set up paper type dimensions & safe area",
-  "Lay out header & branding",
-  "Build the line items table",
-  "Add totals, taxes & discounts",
-  "Add notes & footer",
-] as const
 
 const CURRENCY_BY_ID: Record<string, { code: string; symbol: string }> = {
   usd: { code: "USD", symbol: "$" },
@@ -428,23 +403,6 @@ const CURRENCY_BY_ID: Record<string, { code: string; symbol: string }> = {
   gbp: { code: "GBP", symbol: "£" },
   inr: { code: "INR", symbol: "₹" },
 }
-
-const STYLE_ACCENT: Record<BuilderVisualStyle, string> = {
-  minimal: "#101828",
-  modern: "#155eef",
-  classic: "#475467",
-  bold: "#6938ef",
-  branded: "#3e4784",
-}
-
-/** Sample catalogue used to populate a believable itemised table. */
-const SAMPLE_LINE_ITEMS: GeneratedLineItem[] = [
-  { description: "Brand & layout design", qty: 1, rate: 1200 },
-  { description: "Implementation & setup", qty: 8, rate: 95 },
-  { description: "Content & copywriting", qty: 4, rate: 120 },
-  { description: "Revisions & QA", qty: 3, rate: 85 },
-  { description: "Support retainer (monthly)", qty: 1, rate: 300 },
-]
 
 /** Best-effort extraction of a business name from the free-text prompt. */
 function deriveBusinessName(prompt: string): string {
@@ -491,6 +449,8 @@ function deriveLayout(
   documentType: BuilderDocumentType
 ): GeneratedLayout {
   const style = resolveInitialVisualStyle(prompt, answers?.style)
+  const identity = identityForFamily(style)
+  const extractedName = deriveBusinessName(prompt)
 
   const currencyId =
     typeof answers?.currency === "string" ? answers.currency : "usd"
@@ -517,7 +477,7 @@ function deriveLayout(
       ? Number.parseInt(answers["line-items"] as string, 10)
       : 3
   const itemCount = Number.isFinite(countAnswer)
-    ? Math.min(Math.max(countAnswer, 1), SAMPLE_LINE_ITEMS.length)
+    ? Math.min(Math.max(countAnswer, 1), identity.lineItems.length)
     : 3
 
   const emphasis =
@@ -525,183 +485,59 @@ function deriveLayout(
       ? answers.focus.trim()
       : null
 
-  const now = new Date()
+  const now = getBuilderNow()
   const due = new Date(now)
   due.setDate(due.getDate() + 14)
 
-  return {
-    documentType,
-    businessName: deriveBusinessName(prompt),
-    clientName: "Acme Co.",
-    emphasis,
-    style,
-    accent: STYLE_ACCENT[style],
-    currencyCode: currency.code,
-    currencySymbol: currency.symbol,
-    sections,
-    lineItems: SAMPLE_LINE_ITEMS.slice(0, itemCount),
-    taxRate: 0.1,
-    discountRate: 0.1,
-    documentNumber: `${DOC_PREFIX[documentType]}-${now.getFullYear()}-${pad(
-      142,
-      4
-    )}`,
-    issueDate: formatDate(now),
-    dueDate: formatDate(due),
-  }
-}
+  const documentNumber = `${DOC_PREFIX[documentType]}-${now.getFullYear()}-${pad(
+    142,
+    4
+  )}`
+  const businessName =
+    extractedName === "Your Business" ? identity.businessName : extractedName
 
-/** Named accent colours an edit prompt can request explicitly. */
-const ACCENT_BY_COLOR: Record<string, string> = {
-  purple: "#6938ef",
-  violet: "#6938ef",
-  indigo: "#444ce7",
-  blue: "#155eef",
-  green: "#039855",
-  emerald: "#039855",
-  red: "#d92d20",
-  orange: "#e04f16",
-  amber: "#dc6803",
-  teal: "#0e9384",
-  pink: "#dd2590",
-  rose: "#e31b54",
-  black: "#101828",
-  gray: "#475467",
-  grey: "#475467",
-}
-
-/** Currency words an edit prompt can switch to. */
-const CURRENCY_BY_WORD: Record<string, string> = {
-  dollar: "usd",
-  dollars: "usd",
-  usd: "usd",
-  euro: "eur",
-  euros: "eur",
-  eur: "eur",
-  pound: "gbp",
-  pounds: "gbp",
-  sterling: "gbp",
-  gbp: "gbp",
-  rupee: "inr",
-  rupees: "inr",
-  inr: "inr",
-}
-
-/** Optional sections in the order we backfill them for an unmatched "add" prompt. */
-const ADDABLE_SECTIONS: (keyof GeneratedLayout["sections"])[] = [
-  "logo",
-  "taxes",
-  "notes",
-  "terms",
-  "discount",
-  "onlinePayment",
-  "paymentDetails",
-]
-
-/**
- * Interprets a follow-up prompt as a concrete edit to the layout — the stand-in
- * for the editing API. Maps natural-language requests (and the recommendation
- * chips) to section toggles, style/accent, currency, and line-item changes so a
- * prompt visibly changes the document. Returns the same layout unchanged when
- * nothing recognisable is requested.
- */
-function applyPromptEdit(
-  layout: GeneratedLayout,
-  rawPrompt: string
-): GeneratedLayout {
-  // Element-scoped prompts arrive as "Item 2: <text>"; the edit still applies.
-  const text = rawPrompt.toLowerCase().replace(/^[^:]{0,40}:\s*/, "")
-  if (!text.trim()) {
-    return layout
-  }
-
-  const remove =
-    /\b(remove|hide|delete|drop|without|no longer|take out|get rid of)\b/.test(
-      text
-    )
-  const on = !remove
-
-  const next: GeneratedLayout = {
-    ...layout,
-    sections: { ...layout.sections },
-    lineItems: [...layout.lineItems],
-  }
-  let changed = false
-
-  const setSection = (
-    key: keyof GeneratedLayout["sections"],
-    matcher: RegExp
-  ) => {
-    if (matcher.test(text)) {
-      next.sections[key] = on
-      changed = true
-    }
-  }
-
-  setSection("logo", /\b(logo|brand mark|branding|brand header)\b/)
-  setSection("taxes", /\b(tax|taxes|vat|gst|sales tax)\b/)
-  setSection("notes", /\b(notes?|thank[\s-]?you|memo|message)\b/)
-  setSection("terms", /\b(terms|conditions|policy)\b/)
-  setSection("discount", /\b(discount|coupon|promo|markdown|rebate)\b/)
-  setSection(
-    "onlinePayment",
-    /\b(pay online|pay now|online payment|payment button|pay link|payment link|checkout button)\b/
+  return applyClarificationLayoutEffects(
+    {
+      documentType,
+      businessName,
+      clientName: identity.clientName,
+      emphasis,
+      style,
+      accent: resolveAccentColor(prompt, style),
+      currencyCode: currency.code,
+      currencySymbol: currency.symbol,
+      sections,
+      lineItems: lineItemsForFamily(style, itemCount),
+      taxRate: 0.1,
+      discountRate: 0.1,
+      documentNumber,
+      issueDate: formatDate(now),
+      dueDate: formatDate(due),
+      payment: demoPaymentDetails({ businessName, documentNumber }),
+    },
+    answers
   )
-  setSection(
-    "paymentDetails",
-    /\b(bank|payment details|account number|wire|iban|swift|remittance|ach)\b/
-  )
+}
 
-  // Visual style + accent.
-  const styleWord = (
-    ["minimal", "modern", "classic", "bold"] as BuilderVisualStyle[]
-  ).find((style) => new RegExp(`\\b${style}\\b`).test(text))
-  if (styleWord) {
-    next.style = styleWord
-    next.accent = STYLE_ACCENT[styleWord]
-    changed = true
+function extrasFromAnswers(answers: AiAnswers | null): DocumentActionExtras | undefined {
+  if (typeof answers?.discountType !== "string") {
+    return undefined
   }
-  for (const [name, hex] of Object.entries(ACCENT_BY_COLOR)) {
-    if (new RegExp(`\\b${name}\\b`).test(text)) {
-      next.accent = hex
-      changed = true
-      break
-    }
-  }
+  const rate = discountRateFromValue(answers.discountType)
+  return rate != null ? { discountRate: rate } : undefined
+}
 
-  // Line items.
-  const mentionsItem = /\b(item|line item|row|service|product)s?\b/.test(text)
-  if (mentionsItem && !remove && /\b(add|insert|another|extra|more)\b/.test(text)) {
-    const pick = SAMPLE_LINE_ITEMS[next.lineItems.length % SAMPLE_LINE_ITEMS.length]
-    next.lineItems = [...next.lineItems, { ...pick }]
-    changed = true
-  } else if (mentionsItem && remove && next.lineItems.length > 1) {
-    next.lineItems = next.lineItems.slice(0, -1)
-    changed = true
+function answersWithoutDiscountCommit(answers: AiAnswers | null): AiAnswers | null {
+  if (!answers) {
+    return null
   }
-
-  // Currency.
-  for (const [word, id] of Object.entries(CURRENCY_BY_WORD)) {
-    if (new RegExp(`\\b${word}\\b`).test(text)) {
-      const currency = CURRENCY_BY_ID[id]
-      next.currencyCode = currency.code
-      next.currencySymbol = currency.symbol
-      changed = true
-      break
-    }
+  if (answers.discountType == null && answers.discountRate == null) {
+    return answers
   }
-
-  // Fallback: an additive prompt we couldn't map exactly still produces a
-  // visible change by enabling the next missing optional section.
-  if (!changed && /\b(add|include|insert|create|put|show|with)\b/.test(text)) {
-    const missing = ADDABLE_SECTIONS.find((key) => !next.sections[key])
-    if (missing) {
-      next.sections[missing] = true
-      changed = true
-    }
-  }
-
-  return changed ? next : layout
+  const next = { ...answers }
+  delete next.discountType
+  delete next.discountRate
+  return next
 }
 
 /**
@@ -715,13 +551,26 @@ function composeLayout(
   maxFollowUps: number,
   answers: AiAnswers | null,
   documentType: BuilderDocumentType,
-  layoutEdits: Partial<GeneratedLayout>
+  layoutEdits: Partial<GeneratedLayout>,
+  fromReference = false,
+  referenceAnalysis: ReferenceAnalysis | null = null
 ): GeneratedLayout {
-  let composed = deriveLayout(userPrompts[0] ?? "", answers, documentType)
+  let composed = fromReference
+    ? reconstructLayoutFromReference(
+        userPrompts[0] ?? "",
+        documentType,
+        referenceAnalysis
+      )
+    : deriveLayout(userPrompts[0] ?? "", answersWithoutDiscountCommit(answers), documentType)
+  composed = applyClarificationLayoutEffects(
+    composed,
+    answersWithoutDiscountCommit(answers)
+  )
+  const extras = extrasFromAnswers(answers)
   for (let i = 1; i < userPrompts.length && i <= maxFollowUps; i++) {
-    composed = applyPromptEdit(composed, userPrompts[i])
+    composed = applyPromptEdit(composed, userPrompts[i], extras)
   }
-  return { ...composed, ...layoutEdits }
+  return mergeLayoutContent(composed, layoutEdits)
 }
 
 /**
@@ -756,13 +605,7 @@ const EDIT_OPENERS = [
   "I'd like",
 ] as const
 
-const EDIT_STYLE_PHRASE: Record<BuilderVisualStyle, string> = {
-  minimal: "Keep it clean and minimal",
-  modern: "Give it a modern look with a subtle accent colour",
-  classic: "Make it classic and formal",
-  bold: "Make it bold with a strong branded header",
-  branded: "Use our detailed branded invoice template",
-}
+const EDIT_STYLE_PHRASE = FAMILY_PROMPT_PHRASE
 
 function indefiniteArticle(noun: string): string {
   return /^[aeiou]/i.test(noun) ? "an" : "a"
@@ -775,6 +618,10 @@ function indefiniteArticle(noun: string): string {
  * layout the user will land on. Deterministic from the row's id (its seed).
  */
 export function layoutFromRow(row: LayoutRow): GeneratedLayout {
+  const storedPreview = previewLayoutForRow(row.id)
+  if (storedPreview) {
+    return storedPreview
+  }
   const editSeed = layoutEditSeedFromRow(row)
   const session = deriveEditSession(editSeed)
   return composeLayout(
@@ -803,28 +650,16 @@ function deriveEditSession(editSeed: LayoutBuilderEditSeed): {
   preDurationSec: number
   durationSec: number
 } {
-  const styles: BuilderVisualStyle[] = ["minimal", "modern", "classic", "bold"]
   const currencies = ["usd", "eur", "gbp", "inr"]
   const seed = Math.max(0, editSeed.seed)
 
-  // The first two dashboard templates showcase the detailed branded invoice
-  // design with distinct sample data so the cards don't read as duplicates.
-  const BRANDED_BUSINESS_BY_ID: Record<string, string> = {
-    "layout-draft-1": "BranditX, digital design agency",
-    "layout-draft-2": "Northwind Studio, creative agency",
-    "layout-draft-3": "Harbor & Co., brand consultancy",
-    "layout-draft-4": "Cedar & Sage, design studio",
-  }
-  const brandedBusiness = BRANDED_BUSINESS_BY_ID[editSeed.layoutId]
-  const isBranded = brandedBusiness !== undefined
-
-  const style: BuilderVisualStyle = isBranded
-    ? "branded"
-    : styles[seed % styles.length]
+  const style = dashboardFamilyForLayoutId(editSeed.layoutId)
+  const identity = identityForFamily(style)
   const currency = currencies[Math.floor(seed / 4) % currencies.length]
-  const business = isBranded
-    ? brandedBusiness
-    : EDIT_BUSINESSES[seed % EDIT_BUSINESSES.length]
+  const business =
+    DRAFT_IDENTITY_BY_ID[editSeed.layoutId] !== undefined
+      ? identity.businessName
+      : EDIT_BUSINESSES[seed % EDIT_BUSINESSES.length]
 
   // Header, table, and totals are always present; notes/terms vary so reopened
   // layouts read as distinct documents rather than one template.
@@ -890,6 +725,17 @@ function answerLabel(question: AiQuestion, value: string): string {
  * Flattens the user's clarifying answers into prompt + display-value pairs for
  * the "Received answers" recap.
  */
+function generationPromptTexts(messages: BuilderMessage[]): string[] {
+  return messages
+    .filter(
+      (message): message is BuilderUserMessage =>
+        message.role === "user" &&
+        message.kind !== "clarification-answer" &&
+        parseScopedStylePrompt(message.text) === null
+    )
+    .map((message) => message.text)
+}
+
 function formatReceivedAnswers(
   questions: AiQuestion[],
   answers: AiAnswers
@@ -904,10 +750,34 @@ function formatReceivedAnswers(
       values = [answerLabel(question, value)]
     }
     if (values.length > 0) {
-      result.push({ prompt: question.prompt, values })
+      const raw = Array.isArray(value) ? values.join(", ") : String(value)
+      result.push({
+        prompt: question.prompt,
+        values,
+        acknowledgement: acknowledgementForAnswer(question, raw),
+      })
     }
   }
   return result
+}
+
+type ElementDragSession = {
+  mode: "insert" | "move"
+  kind: string
+  label: string
+  elementId?: string
+  savedItemId?: string
+  x: number
+  y: number
+  hoverKey: string | null
+  dest: DropDest | null
+  overPaper: boolean
+}
+
+export type SaveItemDraft = {
+  node: SavedItemNode
+  defaultName: string
+  anchor: SavePopoverAnchor | null
 }
 
 type LayoutBuilderContextValue = {
@@ -957,6 +827,10 @@ type LayoutBuilderContextValue = {
   updateCodeOverride: (code: string) => void
   /** Re-attaches to the structured model, discarding raw-code edits. */
   reattachCode: () => void
+  /** Commits a detached-code edit as one Version-history row (blur/commit). */
+  commitCodeOverrideVersion: () => void
+  /** True while Reference compare or version preview must reject document edits. */
+  documentEditingLocked: boolean
 
   /**
    * Invoice AI side panel state. Shared so the toolbar's left action cluster can
@@ -1002,6 +876,8 @@ type LayoutBuilderContextValue = {
   /** Per-layer style overrides set from the Visual edits inspector. */
   layerStyles: Record<string, BuilderLayerStyle>
   setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
+  hiddenLayers: string[]
+  layerDuplicates: Record<string, number>
 
   /** True when the layer has any user edits (content / style / rules / copies)
    *  beyond the baseline captured when it was first inspected. */
@@ -1058,6 +934,8 @@ type LayoutBuilderContextValue = {
    * shows the normal AI conversation.
    */
   inspectingLayer: string | null
+  /** Human-facing title for the inspected native node. Independent of instance ID. */
+  inspectingDisplayLabel: string | null
   inspectLayer: (label: string | null, kind?: BuilderLayerKind) => void
 
   /**
@@ -1084,7 +962,12 @@ type LayoutBuilderContextValue = {
   selectLayer: (
     label: string,
     kind?: BuilderLayerKind,
-    options?: { keepAddElements?: boolean }
+    options?: {
+      keepAddElements?: boolean
+      tab?: "content" | "style" | "advanced"
+      chipLabel?: string
+      authoredKey?: string
+    }
   ) => void
 
   /** Seeds a layer's content/style overrides from the DOM on first inspect. */
@@ -1110,8 +993,59 @@ type LayoutBuilderContextValue = {
    * toolbar's plus button. Mutually exclusive with the Visual edits inspector.
    */
   addingElement: boolean
-  openAddElements: () => void
+  revealSavedItems: boolean
+  openAddElements: (options?: { revealSaved?: boolean }) => void
   closeAddElements: () => void
+  browsingSavedItems: boolean
+  openSavedItems: () => void
+  closeSavedItems: () => void
+  browsingBrand: boolean
+  openBrandBoards: () => void
+  closeBrandBoards: () => void
+  browsingVersionHistory: boolean
+  openVersionHistory: () => void
+  closeVersionHistory: () => void
+  /**
+   * Unsent Invoice AI composer draft. Survives left-panel switches in memory.
+   * Not part of document versions, undo, restore, or sessionStorage.
+   */
+  composerDraftText: string
+  composerDraftAttachments: PromptAttachment[]
+  composerDraftModelId: string
+  composerDraftPrimaryReferenceId: string | null
+  setComposerDraftText: (text: string) => void
+  setComposerDraftModelId: (modelId: string) => void
+  addComposerDraftFiles: (files: File[]) => void
+  removeComposerDraftAttachment: (id: string) => void
+  setComposerDraftPrimary: (id: string) => void
+  clearComposerDraft: () => void
+  brandDraft: BrandSelection | null
+  brandHasPreview: boolean
+  previewBrandSelection: (selection: BrandSelection) => void
+  applyBrandSelection: () => void
+  cancelBrandPreview: () => void
+  customBoards: BrandBoard[]
+  brandCatalog: BrandBoard[]
+  upsertCustomBoard: (board: BrandBoard, apply: boolean) => void
+  removeCustomBoard: (id: string) => void
+  previewUnsavedBoard: (board: BrandBoard) => void
+  brandTokens: ResolvedFamilyBrand
+  resetLayerToBrand: (label: string) => void
+  /** True while a palette tile is being dragged, so drop seams can expand. */
+  paletteDragging: boolean
+  setPaletteDragging: (dragging: boolean) => void
+  elementDrag: ElementDragSession | null
+  beginElementDrag: (session: Omit<ElementDragSession, "hoverKey" | "dest" | "overPaper">) => void
+  updateElementDragPointer: (next: {
+    x: number
+    y: number
+    hoverKey: string | null
+    dest: DropDest | null
+    overPaper: boolean
+  }) => void
+  commitElementDrag: () => void
+  cancelElementDrag: () => void
+  relocatePlacedElement: (id: string, dest: DropDest) => void
 
   /** Placeholder entities dropped onto the invoice from the Add elements palette. */
   placedElements: PlacedElement[]
@@ -1121,8 +1055,12 @@ type LayoutBuilderContextValue = {
     zone: PlacedElementZone
     /** Insert position in the placed-element order (blank page). Appends if omitted. */
     index?: number
+    parentId?: string
+    slot?: number
+    dest?: DropDest
   }) => void
   updatePlacedElementContent: (id: string, content: string) => void
+  updatePlacedElement: (id: string, patch: Partial<PlacedElement>) => void
   removePlacedElement: (id: string) => void
   /** Inserts a copy of a placed element directly after the original. */
   duplicatePlacedElement: (id: string) => void
@@ -1130,6 +1068,19 @@ type LayoutBuilderContextValue = {
   movePlacedElement: (id: string, direction: "up" | "down") => void
   /** Drops a dragged placed element before the target within the same zone. */
   reorderPlacedElement: (draggedId: string, targetId: string) => void
+
+  savedItems: SavedItemDefinition[]
+  saveItemDraft: SaveItemDraft | null
+  beginSaveSelected: (anchor?: SavePopoverAnchor | null) => void
+  confirmSaveItem: (name: string) => void
+  cancelSaveItem: () => void
+  saveAvailability: (label: string | null) => { ok: true } | { ok: false; reason: string }
+  insertSavedItem: (id: string, dest?: DropDest) => void
+  replaceSelectedWithSavedItem: (id: string) => void
+  replaceAvailability: (id: string) => { ok: true } | { ok: false; reason: string }
+  renameSavedItem: (id: string, name: string) => void
+  duplicateSavedItem: (id: string) => void
+  deleteSavedItem: (id: string) => void
 
   /**
    * "Start from blank" session: the builder opened on its empty state with no
@@ -1157,6 +1108,21 @@ type LayoutBuilderContextValue = {
    * replacing it with the full-screen generating animation.
    */
   hasGeneratedOnce: boolean
+  /** First-turn generation is reconstructing a visual reference, not exploring families. */
+  isReferenceReconstruction: boolean
+  /** True when a usable Primary preview can be compared with the native result. */
+  canCompareReferenceResult: boolean
+  /** Object URL of the creation Primary reference, if still available. */
+  referencePreviewUrl: string | null
+  /** Filename of the creation Primary, for truthful comparison alt text. */
+  referenceSourceName: string | null
+  /** Attachment id of the creation Primary shown in Reference view. */
+  referenceSourceId: string | null
+  /** Sampled colour from the reference, used by the reconstruction field. */
+  referenceMoodHex: string | null
+  /** When true, the canvas shows the original reference instead of the native result. */
+  compareWithReference: boolean
+  setCompareWithReference: (value: boolean) => void
   /** Duration of the pre-question reasoning pass. */
   preThoughtDurationSec: number | null
   /** Collapsed recap text from before clarifying questions. */
@@ -1166,11 +1132,23 @@ type LayoutBuilderContextValue = {
   todos: AiTodoItem[]
   /** Clarifying questions shown while `status === "asking"`. */
   questions: AiQuestion[]
+  clarificationAskedCount: number
+  clarificationAskableCount: number
+  clarificationSurface: ClarificationSurface
+  clarificationTargetId: string | null
   /** Answers captured for the active turn (null when none were asked). */
   receivedAnswers: BuilderReceivedAnswer[] | null
   /** Resolved layout to render once `status === "ready"`. */
   generatedLayout: GeneratedLayout
-  sendMessage: (text: string, references?: BuilderReferenceImage[]) => void
+  sendMessage: (
+    text: string,
+    attachments?: BuilderSubmittedAttachment[],
+    options?: {
+      scoped?: boolean
+      referenceAnalysis?: ReferenceAnalysis
+      primaryReferenceId?: string | null
+    }
+  ) => boolean
   /**
    * Sends a prompt-box ("Describe your edit") request scoped to a layer/section.
    * The named container shows the working glow for the turn instead of the whole
@@ -1183,8 +1161,9 @@ type LayoutBuilderContextValue = {
   aiEditingLayer: string | null
   /** Records the answers and kicks off generation. */
   submitAnswers: (answers: AiAnswers) => void
-  /** Skips the clarifying questions and kicks off generation. */
+  /** Uses inferred defaults for the active clarification round. */
   skipQuestions: () => void
+  submitFreeformClarification: (text: string) => void
   /** Halts the in-progress generation and settles the session. */
   stopGeneration: () => void
 
@@ -1205,6 +1184,14 @@ type LayoutBuilderContextValue = {
   restoreVersion: (messageId: string) => void
   hasVersionSnapshot: (messageId: string) => boolean
 
+  documentVersions: DocumentVersion[]
+  /** The version whose snapshot matches the live document, or null. */
+  currentVersionId: string | null
+  previewingHistoricalVersion: boolean
+  previewDocumentVersion: (id: string) => void
+  restoreDocumentVersion: (id: string) => void
+  closeVersionHistoryPreview: () => void
+
   /** Transient confirmation toast above the composer; null when hidden. */
   feedbackToast: string | null
   /** Shows a toast above the composer for a few seconds (AI answer feedback). */
@@ -1223,12 +1210,20 @@ type LayoutBuilderContextValue = {
   hasUnsavedChanges: boolean
   /** Clears the unsaved-changes flag after a successful Save / Publish. */
   markSaved: () => void
+  /**
+   * Commits the current document into the prototype layout catalog.
+   * Draft stays in the builder; Published is the same commit with Published status.
+   */
+  saveLayout: (status: "Draft" | "Published") => { id: string; name: string } | null
 }
 
 const LayoutBuilderContext = createContext<LayoutBuilderContextValue | null>(null)
 
 let messageCounter = 0
 function nextMessageId() {
+  if (isPortfolioCaptureActive()) {
+    return nextCaptureMessageId()
+  }
   messageCounter += 1
   return `builder-msg-${Date.now()}-${messageCounter}`
 }
@@ -1236,10 +1231,13 @@ function nextMessageId() {
 export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const { consumePendingGeneration, consumePendingEdit, consumePendingBlank } =
     useCreateWithAi()
+  const catalog = useLayoutCatalogOptional()
 
   const [name, setName] = useState(DEFAULT_LAYOUT_NAME)
   const [draftName, setDraftName] = useState(DEFAULT_LAYOUT_NAME)
   const [isEditingName, setIsEditingName] = useState(false)
+  const [catalogId, setCatalogId] = useState<string | null>(null)
+  const catalogIdRef = useRef<string | null>(null)
 
   const [mediumId, setMediumId] = useState<string | null>(null)
   const [modelId, setModelId] = useState<string | null>(null)
@@ -1300,6 +1298,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   // re-read `canMoveLayer` (the handlers themselves live in the ref).
   const [moverVersion, setMoverVersion] = useState(0)
   const [inspectingLayer, setInspectingLayer] = useState<string | null>(null)
+  const [inspectingDisplayLabel, setInspectingDisplayLabel] = useState<
+    string | null
+  >(null)
   const [inspectingLayerKind, setInspectingLayerKind] =
     useState<BuilderLayerKind | null>(null)
   const [pendingDeleteLayer, setPendingDeleteLayer] = useState<string | null>(
@@ -1310,7 +1311,28 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   )
   const [editsDocked, setEditsDocked] = useState(false)
   const [addingElement, setAddingElement] = useState(false)
+  const [revealSavedItems, setRevealSavedItems] = useState(false)
+  const [browsingSavedItems, setBrowsingSavedItems] = useState(false)
+  const [savedItems, setSavedItems] = useState<SavedItemDefinition[]>([])
+  const [saveItemDraft, setSaveItemDraft] = useState<SaveItemDraft | null>(null)
+  const [browsingBrand, setBrowsingBrand] = useState(false)
+  const [browsingVersionHistory, setBrowsingVersionHistory] = useState(false)
+  const [composerDraft, setComposerDraft] = useState<ComposerDraft>(emptyComposerDraft)
+  const composerDraftRef = useRef<ComposerDraft>(composerDraft)
+  composerDraftRef.current = composerDraft
+  const [brandDraft, setBrandDraft] = useState<BrandSelection | null>(null)
+  const [customBoards, setCustomBoards] = useState<BrandBoard[]>([])
+  const [unsavedBoard, setUnsavedBoard] = useState<BrandBoard | null>(null)
+  const [paletteDragging, setPaletteDragging] = useState(false)
+  const [elementDrag, setElementDrag] = useState<ElementDragSession | null>(null)
+  const elementDragRef = useRef<ElementDragSession | null>(null)
   const [placedElements, setPlacedElements] = useState<PlacedElement[]>([])
+  const [aiEditingLayer, setAiEditingLayer] = useState<string | null>(null)
+
+  useEffect(() => {
+    setCustomBoards(loadCustomBoards())
+    setSavedItems(loadSavedItems())
+  }, [])
 
   // Per-turn document snapshots (message id → frozen state) and the turn the
   // user is currently previewing on the canvas (null = live/current version).
@@ -1318,7 +1340,36 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   // Bumped whenever the snapshot map changes (capture or restore) so the persist
   // effect re-runs and consumers re-evaluate `hasVersionSnapshot`.
   const [snapshotVersion, setSnapshotVersion] = useState(0)
+  const [documentVersions, setDocumentVersions] = useState<DocumentVersion[]>([])
+  const documentVersionsRef = useRef<DocumentVersion[]>([])
+  const pendingDocumentVersionRef = useRef<DocumentVersionMeta | null>(null)
+  const restoringDocumentRef = useRef(false)
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
+  const previewVersionIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    previewVersionIdRef.current = previewVersionId
+  }, [previewVersionId])
+
+  useEffect(() => {
+    documentVersionsRef.current = documentVersions
+  }, [documentVersions])
+
+  const closeVersionHistoryPreview = useCallback(() => {
+    const previewId = previewVersionIdRef.current
+    if (
+      previewId &&
+      documentVersionsRef.current.some((version) => version.id === previewId)
+    ) {
+      setPreviewVersionId(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      discardComposerDraft(composerDraftRef.current)
+    }
+  }, [])
 
   // Transient confirmation toast shown just above the composer (e.g. after
   // submitting answer feedback). Auto-clears.
@@ -1330,9 +1381,17 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const placedElementCounterRef = useRef(0)
   /** Opens the inspector after the dropped element commits to the canvas. */
   const pendingPlacedInspectRef = useRef<PlacedElement | null>(null)
+  const documentActionGateRef = useRef<DocumentActionGate>({ busy: false })
+  const inspectingLayerRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    inspectingLayerRef.current = inspectingLayer
+  }, [inspectingLayer])
   const historyPastRef = useRef<BuilderHistorySnapshot[]>([])
   const historyFutureRef = useRef<BuilderHistorySnapshot[]>([])
   const applyingHistoryRef = useRef(false)
+  const generatedLayoutRef = useRef<GeneratedLayout | null>(null)
+  const committedLayoutRef = useRef<GeneratedLayout | null>(null)
   const codeEditSessionRef = useRef(false)
   const codeEditDebounceRef = useRef<number | null>(null)
   const documentStateRef = useRef<BuilderHistorySnapshot>({
@@ -1354,7 +1413,24 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const [isBlankSession, setIsBlankSession] = useState(false)
   const [promptFocusToken, setPromptFocusToken] = useState(0)
   const [hasGeneratedOnce, setHasGeneratedOnce] = useState(false)
-  const [questions, setQuestions] = useState<AiQuestion[]>(BUILDER_QUESTIONS)
+  const [referenceAnalysis, setReferenceAnalysis] =
+    useState<ReferenceAnalysis | null>(null)
+  const [compareWithReference, setCompareWithReference] = useState(false)
+  const compareWithReferenceRef = useRef(false)
+  compareWithReferenceRef.current = compareWithReference
+  const documentMutationsLocked = () =>
+    documentMutationsLockedState({
+      previewingVersion: Boolean(previewVersionIdRef.current),
+      compareWithReference: compareWithReferenceRef.current,
+    })
+  const [questions, setQuestions] = useState<AiQuestion[]>([])
+  const [clarificationAskedCount, setClarificationAskedCount] = useState(0)
+  const [clarificationAskableCount, setClarificationAskableCount] = useState(0)
+  const [clarificationSurface, setClarificationSurface] =
+    useState<ClarificationSurface>("global")
+  const [clarificationTargetId, setClarificationTargetId] = useState<
+    string | null
+  >(null)
   const [answers, setAnswers] = useState<AiAnswers | null>(null)
   const [receivedAnswers, setReceivedAnswers] = useState<
     BuilderReceivedAnswer[] | null
@@ -1371,8 +1447,36 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const thinkingStartedAtRef = useRef<number | null>(null)
   const reasoningStartedAtRef = useRef<number | null>(null)
   const pendingQuestionsRef = useRef<AiQuestion[] | null>(null)
+  const pendingAskableCountRef = useRef(0)
+  const clarificationResolvedRef = useRef<ResolvedDecision[]>([])
+  const clarificationAskedRef = useRef(0)
+  const clarificationRoundRef = useRef(0)
+  const clarificationPromptRef = useRef("")
+  const clarificationSurfaceRef = useRef<ClarificationSurface>("global")
+  const clarificationTargetIdRef = useRef<string | null>(null)
   const referenceUrlsRef = useRef<string[]>([])
   const initializedRef = useRef(false)
+  const captureAppliedRef = useRef(false)
+
+  useLayoutEffect(() => {
+    const request = readPortfolioCaptureRequest()
+    if (!request) {
+      captureAppliedRef.current = false
+      syncCaptureDom(null)
+      return
+    }
+    activatePortfolioCapture(request)
+    const blueprint = getCaptureBlueprint(request.state)
+    const applied = captureAppliedRef.current
+    const ready = isIntendedCaptureMounted({
+      applied,
+      live: request.live,
+      status,
+      stillStatus: blueprint.stillStatus,
+      liveKickoff: request.live ? blueprint.liveKickoff : "none",
+    })
+    syncCaptureDom(request, { status, applied, ready })
+  }, [status])
 
   useEffect(() => {
     documentStateRef.current = {
@@ -1414,6 +1518,12 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const applyHistorySnapshot = useCallback(
     (snapshot: BuilderHistorySnapshot) => {
+      const inspected = inspectingLayerRef.current
+      const matchesInspect = (element: PlacedElement) =>
+        element.id === inspected || element.label === inspected
+      const wasPlaced = inspected
+        ? documentStateRef.current.placedElements.some(matchesInspect)
+        : false
       applyingHistoryRef.current = true
       setLayoutEdits(snapshot.layoutEdits)
       setLayerTextState(snapshot.layerText)
@@ -1424,29 +1534,63 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setCodeOverrideState(snapshot.codeOverride)
       setBaseLayout(snapshot.baseLayout ?? null)
       applyingHistoryRef.current = false
+      if (
+        inspected &&
+        wasPlaced &&
+        !snapshot.placedElements.some(matchesInspect)
+      ) {
+        setInspectingLayer(null)
+        setInspectingLayerKind(null)
+        setSelections((current) =>
+          current.filter((selection) => selection.label !== inspected)
+        )
+      }
     },
     []
   )
 
-  const pushHistory = useCallback(() => {
-    if (applyingHistoryRef.current) {
-      return
-    }
+  const pushHistory = useCallback(
+    (
+      frozenBase?: GeneratedLayout,
+      version: DocumentVersionMeta | false = { origin: "manual" }
+    ) => {
+      if (applyingHistoryRef.current) {
+        return
+      }
+      if (compareWithReferenceRef.current) {
+        return
+      }
+      if (
+        previewVersionIdRef.current &&
+        !restoringDocumentRef.current
+      ) {
+        return
+      }
 
-    // Any edit that records history is an unsaved change.
-    setHasUnsavedChanges(true)
+      // Any edit that records history is an unsaved change.
+      setHasUnsavedChanges(true)
 
-    historyPastRef.current.push(
-      cloneHistorySnapshot(documentStateRef.current)
-    )
-    if (historyPastRef.current.length > HISTORY_LIMIT) {
-      historyPastRef.current.shift()
-    }
-    historyFutureRef.current = []
-    syncHistoryFlags()
-  }, [syncHistoryFlags])
+      const snapshot = cloneHistorySnapshot(documentStateRef.current)
+      if (frozenBase) {
+        snapshot.baseLayout = structuredClone(frozenBase)
+      }
+      historyPastRef.current.push(snapshot)
+      if (historyPastRef.current.length > HISTORY_LIMIT) {
+        historyPastRef.current.shift()
+      }
+      historyFutureRef.current = []
+      syncHistoryFlags()
+      if (version !== false && !pendingDocumentVersionRef.current) {
+        pendingDocumentVersionRef.current = version
+      }
+    },
+    [syncHistoryFlags]
+  )
 
   const undo = useCallback(() => {
+    if (documentMutationsLocked()) {
+      return
+    }
     const previous = historyPastRef.current.pop()
     if (!previous) {
       return
@@ -1460,6 +1604,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   }, [applyHistorySnapshot, syncHistoryFlags])
 
   const redo = useCallback(() => {
+    if (documentMutationsLocked()) {
+      return
+    }
     const next = historyFutureRef.current.pop()
     if (!next) {
       return
@@ -1472,23 +1619,19 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     syncHistoryFlags()
   }, [applyHistorySnapshot, syncHistoryFlags])
 
-  // New generation invalidates edit history — the prior layout is no longer the base.
+  // First generation invalidates edit history. Follow-up AI actions keep the
+  // snapshot recorded at send so one undo reverts the whole mutation.
   useEffect(() => {
     if (status === "reasoning" || status === "thinking") {
-      clearHistory()
-      // A generation produces an unsaved result. Restored (saved) layouts open
-      // straight into "ready" and never pass through these phases, so they stay
-      // clean until the user edits.
+      if (!hasGeneratedOnce) {
+        clearHistory()
+      }
       setHasUnsavedChanges(true)
     }
-  }, [status, clearHistory])
+  }, [status, clearHistory, hasGeneratedOnce])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (status !== "ready") {
-        return
-      }
-
       const mod = event.metaKey || event.ctrlKey
       if (!mod) {
         return
@@ -1509,7 +1652,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [status, undo, redo])
+  }, [undo, redo])
 
   const startThinking = useCallback(() => {
     thinkingStartedAtRef.current = Date.now()
@@ -1519,8 +1662,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   // Kicks off the brief reasoning pass. `pending` holds the questions to ask
   // afterwards (or null to go straight to generation once reasoning settles).
-  const startReasoning = useCallback((pending: AiQuestion[] | null) => {
+  const startReasoning = useCallback((pending: AiQuestion[] | null, askableCount = 0) => {
     pendingQuestionsRef.current = pending && pending.length > 0 ? pending : null
+    pendingAskableCountRef.current =
+      pending && pending.length > 0 ? askableCount : 0
     reasoningStartedAtRef.current = Date.now()
     setPreThoughtDurationSec(null)
     setPreReasoning(null)
@@ -1528,10 +1673,22 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     setStatus("reasoning")
   }, [])
 
+  const presentClarification = useCallback(
+    (pending: AiQuestion[], askableCount: number) => {
+      setQuestions(pending)
+      setClarificationAskedCount(clarificationAskedRef.current)
+      setClarificationAskableCount(askableCount)
+    },
+    []
+  )
+
   // After a couple of seconds of "thinking", either surface clarifying
   // questions or move straight into generation.
   useEffect(() => {
     if (status !== "reasoning") {
+      return
+    }
+    if (shouldSkipSimulatedTimers()) {
       return
     }
 
@@ -1550,21 +1707,29 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       const pending = pendingQuestionsRef.current
       if (pending) {
         setPreThoughtDurationSec(durationSec)
-        setPreReasoning(buildReasoning(prompt))
-        setQuestions(pending)
+        setPreReasoning(
+          buildReasoning(prompt, {
+            ...narrativeRequestFromTurn(messages, mediumId, answers),
+            phase: "interpret",
+          })
+        )
+        presentClarification(pending, pendingAskableCountRef.current)
         setStatus("asking")
       } else {
         startThinking()
       }
-    }, REASONING_MS)
+    }, getReasoningDelayMs(REASONING_MS))
 
     return () => window.clearTimeout(timer)
-  }, [status, startThinking, messages])
+  }, [status, startThinking, messages, mediumId, answers, presentClarification])
 
   // Drives the simulated generation latency. Owning the timer in an effect keyed
   // on `status` keeps it resilient to Strict Mode's mount/cleanup/mount cycle.
   useEffect(() => {
     if (status !== "thinking") {
+      return
+    }
+    if (shouldSkipSimulatedTimers()) {
       return
     }
 
@@ -1576,15 +1741,19 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       )
       setThoughtDurationSec(elapsedSec)
       setStatus("ready")
-    }, SIMULATED_THINKING_MS)
+    }, getThinkingDelayMs(SIMULATED_THINKING_MS))
 
     return () => window.clearTimeout(timer)
   }, [status])
 
   // Tick the plan forward while generating; complete it once ready.
   useEffect(() => {
+    const labels = buildTodoLabels(
+      narrativeRequestFromTurn(messages, mediumId, answers)
+    )
+
     if (status === "ready") {
-      setCompletedTodoCount(BUILDER_TODO_LABELS.length)
+      setCompletedTodoCount(labels.length)
       return
     }
 
@@ -1593,15 +1762,19 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    if (shouldSkipSimulatedTimers()) {
+      return
+    }
+
     setCompletedTodoCount(0)
     const interval = window.setInterval(() => {
       setCompletedTodoCount((current) =>
-        current < BUILDER_TODO_LABELS.length - 1 ? current + 1 : current
+        current < labels.length - 1 ? current + 1 : current
       )
-    }, SIMULATED_THINKING_MS / (BUILDER_TODO_LABELS.length + 1))
+    }, getThinkingDelayMs(SIMULATED_THINKING_MS) / (labels.length + 1))
 
     return () => window.clearInterval(interval)
-  }, [status])
+  }, [messages, status, mediumId, answers])
 
   // Seed the session from the prompt the user submitted on the list page.
   useEffect(() => {
@@ -1609,6 +1782,111 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       return
     }
     initializedRef.current = true
+
+    const captureRequest = readPortfolioCaptureRequest()
+    if (captureRequest) {
+      activatePortfolioCapture(captureRequest)
+      syncCaptureDom(captureRequest)
+      const blueprint = getCaptureBlueprint(captureRequest.state)
+      primeCaptureMessageCounter(blueprint.lastMessageIndex)
+
+      setName(DEFAULT_LAYOUT_NAME)
+      setDraftName(DEFAULT_LAYOUT_NAME)
+      setMediumId(getDefaultBuilderMediumId())
+      setModelId(null)
+      setDocumentType(BUILDER_DOCUMENT_TYPES[0])
+      setIsBlankSession(blueprint.isBlankSession)
+      setMessages(blueprint.messages)
+      setAnswers(null)
+      setReceivedAnswers(null)
+      setLayoutEdits({})
+      setLayerTextState(
+        blueprint.inspectingLayer === "Business name"
+          ? { "Business name": "Your Business" }
+          : {}
+      )
+      setLayerStyles({})
+      setHiddenLayers([])
+      setLayerDuplicates({})
+      setPlacedElements([])
+      setCodeOverrideState(blueprint.codeOverride)
+      setCodeOpen(blueprint.codeOpen)
+      setPreviewOpen(blueprint.previewOpen)
+      setEditMode(blueprint.editMode)
+      setInspectingLayer(blueprint.inspectingLayer)
+      setInspectingLayerKind(blueprint.inspectingLayerKind)
+      setSelections(blueprint.selections)
+      setAiEditingLayer(blueprint.aiEditingLayer)
+      setPreviewSourceId(blueprint.previewSourceId)
+      setEditsTab(blueprint.editsTab)
+      setAddingElement(false)
+      setPanelOpen(true)
+      setHasUnsavedChanges(!blueprint.isBlankSession)
+      setCompletedTodoCount(blueprint.completedTodoCount)
+      versionSnapshotsRef.current = {}
+      setDocumentVersions([])
+      documentVersionsRef.current = []
+      pendingDocumentVersionRef.current = null
+      captureAppliedRef.current = true
+
+      const liveKickoff =
+        captureRequest.live ? blueprint.liveKickoff : "none"
+      const hasGeneratedOnce =
+        liveKickoff === "initial-generation" ? false : blueprint.hasGeneratedOnce
+      setHasGeneratedOnce(hasGeneratedOnce)
+
+      if (liveKickoff === "none") {
+        setThoughtDurationSec(blueprint.thoughtDurationSec)
+        setPreThoughtDurationSec(blueprint.preThoughtDurationSec)
+        if (blueprint.stillStatus === "asking") {
+          const planned = questionsForPrompt(blueprint.seedPrompt, {
+            generatedOnce: false,
+          })
+          pendingQuestionsRef.current = planned.questions
+          pendingAskableCountRef.current = planned.askableCount
+          clarificationResolvedRef.current = planned.resolved
+          setQuestions(planned.questions ?? [])
+          setClarificationAskedCount(0)
+          setClarificationAskableCount(planned.askableCount)
+          setPreReasoning(
+            buildReasoning(blueprint.seedPrompt, {
+              phase: "interpret",
+              paperName: getMediumName(getDefaultBuilderMediumId()),
+            })
+          )
+          setPreThoughtDurationSec(blueprint.preThoughtDurationSec)
+        } else {
+          setQuestions([])
+          setPreReasoning(null)
+        }
+        if (blueprint.stillStatus === "thinking") {
+          thinkingStartedAtRef.current = Date.now()
+        }
+        setStatus(blueprint.stillStatus)
+      } else if (liveKickoff === "initial-generation") {
+        setThoughtDurationSec(null)
+        setPreThoughtDurationSec(null)
+        setPreReasoning(null)
+        const kickoffPlan = questionsForPrompt(blueprint.seedPrompt, {
+          generatedOnce: false,
+        })
+        startReasoning(kickoffPlan.questions, kickoffPlan.askableCount)
+      } else {
+        const lastUser = [...blueprint.messages]
+          .reverse()
+          .find((message) => message.role === "user")
+        setThoughtDurationSec(null)
+        setPreThoughtDurationSec(null)
+        setPreReasoning(null)
+        const followPlan = questionsForPrompt(lastUser?.text ?? "", {
+          generatedOnce: true,
+        })
+        startReasoning(followPlan.questions, followPlan.askableCount)
+      }
+      return
+    }
+
+    syncCaptureDom(null)
 
     // Rehydrates the working session saved before a refresh / reload. Returns
     // true when a session was restored. Settles the status from the persisted
@@ -1648,6 +1926,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setIsBlankSession(saved.isBlankSession)
       setMessages(saved.messages ?? [])
       setAnswers(saved.answers ?? null)
+      clarificationResolvedRef.current = answersToDecisions(saved.answers ?? null)
       setReceivedAnswers(saved.receivedAnswers ?? null)
       setPreReasoning(saved.preReasoning ?? null)
       setPreThoughtDurationSec(saved.preThoughtDurationSec ?? null)
@@ -1659,10 +1938,18 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerDuplicates(saved.layerDuplicates ?? {})
       setPlacedElements(saved.placedElements ?? [])
       setCodeOverrideState(saved.codeOverride ?? null)
+      setCatalogId(saved.catalogId ?? null)
+      catalogIdRef.current = saved.catalogId ?? null
       setHasUnsavedChanges(saved.hasUnsavedChanges ?? false)
       // Restore per-turn snapshots so the eye/undo controls on earlier turns
       // keep working after a reload (they live in a ref, lost on refresh).
       versionSnapshotsRef.current = saved.versionSnapshots ?? {}
+      const restoredVersions = Array.isArray(saved.documentVersions)
+        ? saved.documentVersions
+        : []
+      syncDocumentVersionIdCounter(restoredVersions)
+      documentVersionsRef.current = restoredVersions
+      setDocumentVersions(restoredVersions)
       setSnapshotVersion((value) => value + 1)
 
       if (saved.hasGeneratedOnce) {
@@ -1690,6 +1977,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     if (blankMediumId) {
       setIsBlankSession(true)
       setMediumId(blankMediumId)
+      setCatalogId(null)
+      catalogIdRef.current = null
       return
     }
 
@@ -1705,30 +1994,77 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setDraftName(editSeed.name)
       setMediumId(editSeed.mediumId)
       setDocumentType(editSeed.documentType)
+      setCatalogId(editSeed.layoutId)
+      catalogIdRef.current = editSeed.layoutId
       setAnswers(session.answers)
-      // The resolved business name is what shows on the document.
-      setLayoutEdits({ businessName: session.businessName })
+      clarificationResolvedRef.current = answersToDecisions(session.answers)
       setThoughtDurationSec(session.durationSec)
+
+      const stored =
+        catalog?.getRecord(editSeed.layoutId) ??
+        loadSavedLayoutRecords().find((record) => record.row.id === editSeed.layoutId) ??
+        null
+
+      if (stored) {
+        setBaseLayout(stored.document.generatedLayout)
+        setLayoutEdits(stored.document.layoutEdits)
+        setLayerTextState(stored.document.layerText)
+        setLayerStyles(stored.document.layerStyles)
+        setHiddenLayers(stored.document.hiddenLayers)
+        setLayerDuplicates(stored.document.layerDuplicates)
+        setPlacedElements(stored.document.placedElements)
+        setCodeOverrideState(stored.document.codeOverride)
+        setHasUnsavedChanges(false)
+      } else {
+        setLayoutEdits({ businessName: session.businessName })
+      }
 
       // Rebuild the original turn so the transcript reads exactly like the
       // session that produced this layout: prompt → clarifying answers →
       // reasoning → completed plan → recap. Seeding both messages means the
       // ready-effect leaves the history untouched (no duplicate turn).
-      const restoredLayout: GeneratedLayout = {
-        ...deriveLayout(session.prompt, session.answers, editSeed.documentType),
-        businessName: session.businessName,
-      }
+      const restoredLayout: GeneratedLayout = stored
+        ? stored.document.generatedLayout
+        : {
+            ...deriveLayout(session.prompt, session.answers, editSeed.documentType),
+            businessName: session.businessName,
+          }
       const receivedEditAnswers = formatReceivedAnswers(
-        BUILDER_QUESTIONS,
+        [
+          {
+            id: "style",
+            type: "single-select",
+            prompt: "What should it feel like?",
+            options: [
+              {
+                id:
+                  typeof session.answers.style === "string"
+                    ? session.answers.style
+                    : "studio",
+                label:
+                  typeof session.answers.style === "string"
+                    ? session.answers.style
+                    : "studio",
+              },
+            ],
+          },
+        ],
         session.answers
       )
-      const completedTodos: AiTodoItem[] = BUILDER_TODO_LABELS.map(
-        (label, index) => ({
-          id: `builder-todo-${index}`,
-          label,
-          status: "done",
-        })
-      )
+      const completedTodos: AiTodoItem[] = buildTodoLabels({
+        prompt: session.prompt,
+        family:
+          typeof session.answers.style === "string"
+            ? session.answers.style
+            : undefined,
+        paperName: editSeed.mediumId
+          ? getMediumName(editSeed.mediumId)
+          : "A4",
+      }).map((label, index) => ({
+        id: `builder-todo-${index}`,
+        label,
+        status: "done",
+      }))
 
       setMessages([
         {
@@ -1741,12 +2077,28 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
           id: nextMessageId(),
           role: "assistant",
           receivedAnswers: receivedEditAnswers,
-          preReasoning: buildReasoning(session.gist),
+          preReasoning: buildReasoning(session.gist, {
+            phase: "interpret",
+            family: restoredLayout.style,
+            paperName: editSeed.mediumId
+              ? getMediumName(editSeed.mediumId)
+              : "A4",
+          }),
           preDurationSec: session.preDurationSec,
-          reasoning: buildPostReasoning(session.gist, receivedEditAnswers),
+          reasoning: buildPostReasoning(session.gist, receivedEditAnswers, {
+            family: restoredLayout.style,
+            paperName: editSeed.mediumId
+              ? getMediumName(editSeed.mediumId)
+              : "A4",
+          }),
           durationSec: session.durationSec,
           todos: completedTodos,
-          summary: buildCompletionSummary(restoredLayout),
+          summary: buildCompletionSummary(restoredLayout, {
+            prompt: session.prompt,
+            paperName: editSeed.mediumId
+              ? getMediumName(editSeed.mediumId)
+              : "A4",
+          }),
           recommendations: buildRecommendations(restoredLayout),
         },
       ])
@@ -1767,15 +2119,29 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    setCatalogId(null)
+    catalogIdRef.current = null
     setMediumId(seed.mediumId)
     setModelId(seed.modelId)
     referenceUrlsRef.current = seed.references.map((ref) => ref.previewUrl)
+    setReferenceAnalysis(seed.referenceAnalysis ?? null)
+    setCompareWithReference(false)
 
-    const text =
-      seed.prompt ||
-      `Generate a layout from ${seed.references.length} reference image${
-        seed.references.length === 1 ? "" : "s"
-      }.`
+    const text = resolveBuilderGenerationPrompt(seed.prompt, {
+      generatedOnce: false,
+      hasImageReference: seed.references.length > 0,
+    })
+
+    const creationAttachments =
+      seed.attachments && seed.attachments.length > 0
+        ? seed.attachments
+        : seed.references.map((reference) => ({
+            id: reference.id,
+            name: reference.name,
+            mimeType: "image/*",
+            kind: "image" as const,
+            previewUrl: reference.previewUrl,
+          }))
 
     setMessages([
       {
@@ -1783,17 +2149,29 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         role: "user",
         text,
         references: seed.references,
+        attachments: creationAttachments,
+        primaryReferenceId:
+          seed.primaryReferenceId ?? seed.references[0]?.id ?? null,
       },
     ])
 
     // Think first, then clarify only the gaps the prompt left open — a detailed
     // brief (or a reference image) goes straight to generation.
-    startReasoning(buildInitialQuestions(seed.prompt, seed.references.length > 0))
+    const planned = questionsForPrompt(seed.prompt, {
+      hasReference: seed.references.length > 0,
+      generatedOnce: false,
+    })
+    clarificationResolvedRef.current = planned.resolved
+    clarificationAskedRef.current = 0
+    clarificationRoundRef.current = 0
+    clarificationPromptRef.current = seed.prompt
+    startReasoning(planned.questions, planned.askableCount)
   }, [
     consumePendingGeneration,
     consumePendingEdit,
     consumePendingBlank,
     startReasoning,
+    catalog,
   ])
 
   // Persist the working session so a refresh restores it. Only writes once the
@@ -1803,6 +2181,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   // URLs) are dropped since they can't survive a reload.
   useEffect(() => {
     if (!initializedRef.current || typeof window === "undefined") {
+      return
+    }
+    if (!shouldPersistBuilderSession()) {
       return
     }
     const hasContent =
@@ -1822,7 +2203,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       isBlankSession,
       hasGeneratedOnce,
       hasUnsavedChanges,
-      messages: messages.map((message) => ({ ...message, references: [] })),
+      messages: messages.map((message) =>
+        message.role === "user" ? persistableUserMessage(message) : message
+      ),
       answers,
       receivedAnswers,
       preReasoning,
@@ -1835,15 +2218,30 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       layerDuplicates,
       placedElements,
       codeOverride,
+      catalogId,
       versionSnapshots: versionSnapshotsRef.current,
+      documentVersions: persistableDocumentVersions(documentVersions),
+    }
+    const persist = (payload: PersistedBuilderSession) => {
+      window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload))
     }
     try {
-      window.sessionStorage.setItem(
-        SESSION_STORAGE_KEY,
-        JSON.stringify(snapshot)
-      )
+      persist(snapshot)
     } catch {
-      // Storage full / unavailable — persistence is best-effort.
+      try {
+        persist({
+          ...snapshot,
+          documentVersions: persistableDocumentVersions(
+            documentVersions.slice(-8)
+          ),
+        })
+      } catch {
+        try {
+          persist({ ...snapshot, documentVersions: [] })
+        } catch {
+          // Storage full / unavailable — persistence is best-effort.
+        }
+      }
     }
   }, [
     name,
@@ -1866,7 +2264,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     layerDuplicates,
     placedElements,
     codeOverride,
+    catalogId,
     snapshotVersion,
+    documentVersions,
   ])
 
   const focusPrompt = useCallback(() => {
@@ -1875,6 +2275,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     // `openAddElements` surfaces the palette. Then focus the prompt input.
     setPanelOpen(true)
     setAddingElement(false)
+    setBrowsingSavedItems(false)
     setInspectingLayer(null)
     setPromptFocusToken((token) => token + 1)
   }, [])
@@ -1945,19 +2346,26 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   // tears down structured-edit affordances so the two models can't silently
   // diverge while the user edits raw code.
   const detachCode = useCallback((code: string) => {
-    pushHistory()
+    if (documentMutationsLocked()) {
+      return
+    }
+    pushHistory(undefined, { origin: "code" })
     setCodeOverrideState(code)
     setEditMode(false)
     setInspectingLayer(null)
     setAddingElement(false)
+    setBrowsingSavedItems(false)
     setSelections([])
     setCodeOpen(true)
   }, [pushHistory])
 
   const updateCodeOverride = useCallback((code: string) => {
+    if (documentMutationsLocked()) {
+      return
+    }
     if (!applyingHistoryRef.current) {
       if (!codeEditSessionRef.current) {
-        pushHistory()
+        pushHistory(undefined, false)
         codeEditSessionRef.current = true
       }
 
@@ -1974,23 +2382,45 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   }, [pushHistory])
 
   const reattachCode = useCallback(() => {
-    pushHistory()
+    if (documentMutationsLocked()) {
+      return
+    }
+    pushHistory(undefined, { origin: "code", target: "Revert" })
     setCodeOverrideState(null)
   }, [pushHistory])
 
+  const [codeVersionCommit, setCodeVersionCommit] = useState(0)
+  const commitCodeOverrideVersion = useCallback(() => {
+    if (documentMutationsLocked()) {
+      return
+    }
+    if (documentStateRef.current.codeOverride === null) {
+      return
+    }
+    pendingDocumentVersionRef.current = { origin: "code" }
+    setCodeVersionCommit((value) => value + 1)
+  }, [])
+
   const updateLayout = useCallback((patch: Partial<GeneratedLayout>) => {
+    if (documentMutationsLocked()) {
+      return
+    }
     pushHistory()
     setLayoutEdits((current) => ({ ...current, ...patch }))
   }, [pushHistory])
 
   // Single-selection: picking a layer replaces any existing chip so only one
   // element is ever attached to the composer at a time.
-  const addSelection = useCallback((label: string) => {
+  const addSelection = useCallback((label: string, inspectKey = label) => {
     setSelections((current) => {
-      if (current.length === 1 && current[0].label === label) {
+      if (
+        current.length === 1 &&
+        current[0].label === label &&
+        (current[0].layer ?? current[0].label) === inspectKey
+      ) {
         return current
       }
-      return [{ id: nextMessageId(), label }]
+      return [{ id: nextMessageId(), label, layer: inspectKey }]
     })
   }, [])
 
@@ -1999,7 +2429,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       const removed = current.find((selection) => selection.id === id)
       if (removed) {
         // Closing the chip for the inspected layer also closes its inspector.
-        setInspectingLayer((open) => (open === removed.label ? null : open))
+        setInspectingLayer((open) =>
+          open === removed.label || open === removed.layer ? null : open
+        )
       }
       return current.filter((selection) => selection.id !== id)
     })
@@ -2012,15 +2444,36 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const setLayerText = useCallback(
     (label: string, value: string) => {
-      pushHistory()
+      if (documentMutationsLocked()) {
+        return
+      }
+      pushHistory(undefined, {
+        origin: "manual-text",
+        target: documentVersionTarget(label),
+      })
       setLayerTextState((current) => ({ ...current, [label]: value }))
+      setPlacedElements((current) => {
+        const matchesId = current.some((element) => element.id === label)
+        return current.map((element) => {
+          const match = matchesId
+            ? element.id === label
+            : element.label === label
+          return match ? { ...element, content: value } : element
+        })
+      })
     },
     [pushHistory]
   )
 
   const setLayerStyle = useCallback(
     (label: string, patch: Partial<BuilderLayerStyle>) => {
-      pushHistory()
+      if (documentMutationsLocked()) {
+        return
+      }
+      pushHistory(undefined, {
+        origin: "manual-style",
+        target: documentVersionTarget(label),
+      })
       setLayerStyles((current) => ({
         ...current,
         [label]: { ...current[label], ...patch },
@@ -2033,7 +2486,13 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   // extra, independently editable copy of itself (reversible through undo).
   const duplicateLayer = useCallback(
     (label: string) => {
-      pushHistory()
+      if (documentMutationsLocked()) {
+        return
+      }
+      pushHistory(undefined, {
+        origin: "duplicate",
+        target: documentVersionTarget(label),
+      })
       setLayerDuplicates((current) => ({
         ...current,
         [label]: (current[label] ?? 0) + 1,
@@ -2045,7 +2504,13 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   // Delete hides the layer (kept reversible via undo rather than destroyed).
   const deleteLayer = useCallback(
     (label: string) => {
-      pushHistory()
+      if (documentMutationsLocked()) {
+        return
+      }
+      pushHistory(undefined, {
+        origin: "delete",
+        target: documentVersionTarget(label),
+      })
       setHiddenLayers((current) =>
         current.includes(label) ? current : [...current, label]
       )
@@ -2082,10 +2547,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const pasteToReplace = useCallback(
     (label: string) => {
-      if (!copiedLayer) {
+      if (!copiedLayer || documentMutationsLocked()) {
         return
       }
-      pushHistory()
+      pushHistory(undefined, { origin: "manual" })
       setLayerTextState((current) => ({
         ...current,
         [label]: copiedLayer.content,
@@ -2102,7 +2567,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   // structural match to inserting the clipboard's element in the next slot).
   const pasteAfter = useCallback(
     (label: string) => {
-      if (!copiedLayer) {
+      if (!copiedLayer || documentMutationsLocked()) {
         return
       }
       duplicateLayer(label)
@@ -2112,10 +2577,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const pasteLayerProperties = useCallback(
     (label: string) => {
-      if (!copiedProperties) {
+      if (!copiedProperties || documentMutationsLocked()) {
         return
       }
-      pushHistory()
+      pushHistory(undefined, { origin: "manual" })
       setLayerStyles((current) => ({
         ...current,
         [label]: { ...current[label], ...copiedProperties },
@@ -2167,6 +2632,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   )
 
   const moveLayer = useCallback((label: string, direction: "up" | "down") => {
+    if (documentMutationsLocked()) {
+      return
+    }
     const mover = layerMoversRef.current[label]
     if (!mover) {
       return
@@ -2190,12 +2658,20 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const isLayerHidden = useCallback(
-    (label: string) => hiddenLayers.includes(label),
+    (label: string) => isHiddenLayer(hiddenLayers, label),
     [hiddenLayers]
   )
 
   const layerDuplicateCount = useCallback(
-    (label: string) => layerDuplicates[label] ?? 0,
+    (label: string) => {
+      for (const key of compatibilityKeys(label)) {
+        const count = layerDuplicates[key]
+        if (count) {
+          return count
+        }
+      }
+      return 0
+    },
     [layerDuplicates]
   )
 
@@ -2203,50 +2679,287 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     (label: string | null, kind: BuilderLayerKind = "text") => {
       setInspectingLayer(label)
       setInspectingLayerKind(label === null ? null : kind)
-      if (label !== null) {
-        // Fresh inspect session always opens on the Style tab.
-        setEditsTab("style")
-        setAddingElement(false)
+      if (label === null) {
+        setInspectingDisplayLabel(null)
+        return
       }
+      const placed = placedElements.find(
+        (element) => element.id === label || element.label === label
+      )
+      const authoredKey = placed ? undefined : authoredKeyFromId(label)
+      setInspectingDisplayLabel(placed?.label ?? displayLabelForSlot(authoredKey ?? label))
+      const groups = inspectorPropertyGroups({
+        layerId: label,
+        authoredKey,
+        kind,
+        placed,
+      })
+      setEditsTab(effectiveInspectorTab("style", groups))
+      setAddingElement(false)
     },
-    []
+    [placedElements]
   )
 
   const selectLayer = useCallback(
     (
       label: string,
       kind: BuilderLayerKind = "container",
-      options?: { keepAddElements?: boolean }
+      options?: {
+        keepAddElements?: boolean
+        tab?: "content" | "style" | "advanced"
+        chipLabel?: string
+        authoredKey?: string
+      }
     ) => {
-      addSelection(label)
+      addSelection(options?.chipLabel ?? label, label)
       setInspectingLayer(label)
+      inspectingLayerRef.current = label
       setInspectingLayerKind(kind)
-      setEditsTab("style")
+      const placed = placedElements.find(
+        (element) => element.id === label || element.label === label
+      )
+      const authoredKey = options?.authoredKey ?? (placed ? undefined : authoredKeyFromId(label))
+      setInspectingDisplayLabel(
+        options?.chipLabel ?? placed?.label ?? displayLabelForSlot(authoredKey ?? label)
+      )
+      const groups = inspectorPropertyGroups({
+        layerId: label,
+        authoredKey,
+        kind,
+        placed,
+      })
+      setEditsTab(
+        effectiveInspectorTab(options?.tab ?? "style", groups)
+      )
       if (!options?.keepAddElements) {
         setAddingElement(false)
       }
     },
-    [addSelection]
+    [addSelection, placedElements]
   )
 
   // Opening the add-elements palette takes over the left panel, so make sure the
   // panel is visible. The inspector overlay is an independent surface and stays
   // open until the user closes it, so we deliberately leave it untouched here.
-  const openAddElements = useCallback(() => {
+  const openAddElements = useCallback((options?: { revealSaved?: boolean }) => {
     setPanelOpen(true)
+    setBrowsingBrand(false)
+    setBrowsingSavedItems(false)
+    setBrowsingVersionHistory(false)
+    closeVersionHistoryPreview()
+    setBrandDraft(null)
     setAddingElement(true)
-  }, [])
+    setRevealSavedItems(Boolean(options?.revealSaved))
+  }, [closeVersionHistoryPreview])
 
   const closeAddElements = useCallback(() => {
     setAddingElement(false)
+    setRevealSavedItems(false)
   }, [])
+
+  const openSavedItems = useCallback(() => {
+    setPanelOpen(true)
+    setAddingElement(false)
+    setRevealSavedItems(false)
+    setBrowsingBrand(false)
+    setBrowsingVersionHistory(false)
+    closeVersionHistoryPreview()
+    setBrandDraft(null)
+    setBrowsingSavedItems(true)
+  }, [closeVersionHistoryPreview])
+
+  const closeSavedItems = useCallback(() => {
+    setBrowsingSavedItems(false)
+  }, [])
+
+  const brandCatalog = useMemo(
+    () => (unsavedBoard ? [unsavedBoard, ...customBoards] : customBoards),
+    [customBoards, unsavedBoard]
+  )
+
+  const openBrandBoards = useCallback(() => {
+    setPanelOpen(true)
+    setAddingElement(false)
+    setBrowsingSavedItems(false)
+    setRevealSavedItems(false)
+    setBrowsingVersionHistory(false)
+    closeVersionHistoryPreview()
+    setBrowsingBrand(true)
+  }, [closeVersionHistoryPreview])
+
+  const closeBrandBoards = useCallback(() => {
+    setBrandDraft(null)
+    setUnsavedBoard(null)
+    setBrowsingBrand(false)
+  }, [])
+
+  const openVersionHistory = useCallback(() => {
+    setPanelOpen(true)
+    setAddingElement(false)
+    setRevealSavedItems(false)
+    setBrowsingSavedItems(false)
+    setBrowsingBrand(false)
+    setBrandDraft(null)
+    setBrowsingVersionHistory(true)
+  }, [])
+
+  const closeVersionHistory = useCallback(() => {
+    setBrowsingVersionHistory(false)
+    closeVersionHistoryPreview()
+  }, [closeVersionHistoryPreview])
+
+  const cancelBrandPreview = useCallback(() => {
+    setBrandDraft(null)
+    setUnsavedBoard(null)
+  }, [])
+
+  const previewBrandSelection = useCallback((selection: BrandSelection) => {
+    setUnsavedBoard(null)
+    setBrandDraft(selection)
+  }, [])
+
+  const previewUnsavedBoard = useCallback((board: BrandBoard) => {
+    setUnsavedBoard(board)
+    setBrandDraft(selectionFromBoard(board))
+  }, [])
+
+  const applyBrandSelection = useCallback(() => {
+    if (!brandDraft || documentMutationsLocked()) {
+      return
+    }
+    let catalog = brandCatalog
+    if (unsavedBoard && brandDraft.boardId === unsavedBoard.id) {
+      setCustomBoards((current) => {
+        const next = current.some((entry) => entry.id === unsavedBoard.id)
+          ? current.map((entry) =>
+              entry.id === unsavedBoard.id ? unsavedBoard : entry
+            )
+          : [...current, unsavedBoard]
+        saveCustomBoards(next)
+        return next
+      })
+      catalog = [
+        unsavedBoard,
+        ...customBoards.filter((board) => board.id !== unsavedBoard.id),
+      ]
+    }
+    const committed = committedLayoutRef.current ?? generatedLayoutRef.current
+    if (committed && isBrandApplyNoop(committed, brandDraft, catalog)) {
+      setBrandDraft(null)
+      setUnsavedBoard(null)
+      return
+    }
+    pushHistory(undefined, { origin: "brand" })
+    const family = normalizeLayoutStyle(committed?.style ?? "studio")
+    const patch = brandLayoutEditsFromSelection(family, brandDraft, catalog)
+    setLayoutEdits((current) => ({
+      ...current,
+      ...patch,
+    }))
+    setBrandDraft(null)
+    setUnsavedBoard(null)
+  }, [brandCatalog, brandDraft, customBoards, pushHistory, unsavedBoard])
+
+  const upsertCustomBoard = useCallback(
+    (board: BrandBoard, apply: boolean) => {
+      setCustomBoards((current) => {
+        const next = current.some((entry) => entry.id === board.id)
+          ? current.map((entry) => (entry.id === board.id ? board : entry))
+          : [...current, board]
+        saveCustomBoards(next)
+        return next
+      })
+      const selection = {
+        boardId: board.id,
+        themeId: board.themeId,
+        typeId: board.typeId,
+      }
+      if (apply) {
+        const catalog = [
+          board,
+          ...customBoards.filter((entry) => entry.id !== board.id),
+        ]
+        const committed = committedLayoutRef.current ?? generatedLayoutRef.current
+        if (committed && isBrandApplyNoop(committed, selection, catalog)) {
+          setBrandDraft(null)
+          setUnsavedBoard(null)
+        } else {
+          pushHistory(undefined, { origin: "brand" })
+          const family = normalizeLayoutStyle(committed?.style ?? "studio")
+          const patch = brandLayoutEditsFromSelection(family, selection, catalog)
+          setLayoutEdits((current) => ({
+            ...current,
+            ...patch,
+          }))
+          setBrandDraft(null)
+          setUnsavedBoard(null)
+        }
+      } else {
+        setBrandDraft(selection)
+      }
+    },
+    [customBoards, pushHistory]
+  )
+
+  const removeCustomBoard = useCallback(
+    (id: string) => {
+      if (documentMutationsLocked()) {
+        return
+      }
+      setCustomBoards((current) => {
+        const next = current.filter((board) => board.id !== id)
+        saveCustomBoards(next)
+        return next
+      })
+      const applied = generatedLayoutRef.current?.brand
+      if (applied?.boardId === id) {
+        pushHistory(undefined, { origin: "brand" })
+        setLayoutEdits((current) => {
+          const next = { ...current }
+          delete next.brand
+          return next
+        })
+      }
+      if (brandDraft?.boardId === id) {
+        setBrandDraft(null)
+      }
+    },
+    [brandDraft, pushHistory]
+  )
 
   const updatePlacedElementContent = useCallback(
     (id: string, content: string) => {
-      pushHistory()
+      if (documentMutationsLocked()) {
+        return
+      }
+      const target = documentStateRef.current.placedElements.find(
+        (element) => element.id === id
+      )
+      pushHistory(undefined, {
+        origin: "manual-text",
+        target: target?.label ?? id,
+      })
       setPlacedElements((current) =>
         current.map((element) =>
           element.id === id ? { ...element, content } : element
+        )
+      )
+      if (target) {
+        setLayerTextState((current) => ({ ...current, [id]: content }))
+      }
+    },
+    [pushHistory]
+  )
+
+  const updatePlacedElement = useCallback(
+    (id: string, patch: Partial<PlacedElement>) => {
+      if (documentMutationsLocked()) {
+        return
+      }
+      pushHistory(undefined, { origin: "manual" })
+      setPlacedElements((current) =>
+        current.map((element) =>
+          element.id === id ? { ...element, ...patch } : element
         )
       )
     },
@@ -2255,34 +2968,51 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const removePlacedElement = useCallback(
     (id: string) => {
-      pushHistory()
-      setPlacedElements((current) =>
-        current.filter((element) => element.id !== id)
-      )
+      if (documentMutationsLocked()) {
+        return
+      }
+      const removed = placedElements.find((element) => element.id === id)
+      pushHistory(undefined, {
+        origin: "delete",
+        target: removed?.label ?? id,
+      })
+      setPlacedElements((current) => removePlacedTree(current, id))
+      if (removed && inspectingLayerRef.current === removed.label) {
+        setInspectingLayer(null)
+        setInspectingLayerKind(null)
+        setSelections((current) =>
+          current.filter((selection) => selection.label !== removed.label)
+        )
+      }
     },
-    [pushHistory]
+    [placedElements, pushHistory]
   )
 
   const duplicatePlacedElement = useCallback(
     (id: string) => {
-      pushHistory()
-      placedElementCounterRef.current += 1
-      const copyId = `placed-${placedElementCounterRef.current}`
-      setPlacedElements((current) => {
-        const index = current.findIndex((element) => element.id === id)
-        if (index === -1) {
-          return current
+      const result = duplicatePlacedDocument(
+        {
+          placedElements: documentStateRef.current.placedElements,
+          layerStyles: documentStateRef.current.layerStyles,
+          layerText: documentStateRef.current.layerText,
+        },
+        id,
+        () => {
+          placedElementCounterRef.current += 1
+          return `placed-${placedElementCounterRef.current}`
         }
-        const source = current[index]
-        const copy: PlacedElement = {
-          ...source,
-          id: copyId,
-          label: `${source.label} copy`,
-        }
-        const next = [...current]
-        next.splice(index + 1, 0, copy)
-        return next
+      )
+      if (!result.ok) {
+        setCanvasToast(result.reason)
+        return
+      }
+      pushHistory(undefined, {
+        origin: "duplicate",
+        target: result.root.label,
       })
+      setLayerStyles(result.doc.layerStyles)
+      setLayerTextState(result.doc.layerText)
+      pendingPlacedInspectRef.current = result.root
     },
     [pushHistory]
   )
@@ -2323,7 +3053,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const movePlacedElement = useCallback(
     (id: string, direction: "up" | "down") => {
-      pushHistory()
+      pushHistory(undefined, { origin: "manual" })
       setPlacedElements((current) => {
         const position = placedElementZonePosition(current, id)
         if (!position) {
@@ -2347,18 +3077,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const seedLayer = useCallback(
     (label: string, seed: { content: string; style: BuilderLayerStyle }) => {
-      // First seed wins as the reset baseline (later inspects keep live edits).
       if (!(label in layerBaselineRef.current)) {
         layerBaselineRef.current[label] = {
           content: seed.content,
-          style: { ...seed.style },
+          style: {},
         }
       }
       setLayerTextState((current) =>
         label in current ? current : { ...current, [label]: seed.content }
-      )
-      setLayerStyles((current) =>
-        label in current ? current : { ...current, [label]: seed.style }
       )
     },
     []
@@ -2366,39 +3092,26 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const openPlacedElementInspector = useCallback(
     (element: PlacedElement) => {
-      // While the AI thread is empty, keep the Add elements palette open so
-      // build-from-scratch stays in a drop rhythm. Once the panel has content,
-      // hand off to Invoice AI after each drop like the generated flow.
-      const keepAddElements = messages.length === 0
-      enterEditMode({ keepAddElements })
-      seedLayer(element.label, getPlacedElementSeed(element.kind, element.content))
-      selectLayer(element.label, getPlacedElementLayerKind(element.kind), {
-        keepAddElements,
+      const keepToolPanel =
+        messages.length === 0 || addingElement || browsingSavedItems
+      enterEditMode({ keepAddElements: keepToolPanel })
+      seedLayer(element.id, getPlacedElementSeed(element.kind, element.content))
+      selectLayer(element.id, getPlacedElementLayerKind(element.kind), {
+        keepAddElements: keepToolPanel,
+        tab: inspectorTabForKind(element.kind),
+        chipLabel: element.label,
       })
     },
-    [enterEditMode, messages.length, selectLayer, seedLayer]
+    [addingElement, browsingSavedItems, enterEditMode, messages.length, selectLayer, seedLayer]
   )
 
   const openPageProperties = useCallback(() => {
-    if (codeOverride !== null) {
+    if (codeOverride !== null || documentMutationsLocked()) {
       return
     }
     enterEditMode()
-    if (typeof document !== "undefined") {
-      const node = document.querySelector(
-        `[data-layer="${PAGE_LAYER_LABEL}"]`
-      )
-      if (node instanceof HTMLElement) {
-        seedLayer(PAGE_LAYER_LABEL, {
-          content: "",
-          style: pageStyleFromComputed(node),
-        })
-      } else {
-        seedLayer(PAGE_LAYER_LABEL, { content: "", style: {} })
-      }
-    }
     selectLayer(PAGE_LAYER_LABEL, "page")
-  }, [codeOverride, enterEditMode, seedLayer, selectLayer])
+  }, [codeOverride, enterEditMode, selectLayer])
 
   const addPlacedElement = useCallback(
     ({
@@ -2406,42 +3119,273 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       label,
       zone,
       index,
+      parentId,
+      slot,
+      dest,
     }: {
       kind: string
       label: string
       zone: PlacedElementZone
       index?: number
+      parentId?: string
+      slot?: number
+      dest?: DropDest
     }) => {
-      pushHistory()
-      placedElementCounterRef.current += 1
+      if (documentMutationsLocked()) {
+        return
+      }
+      const drop = dest ?? (parentId
+        ? {
+            kind: "child" as const,
+            parentId,
+            parentKind:
+              documentStateRef.current.placedElements.find(
+                (element) => element.id === parentId
+              )?.kind ?? "container",
+            slot: slot ?? 0,
+            index: index ?? Number.MAX_SAFE_INTEGER,
+          }
+        : undefined)
+
+      if (kind === "table" && drop?.kind !== "child") {
+        const live = generatedLayoutRef.current
+        const resolution = resolveTableAdd({
+          isBlankSession,
+          itemsVisible: Boolean(live?.sections.items),
+        })
+        if (resolution.action === "select-existing") {
+          setCanvasToast(resolution.message)
+          enterEditMode()
+          selectLayer("Items table", "container", { tab: "content" })
+          return
+        }
+        if (resolution.action === "enable-items") {
+          pushHistory(undefined, {
+            origin: "insert",
+            target: "Items table",
+          })
+          if (live?.sections) {
+            setLayoutEdits((current) => ({
+              ...current,
+              sections: { ...live.sections, ...current.sections, items: true },
+            }))
+          }
+          setCanvasToast(resolution.message)
+          enterEditMode()
+          selectLayer("Items table", "container", { tab: "content" })
+          return
+        }
+      }
+
+      if (kind === "table" && drop?.kind === "child") {
+        setCanvasToast("Line items stay at the document level")
+        return
+      }
+      if (drop?.kind === "child") {
+        const parent = documentStateRef.current.placedElements.find(
+          (element) => element.id === drop.parentId
+        )
+        if (parent && !canNestInside(kind, parent.kind)) {
+          setCanvasToast("Containers and columns only accept one level of content")
+          return
+        }
+      }
+
+      pushHistory(undefined, {
+        origin: "insert",
+        target: label,
+      })
       const id = `placed-${placedElementCounterRef.current}`
 
       const current = documentStateRef.current.placedElements
-      const sameKind = current.filter((element) => element.kind === kind)
-      const displayLabel =
-        sameKind.length > 0 ? `${label} ${sameKind.length + 1}` : label
-
+      const displayLabel = nextPlacedLabel(current, kind, label)
+      const resolvedZone =
+        drop?.kind === "root"
+          ? drop.zone
+          : drop?.kind === "child"
+            ? (current.find((element) => element.id === drop.parentId)?.zone ?? zone)
+            : zone
       const created: PlacedElement = {
         id,
         kind,
         label: displayLabel,
-        zone,
+        zone: resolvedZone,
         content: getDefaultPlacedContent(kind),
+        columns: defaultColumnContents(kind),
+        href: kind === "button" ? "" : undefined,
+        bindToLineItems: kind === "table",
+        parentId: drop?.kind === "child" ? drop.parentId : undefined,
+        slot: drop?.kind === "child" ? drop.slot : undefined,
+      }
+
+      if (created.bindToLineItems) {
+        const live = generatedLayoutRef.current
+        if (!live || live.lineItems.length === 0) {
+          setLayoutEdits((edits) => ({
+            ...edits,
+            lineItems:
+              edits.lineItems ??
+              live?.lineItems ?? [
+                { description: "Item name", qty: 1, rate: 0 },
+              ],
+          }))
+        }
       }
 
       pendingPlacedInspectRef.current = created
 
       setPlacedElements((existing) => {
-        if (index == null) {
-          return [...existing, created]
+        if (drop?.kind === "child") {
+          return insertChildAt(existing, created, drop)
         }
-        const copy = [...existing]
-        copy.splice(Math.max(0, Math.min(index, copy.length)), 0, created)
-        return copy
+        if (drop?.kind === "root") {
+          return insertRootAt(existing, created, drop)
+        }
+        return insertPlacedElement(existing, created, index)
       })
     },
-    [pushHistory]
+    [enterEditMode, isBlankSession, pushHistory, selectLayer]
   )
+
+  const nextPlacedElementId = useCallback(() => {
+    placedElementCounterRef.current += 1
+    return `placed-${placedElementCounterRef.current}`
+  }, [])
+
+  const applySavedSlice = useCallback(
+    (slice: {
+      placedElements: PlacedElement[]
+      layerStyles: Record<string, BuilderLayerStyle>
+      layerText: Record<string, string>
+    }, root: PlacedElement) => {
+      if (documentMutationsLocked()) {
+        return
+      }
+      pushHistory(undefined, { origin: "saved-item" })
+      setLayerStyles(slice.layerStyles)
+      setLayerTextState(slice.layerText)
+      pendingPlacedInspectRef.current = root
+      enterEditMode({
+        keepAddElements:
+          addingElement || browsingSavedItems || messages.length === 0,
+      })
+    },
+    [addingElement, browsingSavedItems, enterEditMode, messages.length, pushHistory]
+  )
+
+  const insertSavedItem = useCallback(
+    (id: string, dest?: DropDest) => {
+      if (documentMutationsLocked()) {
+        return
+      }
+      const item = savedItems.find((entry) => entry.id === id)
+      if (!item) {
+        return
+      }
+      const target =
+        dest ??
+        ({
+          kind: "root",
+          zone: "end",
+          index: Number.MAX_SAFE_INTEGER,
+        } as const)
+      const result = insertSavedIntoDocument(
+        {
+          placedElements: documentStateRef.current.placedElements,
+          layerStyles: documentStateRef.current.layerStyles,
+          layerText: documentStateRef.current.layerText,
+        },
+        item.root,
+        target,
+        nextPlacedElementId
+      )
+      if (!result.ok) {
+        setCanvasToast(result.reason)
+        return
+      }
+      applySavedSlice(result.doc, result.root)
+    },
+    [applySavedSlice, nextPlacedElementId, savedItems]
+  )
+
+  const replaceAvailability = useCallback(
+    (id: string) => {
+      const item = savedItems.find((entry) => entry.id === id)
+      if (!item) {
+        return { ok: false as const, reason: "That saved item is no longer available." }
+      }
+      const target = findPlacedByInspectKey(
+        documentStateRef.current.placedElements,
+        inspectingLayer
+      )
+      return replaceAvailabilityFor(item.root, {
+        inspectingKey: inspectingLayer,
+        target,
+        all: documentStateRef.current.placedElements,
+      })
+    },
+    [inspectingLayer, placedElements, savedItems]
+  )
+
+  const replaceSelectedWithSavedItem = useCallback(
+    (id: string) => {
+      if (documentMutationsLocked()) {
+        return
+      }
+      const item = savedItems.find((entry) => entry.id === id)
+      if (!item) {
+        return
+      }
+      const target = findPlacedByInspectKey(
+        documentStateRef.current.placedElements,
+        inspectingLayerRef.current
+      )
+      if (!target) {
+        setCanvasToast("Select a placed block on the canvas to replace it.")
+        return
+      }
+      const result = replaceSelectedWithSaved(
+        {
+          placedElements: documentStateRef.current.placedElements,
+          layerStyles: documentStateRef.current.layerStyles,
+          layerText: documentStateRef.current.layerText,
+        },
+        item.root,
+        target.id,
+        nextPlacedElementId
+      )
+      if (!result.ok) {
+        setCanvasToast(result.reason)
+        return
+      }
+      applySavedSlice(result.doc, result.root)
+    },
+    [applySavedSlice, nextPlacedElementId, savedItems]
+  )
+
+  const renameSavedItem = useCallback((id: string, name: string) => {
+    setSavedItems((current) => {
+      const next = renameSavedDefinition(current, id, name)
+      persistSavedItems(next)
+      return next
+    })
+  }, [])
+
+  const duplicateSavedItem = useCallback((id: string) => {
+    setSavedItems((current) => {
+      const next = duplicateSavedDefinition(current, id)
+      persistSavedItems(next)
+      return next
+    })
+  }, [])
+
+  const deleteSavedItem = useCallback((id: string) => {
+    setSavedItems((current) => {
+      const next = deleteSavedDefinition(current, id)
+      persistSavedItems(next)
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     const pending = pendingPlacedInspectRef.current
@@ -2455,13 +3399,98 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     openPlacedElementInspector(pending)
   }, [placedElements, openPlacedElementInspector])
 
+  const beginElementDrag = useCallback(
+    (
+      session: Omit<ElementDragSession, "hoverKey" | "dest" | "overPaper">
+    ) => {
+      const next: ElementDragSession = {
+        ...session,
+        hoverKey: null,
+        dest: null,
+        overPaper: false,
+      }
+      elementDragRef.current = next
+      setElementDrag(next)
+      setPaletteDragging(true)
+    },
+    []
+  )
+
+  const updateElementDragPointer = useCallback(
+    (patch: {
+      x: number
+      y: number
+      hoverKey: string | null
+      dest: DropDest | null
+      overPaper: boolean
+    }) => {
+      setElementDrag((current) => {
+        if (!current) {
+          return current
+        }
+        const next = { ...current, ...patch }
+        elementDragRef.current = next
+        return next
+      })
+    },
+    []
+  )
+
+  const cancelElementDrag = useCallback(() => {
+    elementDragRef.current = null
+    setElementDrag(null)
+    setPaletteDragging(false)
+  }, [])
+
+  const relocatePlacedElement = useCallback(
+    (id: string, dest: DropDest) => {
+      if (documentMutationsLocked()) {
+        return
+      }
+      pushHistory(undefined, { origin: "manual" })
+      setPlacedElements((current) => {
+        const next = relocatePlacedTree(current, id, dest)
+        const moved = next.find((element) => element.id === id)
+        if (moved) {
+          pendingPlacedInspectRef.current = moved
+        }
+        return next
+      })
+    },
+    [pushHistory]
+  )
+
+  const commitElementDrag = useCallback(() => {
+    const drag = elementDragRef.current
+    elementDragRef.current = null
+    setElementDrag(null)
+    setPaletteDragging(false)
+    if (!drag?.dest) {
+      return
+    }
+    if (drag.mode === "move" && drag.elementId) {
+      relocatePlacedElement(drag.elementId, drag.dest)
+      return
+    }
+    if (drag.savedItemId) {
+      insertSavedItem(drag.savedItemId, drag.dest)
+      return
+    }
+    addPlacedElement({
+      kind: drag.kind,
+      label: drag.label,
+      zone: drag.dest.kind === "root" ? drag.dest.zone : "end",
+      dest: drag.dest,
+    })
+  }, [addPlacedElement, insertSavedItem, relocatePlacedElement])
+
   const reorderPlacedElement = useCallback(
     (draggedId: string, targetId: string) => {
-      if (draggedId === targetId) {
+      if (documentMutationsLocked() || draggedId === targetId) {
         return
       }
       const dragged = placedElements.find((element) => element.id === draggedId)
-      pushHistory()
+      pushHistory(undefined, { origin: "manual" })
       setPlacedElements((current) => {
         const draggedIndex = current.findIndex((element) => element.id === draggedId)
         const targetIndex = current.findIndex((element) => element.id === targetId)
@@ -2521,8 +3550,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   const resetLayer = useCallback(
     (label: string) => {
+      if (documentMutationsLocked()) {
+        return
+      }
       const baseline = layerBaselineRef.current[label]
-      pushHistory()
+      pushHistory(undefined, { origin: "manual" })
       if (baseline) {
         setLayerTextState((current) => ({
           ...current,
@@ -2552,30 +3584,49 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     [pushHistory]
   )
 
+  const resetLayerToBrand = useCallback(
+    (label: string) => {
+      if (documentMutationsLocked()) {
+        return
+      }
+      pushHistory(undefined, {
+        origin: "manual-style",
+        target: documentVersionTarget(label),
+      })
+      setLayerStyles((current) => {
+        const style = current[label]
+        if (!style) {
+          return current
+        }
+        const next = { ...style }
+        delete next.color
+        delete next.fontFamily
+        delete next.backgroundColor
+        return { ...current, [label]: next }
+      })
+    },
+    [pushHistory]
+  )
+
   // Saves (or replaces) an Advanced-tab rule for a layer. Persisted in session
   // state so reopening the card shows the applied configuration.
   const setLayerRule = useCallback(
     (label: string, kind: BuilderRuleKind, rule: BuilderConditionRule) => {
-      setLayerRules((current) => ({
-        ...current,
-        [label]: { ...current[label], [kind]: rule },
-      }))
+      if (documentMutationsLocked()) {
+        return
+      }
+      setLayerRules((current) => mergeLayerRule(current, label, kind, rule))
       setHasUnsavedChanges(true)
     },
     []
   )
 
-  // Removes a previously applied Advanced-tab rule for a layer.
   const clearLayerRule = useCallback(
     (label: string, kind: BuilderRuleKind) => {
-      setLayerRules((current) => {
-        const existing = current[label]
-        if (!existing || !(kind in existing)) {
-          return current
-        }
-        const { [kind]: _removed, ...rest } = existing
-        return { ...current, [label]: rest }
-      })
+      if (documentMutationsLocked()) {
+        return
+      }
+      setLayerRules((current) => clearMergedLayerRule(current, label, kind))
       setHasUnsavedChanges(true)
     },
     []
@@ -2602,6 +3653,53 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     setHasUnsavedChanges(false)
   }, [])
 
+  const saveLayout = useCallback(
+    (status: "Draft" | "Published") => {
+      const layout = generatedLayoutRef.current
+      if (!layout) {
+        return null
+      }
+      const id = catalogIdRef.current ?? newSavedLayoutId()
+      catalogIdRef.current = id
+      setCatalogId(id)
+      const record = {
+        row: catalogRowFromDocument({
+          id,
+          name,
+          mediumId: mediumId ?? getDefaultBuilderMediumId(),
+          documentType,
+          status,
+        }),
+        document: stripEphemeralDocument({
+          generatedLayout: layout,
+          layoutEdits,
+          layerText,
+          layerStyles,
+          hiddenLayers,
+          layerDuplicates,
+          placedElements,
+          codeOverride,
+        }),
+      }
+      catalog?.upsertRecord(record)
+      setHasUnsavedChanges(false)
+      return { id, name }
+    },
+    [
+      catalog,
+      codeOverride,
+      documentType,
+      hiddenLayers,
+      layerDuplicates,
+      layerStyles,
+      layerText,
+      layoutEdits,
+      mediumId,
+      name,
+      placedElements,
+    ]
+  )
+
   const cancelNameEdit = useCallback(() => {
     setDraftName(name)
     setIsEditingName(false)
@@ -2622,8 +3720,13 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
           .reverse()
           .find((message) => message.role === "user")
         setPreThoughtDurationSec(durationSec)
-        setPreReasoning(buildReasoning(lastUser?.text ?? ""))
-        setQuestions(pending)
+        setPreReasoning(
+          buildReasoning(lastUser?.text ?? "", {
+            ...narrativeRequestFromTurn(messages, mediumId, answers),
+            phase: "interpret",
+          })
+        )
+        presentClarification(pending, pendingAskableCountRef.current)
         setStatus("asking")
       } else {
         setStatus("ready")
@@ -2639,23 +3742,73 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       Math.max(1, Math.round((Date.now() - startedAt) / 1000))
     )
     setStatus("ready")
-  }, [status, messages])
+  }, [status, messages, mediumId, answers])
 
   const submitAnswers = useCallback(
     (submitted: AiAnswers) => {
       primeCompletionSound()
-      setAnswers(submitted)
-      setReceivedAnswers(formatReceivedAnswers(questions, submitted))
+      const prompt = clarificationPromptRef.current
+      const nextResolved = applyAnswersToDecisions(
+        clarificationResolvedRef.current,
+        questions,
+        submitted,
+        prompt
+      )
+      clarificationResolvedRef.current = nextResolved
+      clarificationAskedRef.current += questions.length
+      clarificationRoundRef.current += 1
+
+      const merged = {
+        ...(answers ?? {}),
+        ...submitted,
+        ...decisionsToAnswers(nextResolved),
+      }
+      setAnswers(merged)
+      setReceivedAnswers((current) => [
+        ...(current ?? []),
+        ...formatReceivedAnswers(questions, submitted),
+      ])
+
+      const planned = questionsForPrompt(prompt, {
+        generatedOnce: hasGeneratedOnce,
+        hasBrandBoard: Boolean(brandDraft),
+        resolved: nextResolved,
+        askedCount: clarificationAskedRef.current,
+        round: clarificationRoundRef.current,
+      })
+      if (planned.questions && planned.questions.length > 0) {
+        pendingQuestionsRef.current = planned.questions
+        pendingAskableCountRef.current = planned.askableCount
+        presentClarification(planned.questions, planned.askableCount)
+        setStatus("asking")
+        return
+      }
       startThinking()
     },
-    [questions, startThinking]
+    [questions, answers, startThinking, hasGeneratedOnce, brandDraft, presentClarification]
   )
 
   const skipQuestions = useCallback(() => {
-    primeCompletionSound()
-    setReceivedAnswers(null)
-    startThinking()
-  }, [startThinking])
+    const submitted: AiAnswers = {}
+    for (const question of questions) {
+      submitted[question.id] = DECIDE_VALUE
+    }
+    submitAnswers(submitted)
+  }, [questions, submitAnswers])
+
+  const submitFreeformClarification = useCallback(
+    (text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed || questions.length === 0) {
+        return
+      }
+      const active = questions[0]
+      const interpreted = interpretFreeformAnswer(active, trimmed)
+      const submitted: AiAnswers = { [active.id]: interpreted }
+      submitAnswers(submitted)
+    },
+    [questions, submitAnswers]
+  )
 
   // Marks the current turn as failed. The status effect plays the error cue on
   // entry; the panel surfaces the reason with a retry affordance.
@@ -2665,21 +3818,58 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     setStatus("error")
   }, [])
 
-  // The layer/section a prompt-box ("Describe your edit") request is scoped to.
-  // While the AI works on that turn, only this container shows the working glow
-  // (the canvas-wide beam is suppressed), so the change reads as local.
-  const [aiEditingLayer, setAiEditingLayer] = useState<string | null>(null)
-
   const sendMessage = useCallback(
-    (text: string, references: BuilderReferenceImage[] = []) => {
+    (
+      text: string,
+      attachments: BuilderSubmittedAttachment[] = [],
+      options?: {
+        scoped?: boolean
+        referenceAnalysis?: ReferenceAnalysis
+        primaryReferenceId?: string | null
+      }
+    ) => {
       const trimmed = text.trim()
-      if (!trimmed && references.length === 0) {
-        return
+      const references = imageReferencesFromSubmitted(attachments)
+      if (!trimmed && attachments.length === 0) {
+        return false
+      }
+      if (documentMutationsLocked()) {
+        return false
+      }
+
+      if (status === "asking" && trimmed) {
+        if (!matchDocumentAction(trimmed) && !matchDocumentAction(text)) {
+          submitFreeformClarification(trimmed)
+          return false
+        }
+        setQuestions([])
+        pendingQuestionsRef.current = null
+      }
+
+      if (status === "thinking" || status === "reasoning") {
+        return false
+      }
+
+      if (matchDocumentAction(trimmed) || matchDocumentAction(text)) {
+        if (!tryBeginDocumentAction(documentActionGateRef.current)) {
+          return false
+        }
       }
 
       // Warm the audio context under this click so the completion/error cue is
       // allowed to play once the turn settles (timer-driven, no gesture).
       primeCompletionSound()
+
+      setPreviewVersionId(null)
+      previewVersionIdRef.current = null
+
+      const actionId = matchDocumentAction(trimmed) ?? matchDocumentAction(text)
+      if (hasGeneratedOnce && generatedLayoutRef.current) {
+        pushHistory(
+          generatedLayoutRef.current,
+          actionId ? false : { origin: "ai-edit" }
+        )
+      }
 
       // The first prompt ends the blank empty state; the generate flow takes over.
       setIsBlankSession(false)
@@ -2697,6 +3887,22 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setPreThoughtDurationSec(null)
       setPreReasoning(null)
 
+      if (options?.referenceAnalysis && !hasGeneratedOnce) {
+        setReferenceAnalysis(options.referenceAnalysis)
+      }
+
+      const promptText = resolveBuilderGenerationPrompt(trimmed, {
+        generatedOnce: hasGeneratedOnce,
+        hasImageReference: references.length > 0,
+      })
+
+      if (!options?.scoped) {
+        clarificationSurfaceRef.current = "global"
+        clarificationTargetIdRef.current = null
+        setClarificationSurface("global")
+        setClarificationTargetId(null)
+      }
+
       referenceUrlsRef.current = [
         ...referenceUrlsRef.current,
         ...references.map((ref) => ref.previewUrl),
@@ -2707,8 +3913,12 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         {
           id: nextMessageId(),
           role: "user",
-          text: trimmed,
+          text: promptText,
           references,
+          attachments,
+          primaryReferenceId: hasGeneratedOnce
+            ? undefined
+            : options?.primaryReferenceId ?? references[0]?.id ?? null,
         },
       ])
 
@@ -2716,29 +3926,60 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       // error (and the error cue) instead of a generation that never resolves.
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
         failGeneration(
-          "Couldn't reach Invoice AI. Check your connection and try again."
+          PRODUCT_UNREACHABLE
         )
-        return
+        return true
       }
 
-      // Always think first; only interrupt with questions when the request
-      // reads as ambiguous, otherwise reasoning rolls into generation.
-      startReasoning(buildFollowUpQuestions(trimmed))
+      const planned = questionsForPrompt(promptText, {
+        hasReference: references.length > 0,
+        generatedOnce: hasGeneratedOnce,
+        isScopedElement: Boolean(options?.scoped),
+        hasBrandBoard: Boolean(brandDraft),
+        resolved: clarificationResolvedRef.current,
+        askedCount: 0,
+        round: 0,
+      })
+      clarificationResolvedRef.current = planned.resolved
+      clarificationAskedRef.current = 0
+      clarificationRoundRef.current = 0
+      clarificationPromptRef.current = promptText
+      setAnswers((current) => ({
+        ...(current ?? {}),
+        ...decisionsToAnswers(planned.resolved),
+      }))
+      startReasoning(planned.questions, planned.askableCount)
+      return true
     },
-    [startReasoning, failGeneration]
+    [
+      startReasoning,
+      failGeneration,
+      hasGeneratedOnce,
+      pushHistory,
+      brandDraft,
+      status,
+      submitFreeformClarification,
+    ]
   )
 
   // Prompt-box edit scoped to a specific layer/section: tag the active turn so
   // the working glow renders inside that container only, then hand off to the
   // normal turn pipeline (prefixing the layer keeps the transcript readable).
   const sendScopedEdit = useCallback(
-    (label: string, text: string) => {
+    (label: string, text: string    ) => {
       const trimmed = text.trim()
       if (!trimmed) {
         return
       }
+      if (documentMutationsLocked()) {
+        return
+      }
+      clarificationSurfaceRef.current = "inspector"
+      clarificationTargetIdRef.current = label
+      setClarificationSurface("inspector")
+      setClarificationTargetId(label)
       setAiEditingLayer(label)
-      sendMessage(`${label}: ${trimmed}`)
+      sendMessage(`${label}: ${trimmed}`, [], { scoped: true })
     },
     [sendMessage]
   )
@@ -2763,13 +4004,21 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       failGeneration(
-        "Couldn't reach Invoice AI. Check your connection and try again."
+        PRODUCT_UNREACHABLE
       )
       return
     }
 
-    startReasoning(buildFollowUpQuestions(prompt))
-  }, [messages, startReasoning, failGeneration])
+    const retryPlan = questionsForPrompt(prompt, {
+      generatedOnce: hasGeneratedOnce,
+      hasBrandBoard: Boolean(brandDraft),
+      resolved: clarificationResolvedRef.current,
+    })
+    startReasoning(
+      retryPlan.questions,
+      retryPlan.askableCount
+    )
+  }, [messages, startReasoning, failGeneration, hasGeneratedOnce, brandDraft])
 
   const dismissError = useCallback(() => {
     setErrorMessage(null)
@@ -2777,9 +4026,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   }, [hasGeneratedOnce])
 
   const generatedLayout = useMemo<GeneratedLayout>(() => {
-    const userPrompts = messages
-      .filter((message) => message.role === "user")
-      .map((message) => message.text)
+    const userPrompts = generationPromptTexts(messages)
     const settledTurns = messages.filter(
       (message) => message.role === "assistant"
     ).length
@@ -2793,20 +4040,49 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     // Reverted to an earlier version: that frozen layout is the base, so the
     // rendered document matches the version exactly. Manual edits still win last.
     if (baseLayout) {
-      return { ...baseLayout, ...sourceOverlay, ...layoutEdits }
+      const merged = mergeLayoutContent(baseLayout, sourceOverlay, layoutEdits)
+      const withBlocks = { ...merged, blocks: placedElements }
+      committedLayoutRef.current = withBlocks
+      const branded = resolvePaintedLayout(withBlocks, brandDraft, brandCatalog)
+      generatedLayoutRef.current = branded
+      return branded
     }
     // The first prompt → assistant #1 → base layout; each later prompt folds in
     // once its assistant turn has settled (so the change lands on completion,
     // not the instant the user hits send). Manual edits still win last.
+    const firstUser = messages.find((message) => message.role === "user")
+    const fromReference = (firstUser?.references.length ?? 0) > 0
     const composed = composeLayout(
       userPrompts,
       settledTurns - 1,
       answers,
       documentType,
-      layoutEdits
+      layoutEdits,
+      fromReference,
+      referenceAnalysis
     )
-    return { ...composed, ...sourceOverlay, ...layoutEdits }
-  }, [messages, answers, documentType, layoutEdits, baseLayout, previewSourceId])
+    const merged = mergeLayoutContent(composed, sourceOverlay, layoutEdits)
+    const withBlocks = {
+      ...merged,
+      blocks:
+        placedElements.length > 0 ? placedElements : merged.blocks ?? placedElements,
+    }
+    committedLayoutRef.current = withBlocks
+    const branded = resolvePaintedLayout(withBlocks, brandDraft, brandCatalog)
+    generatedLayoutRef.current = branded
+    return branded
+  }, [messages, answers, documentType, layoutEdits, baseLayout, previewSourceId, referenceAnalysis, placedElements, brandDraft, brandCatalog])
+
+  const brandTokens = useMemo(
+    () =>
+      resolveFamilyBrand(
+        generatedLayout.style,
+        brandDraft ?? generatedLayout.brand ?? null,
+        brandCatalog,
+        brandDraft ? undefined : generatedLayout.brandTheme
+      ),
+    [brandDraft, brandCatalog, generatedLayout]
+  )
 
   // Freeze a snapshot of the document the first time each assistant turn
   // appears, so its eye/undo controls can preview or revert to that exact state
@@ -2844,9 +4120,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       if (!snapshot) {
         return
       }
-      // Record the current state for undo, then roll the document back. The
-      // frozen layout becomes the base so prompt-driven changes from later turns
-      // are rolled back too (not just the manual-edit overlays).
+      // Chat-turn restore uses the same canonical restore transaction as
+      // toolbar Version history: push undo, apply snapshot, and register a
+      // document-version event so the timeline stays truthful.
+      restoringDocumentRef.current = true
+      pendingDocumentVersionRef.current = {
+        origin: "restore",
+        restoredId: messageId,
+      }
       pushHistory()
       applyHistorySnapshot({
         layoutEdits: snapshot.layoutEdits,
@@ -2859,6 +4140,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         baseLayout: snapshot.generatedLayout,
       })
       setPreviewVersionId(null)
+      restoringDocumentRef.current = false
     },
     [pushHistory, applyHistorySnapshot]
   )
@@ -2866,6 +4148,92 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   const hasVersionSnapshot = useCallback(
     (messageId: string) => Boolean(versionSnapshotsRef.current[messageId]),
     []
+  )
+
+  // Live document fingerprint — recomputed only when document fields change.
+  const liveDocumentFingerprint = useMemo(() => {
+    if (!generatedLayout) {
+      return ""
+    }
+    return fingerprintDocumentSnapshot({
+      layoutEdits,
+      layerText,
+      layerStyles,
+      hiddenLayers,
+      layerDuplicates,
+      placedElements,
+      codeOverride,
+      baseLayout,
+      generatedLayout,
+    })
+  }, [
+    layoutEdits,
+    layerText,
+    layerStyles,
+    hiddenLayers,
+    layerDuplicates,
+    placedElements,
+    codeOverride,
+    baseLayout,
+    generatedLayout,
+  ])
+
+  // The truthful "Current": the latest version whose snapshot matches the
+  // live document, or null when the live state matches no committed version
+  // (e.g. mid-coalesce, or after undo of a normal edit to an un-snapshotted
+  // intermediate state).
+  const currentVersionId = useMemo(
+    () =>
+      liveDocumentFingerprint
+        ? matchingDocumentVersionId(
+            documentVersions,
+            liveDocumentFingerprint
+          )
+        : null,
+    [documentVersions, liveDocumentFingerprint]
+  )
+  const currentVersionIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    currentVersionIdRef.current = currentVersionId
+  }, [currentVersionId])
+
+  const previewDocumentVersion = useCallback((id: string) => {
+    const matchId = currentVersionIdRef.current
+    if (id === matchId || id === "current") {
+      setPreviewVersionId(null)
+      return
+    }
+    if (!findDocumentVersion(documentVersionsRef.current, id)) {
+      return
+    }
+    setPreviewVersionId(id)
+  }, [])
+
+  const restoreDocumentVersion = useCallback(
+    (id: string) => {
+      if (documentMutationsLocked()) {
+        return
+      }
+      const versions = documentVersionsRef.current
+      const matchId = currentVersionIdRef.current
+      if (!canRestoreDocumentVersion(versions, id, matchId)) {
+        return
+      }
+      const version = findDocumentVersion(versions, id)
+      if (!version) {
+        return
+      }
+      restoringDocumentRef.current = true
+      pendingDocumentVersionRef.current = {
+        origin: "restore",
+        restoredId: id,
+      }
+      pushHistory()
+      applyHistorySnapshot(historyToUndoSnapshot(version.snapshot))
+      setPreviewVersionId(null)
+      restoringDocumentRef.current = false
+    },
+    [applyHistorySnapshot, pushHistory]
   )
 
   const showFeedbackToast = useCallback((message: string) => {
@@ -2879,6 +4247,45 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const setComposerDraftText = useCallback((text: string) => {
+    setComposerDraft((current) => nextComposerDraftText(current, text))
+  }, [])
+
+  const setComposerDraftModelId = useCallback((modelId: string) => {
+    setComposerDraft((current) => nextComposerDraftModelId(current, modelId))
+  }, [])
+
+  const addComposerDraftFilesToSession = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) {
+        return
+      }
+      const result = addComposerDraftFiles(composerDraftRef.current, files)
+      setComposerDraft(result.next)
+      for (const message of attachmentFeedbackMessages({
+        next: result.next.attachments,
+        added: result.added,
+        rejected: result.rejected,
+        truncated: result.truncated,
+      })) {
+        showFeedbackToast(message)
+      }
+    },
+    [showFeedbackToast]
+  )
+
+  const removeComposerDraftAttachmentFromSession = useCallback((id: string) => {
+    setComposerDraft((current) => removeComposerDraftAttachment(current, id))
+  }, [])
+
+  const setComposerDraftPrimary = useCallback((id: string) => {
+    setComposerDraft((current) => nextComposerDraftPrimary(current, id))
+  }, [])
+
+  const clearComposerDraft = useCallback(() => {
+    setComposerDraft((current) => discardComposerDraft(current))
+  }, [])
+
   const showCanvasToast = useCallback((message: string) => {
     setCanvasToast(message)
     if (canvasToastTimerRef.current) {
@@ -2889,6 +4296,72 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       2600
     )
   }, [])
+
+  const saveAvailability = useCallback(
+    (label: string | null) => {
+      if (!label) {
+        return { ok: false as const, reason: "Select a block to save it." }
+      }
+      const result = serializeSelection({
+        label,
+        placedElements: documentStateRef.current.placedElements,
+        layerText: documentStateRef.current.layerText,
+        layerStyles: documentStateRef.current.layerStyles,
+        layout: generatedLayoutRef.current,
+        brandTokens,
+      })
+      return result.ok
+        ? { ok: true as const }
+        : { ok: false as const, reason: result.reason }
+    },
+    [brandTokens]
+  )
+
+  const beginSaveSelected = useCallback((anchor?: SavePopoverAnchor | null) => {
+    const label = inspectingLayerRef.current
+    if (!label) {
+      showCanvasToast("Select a block to save it.")
+      return
+    }
+    const result = serializeSelection({
+      label,
+      placedElements: documentStateRef.current.placedElements,
+      layerText: documentStateRef.current.layerText,
+      layerStyles: documentStateRef.current.layerStyles,
+      layout: generatedLayoutRef.current,
+      brandTokens,
+    })
+    if (!result.ok) {
+      showCanvasToast(result.reason)
+      return
+    }
+    setSaveItemDraft({
+      node: result.node,
+      defaultName: result.defaultName,
+      anchor: anchor ?? null,
+    })
+  }, [brandTokens, showCanvasToast])
+
+  const cancelSaveItem = useCallback(() => {
+    setSaveItemDraft(null)
+  }, [])
+
+  const confirmSaveItem = useCallback(
+    (name: string) => {
+      if (!saveItemDraft) {
+        return
+      }
+      const created = createSavedDefinition(name, saveItemDraft.node)
+      setSavedItems((current) => {
+        const next = [created, ...current]
+        persistSavedItems(next)
+        return next
+      })
+      setSaveItemDraft(null)
+      showCanvasToast(`Saved “${created.name}”`)
+    },
+    [saveItemDraft, showCanvasToast]
+  )
 
   useEffect(() => {
     return () => {
@@ -2903,9 +4376,16 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
   // The snapshot currently being previewed (if any) drives read-only canvas
   // overrides below.
-  const previewSnapshot = previewVersionId
-    ? (versionSnapshotsRef.current[previewVersionId] ?? null)
-    : null
+  const previewSnapshot = useMemo(() => {
+    if (!previewVersionId) {
+      return null
+    }
+    const fromChat = versionSnapshotsRef.current[previewVersionId]
+    if (fromChat) {
+      return fromChat
+    }
+    return findDocumentVersion(documentVersions, previewVersionId)?.snapshot ?? null
+  }, [previewVersionId, documentVersions, snapshotVersion])
 
   // While previewing a past version the canvas renders that frozen snapshot and
   // editing is suppressed (read-only). Otherwise everything reads live state.
@@ -2920,8 +4400,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
         isCodeDetached: codeOverride !== null,
         editMode,
         inspectingLayer,
+        inspectingDisplayLabel,
         isLayerHidden,
         layerDuplicateCount,
+        hiddenLayers,
+        layerDuplicates,
       }
     }
     return {
@@ -2933,10 +4416,13 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       isCodeDetached: previewSnapshot.codeOverride !== null,
       editMode: false,
       inspectingLayer: null,
+      inspectingDisplayLabel: null,
       isLayerHidden: (label: string) =>
         previewSnapshot.hiddenLayers.includes(label),
       layerDuplicateCount: (label: string) =>
         previewSnapshot.layerDuplicates[label] ?? 0,
+      hiddenLayers: previewSnapshot.hiddenLayers,
+      layerDuplicates: previewSnapshot.layerDuplicates,
     }
   }, [
     previewSnapshot,
@@ -2947,8 +4433,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     codeOverride,
     editMode,
     inspectingLayer,
+    inspectingDisplayLabel,
     isLayerHidden,
     layerDuplicateCount,
+    hiddenLayers,
+    layerDuplicates,
   ])
 
   // Latch once the first generation settles; follow-up prompts then keep the
@@ -2956,12 +4445,6 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (status === "ready") {
       setHasGeneratedOnce(true)
-    }
-    // A scoped prompt-box edit only owns the working glow while the turn is
-    // actively running; once it settles (ready / error / idle) release it so the
-    // container returns to its resting state.
-    if (status !== "thinking" && status !== "reasoning" && status !== "asking") {
-      setAiEditingLayer(null)
     }
   }, [status])
 
@@ -2982,6 +4465,28 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       playCompletionSound()
     }
 
+    if (status === "ready" || status === "error") {
+      endDocumentAction(documentActionGateRef.current)
+    }
+
+    // A scoped prompt-box edit only owns the working glow while the turn is
+    // actively running; once it settles, release it so the container returns
+    // to its resting state.
+    if (
+      wasGenerating &&
+      status !== "thinking" &&
+      status !== "reasoning" &&
+      status !== "asking"
+    ) {
+      setAiEditingLayer(null)
+      if (status === "ready" || status === "error") {
+        clarificationSurfaceRef.current = "global"
+        clarificationTargetIdRef.current = null
+        setClarificationSurface("global")
+        setClarificationTargetId(null)
+      }
+    }
+
     // Soft prompt chime when the AI surfaces clarifying questions, so the user
     // notices the turn now needs their input.
     if (status === "asking" && previous !== "asking") {
@@ -2994,6 +4499,190 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       playErrorSound()
     }
   }, [status])
+
+  const appliedBlockTurnsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (status !== "ready") {
+      return
+    }
+    if (compareWithReferenceRef.current) {
+      return
+    }
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== "assistant") {
+      return
+    }
+    const alreadyApplied = appliedBlockTurnsRef.current.has(last.id)
+    const user = [...messages].reverse().find((message) => message.role === "user")
+    if (!user) {
+      return
+    }
+    const current = documentStateRef.current.placedElements
+    const layout = generatedLayoutRef.current
+    if (!layout) {
+      return
+    }
+    const actionId = matchDocumentAction(user.text)
+    if (actionId) {
+      const lastVersion = documentVersionsRef.current[documentVersionsRef.current.length - 1]
+      const baselineLayout = lastVersion?.snapshot.generatedLayout ?? layout
+      const baselinePlaced = lastVersion?.snapshot.placedElements ?? current
+      const result = executeDocumentAction(
+        actionId,
+        {
+          layout: baselineLayout,
+          placed: baselinePlaced,
+        },
+        extrasFromAnswers(answers)
+      )
+      const inspectMissing = Boolean(
+        result.inspect && !current.some((element) => element.id === result.inspect?.id)
+      )
+      if (alreadyApplied && !inspectMissing) {
+        return
+      }
+      appliedBlockTurnsRef.current.add(last.id)
+      if ((result.changed && result.placed !== current) || inspectMissing) {
+        const maxId = result.placed.reduce((max, element) => {
+          const value = Number.parseInt(element.id.replace(/^placed-/, ""), 10)
+          return Number.isFinite(value) ? Math.max(max, value) : max
+        }, placedElementCounterRef.current)
+        placedElementCounterRef.current = maxId
+        setPlacedElements(result.placed)
+      }
+      if (result.inspect) {
+        pendingPlacedInspectRef.current = result.inspect
+      }
+      if (result.changed || inspectMissing) {
+        const snap: DocumentVersionSnapshot = {
+          ...cloneHistorySnapshot(documentStateRef.current),
+          placedElements: structuredClone(result.placed),
+          generatedLayout: structuredClone(result.layout),
+        }
+        const next = appendDocumentVersion(
+          documentVersionsRef.current,
+          { origin: "document-action", actionId },
+          snap,
+          {
+            id: nextDocumentVersionId(),
+            createdAt: Date.now(),
+            max: MAX_DOCUMENT_VERSIONS,
+          }
+        )
+        documentVersionsRef.current = next
+        setDocumentVersions(next)
+      }
+      return
+    }
+    if (alreadyApplied) {
+      return
+    }
+    appliedBlockTurnsRef.current.add(last.id)
+    const result = applyBlockPrompt(current, layout, user.text)
+    const styleEdit = parseScopedStylePrompt(user.text)
+    let recorded = false
+    const record = () => {
+      if (!recorded) {
+        pushHistory(undefined, { origin: "ai-edit" })
+        recorded = true
+      }
+    }
+    if (styleEdit) {
+      const placed = current.find(
+        (element) =>
+          element.id === styleEdit.layerId || element.label === styleEdit.layerId
+      )
+      const key = placed?.id ?? styleEdit.layerId
+      record()
+      setLayerStyles((styles) =>
+        applyStyleOverride(styles, key, styleEdit.patch)
+      )
+      return
+    }
+    if (result.handled) {
+      const maxId = result.placed.reduce((max, element) => {
+        const value = Number.parseInt(element.id.replace(/^placed-/, ""), 10)
+        return Number.isFinite(value) ? Math.max(max, value) : max
+      }, placedElementCounterRef.current)
+      placedElementCounterRef.current = maxId
+      if (result.placed !== current) {
+        record()
+        setPlacedElements(result.placed)
+      }
+      if (result.inspect) {
+        pendingPlacedInspectRef.current = result.inspect
+      }
+    }
+  }, [messages, status, pushHistory, answers])
+
+  useEffect(() => {
+    const meta = pendingDocumentVersionRef.current
+    if (!meta || !generatedLayout) {
+      return
+    }
+    if (
+      (meta.origin === "ai-edit" || meta.origin === "document-action") &&
+      status !== "ready"
+    ) {
+      return
+    }
+    pendingDocumentVersionRef.current = null
+    const snap: DocumentVersionSnapshot = {
+      ...cloneHistorySnapshot(documentStateRef.current),
+      generatedLayout: structuredClone(generatedLayout),
+    }
+    const last = documentVersionsRef.current[documentVersionsRef.current.length - 1]
+    if (
+      meta.origin !== "restore" &&
+      last &&
+      JSON.stringify(last.snapshot) === JSON.stringify(snap)
+    ) {
+      return
+    }
+    const next = appendDocumentVersion(documentVersionsRef.current, meta, snap, {
+      id: nextDocumentVersionId(),
+      createdAt: Date.now(),
+      max: MAX_DOCUMENT_VERSIONS,
+    })
+    documentVersionsRef.current = next
+    setDocumentVersions(next)
+  }, [
+    layoutEdits,
+    layerText,
+    layerStyles,
+    hiddenLayers,
+    layerDuplicates,
+    placedElements,
+    codeOverride,
+    baseLayout,
+    generatedLayout,
+    status,
+    codeVersionCommit,
+  ])
+
+  useEffect(() => {
+    if (status !== "ready" || !generatedLayout) {
+      return
+    }
+    if (documentVersionsRef.current.length > 0) {
+      return
+    }
+    if (pendingDocumentVersionRef.current) {
+      return
+    }
+    const snap: DocumentVersionSnapshot = {
+      ...cloneHistorySnapshot(documentStateRef.current),
+      generatedLayout: structuredClone(generatedLayout),
+    }
+    const next = appendDocumentVersion(
+      [],
+      { origin: "generated" },
+      snap,
+      { id: nextDocumentVersionId(), createdAt: Date.now() }
+    )
+    documentVersionsRef.current = next
+    setDocumentVersions(next)
+  }, [status, generatedLayout])
 
   // Once a turn settles, persist it to the transcript: the reasoning, the
   // completed plan, and the closing recap. Keeps the full context visible the
@@ -3018,29 +4707,64 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       // the one being answered (this assistant message isn't appended yet, so
       // the live `generatedLayout` memo still trails by one turn). Keeps the
       // recap and recommendations consistent with what lands on the canvas.
-      const userPrompts = current
-        .filter((message) => message.role === "user")
-        .map((message) => message.text)
+      const userPrompts = generationPromptTexts(current)
       const settledTurns = current.filter(
         (message) => message.role === "assistant"
       ).length
+      const firstUser = current.find((message) => message.role === "user")
+      const fromReference = (firstUser?.references.length ?? 0) > 0
       const turnLayout = composeLayout(
         userPrompts,
         settledTurns,
         answers,
         documentType,
-        layoutEdits
+        layoutEdits,
+        fromReference,
+        referenceAnalysis
       )
 
-      const completedTodos: AiTodoItem[] = BUILDER_TODO_LABELS.map(
+      const turnRequest: NarrativeRequest = {
+        prompt,
+        hasReference: fromReference,
+        isFollowUp: settledTurns >= 1,
+        paperName: mediumId ? getMediumName(mediumId) : "A4",
+        family: turnLayout.style,
+        receivedAnswers,
+      }
+      const completedTodos: AiTodoItem[] = buildTodoLabels(turnRequest).map(
         (label, index) => ({
           id: `builder-todo-${index}`,
           label,
-          status: "done",
+          status: "done" as const,
         })
       )
 
       const hasAnswers = receivedAnswers && receivedAnswers.length > 0
+      const isFollowUp = settledTurns >= 1
+      const previousLayout = isFollowUp
+        ? composeLayout(
+            userPrompts.slice(0, -1),
+            settledTurns - 1,
+            answers,
+            documentType,
+            layoutEdits,
+            fromReference,
+            referenceAnalysis
+          )
+        : null
+
+      const actionId = matchDocumentAction(prompt)
+      const actionResult =
+        actionId && previousLayout
+          ? executeDocumentAction(
+              actionId,
+              {
+                layout: previousLayout,
+                placed: previousLayout.blocks ?? [],
+              },
+              extrasFromAnswers(answers)
+            )
+          : null
 
       return [
         ...current,
@@ -3051,11 +4775,18 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
           preReasoning: hasAnswers ? preReasoning : null,
           preDurationSec: hasAnswers ? (preThoughtDurationSec ?? 0) : null,
           reasoning: hasAnswers
-            ? buildPostReasoning(prompt, receivedAnswers)
-            : buildReasoning(prompt),
+            ? buildPostReasoning(prompt, receivedAnswers, {
+                ...turnRequest,
+                phase: "implement",
+              })
+            : buildWorkingNarrative({ ...turnRequest, phase: "implement" }),
           durationSec: thoughtDurationSec ?? 0,
           todos: completedTodos,
-          summary: buildCompletionSummary(turnLayout),
+          summary: actionResult
+            ? actionResult.summary
+            : previousLayout
+              ? buildEditSummary(previousLayout, turnLayout)
+              : buildCompletionSummary(turnLayout, turnRequest),
           recommendations: buildRecommendations(turnLayout),
         },
       ]
@@ -3069,14 +4800,33 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
     documentType,
     layoutEdits,
     receivedAnswers,
+    referenceAnalysis,
+    mediumId,
   ])
+
+  const isReferenceReconstruction = creationUsedVisualReference(messages)
+  const comparisonSource = creationComparisonSource(messages)
+  const canCompareReference = canCompareReferenceResult(messages)
+  const referencePreviewUrl = comparisonSource?.previewUrl ?? null
+  const referenceSourceName = comparisonSource?.name ?? null
+  const referenceSourceId = comparisonSource?.id ?? null
+
+  useEffect(() => {
+    if (!canCompareReference && compareWithReference) {
+      setCompareWithReference(false)
+    }
+  }, [canCompareReference, compareWithReference])
 
   const todos = useMemo<AiTodoItem[]>(() => {
     if (status !== "thinking" && status !== "ready") {
       return []
     }
 
-    return BUILDER_TODO_LABELS.map((label, index) => {
+    const labels = buildTodoLabels(
+      narrativeRequestFromTurn(messages, mediumId, answers, generatedLayout)
+    )
+
+    return labels.map((label, index) => {
       let itemStatus: AiTodoItem["status"] = "pending"
       if (index < completedTodoCount) {
         itemStatus = "done"
@@ -3086,7 +4836,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
 
       return { id: `builder-todo-${index}`, label, status: itemStatus }
     })
-  }, [completedTodoCount, status])
+  }, [
+    answers,
+    completedTodoCount,
+    generatedLayout,
+    mediumId,
+    messages,
+    status,
+  ])
 
   const value = useMemo<LayoutBuilderContextValue>(
     () => ({
@@ -3112,6 +4869,8 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       detachCode,
       updateCodeOverride,
       reattachCode,
+      commitCodeOverrideVersion,
+      documentEditingLocked: documentMutationsLocked(),
       panelOpen,
       setPanelOpen,
       panelWidth,
@@ -3129,9 +4888,12 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       layerText: effective.layerText,
       setLayerText,
       layerStyles: effective.layerStyles,
+      hiddenLayers: effective.hiddenLayers,
+      layerDuplicates: effective.layerDuplicates,
       setLayerStyle,
       hasLayerChanges,
       resetLayer,
+      resetLayerToBrand,
       isLayerHidden: effective.isLayerHidden,
       layerDuplicateCount: effective.layerDuplicateCount,
       duplicateLayer,
@@ -3147,6 +4909,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       moveLayer,
       registerLayerMover,
       inspectingLayer: effective.inspectingLayer,
+      inspectingDisplayLabel,
       inspectLayer,
       inspectingLayerKind,
       editsTab,
@@ -3159,16 +4922,68 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerRule,
       clearLayerRule,
       addingElement,
+      revealSavedItems,
       openAddElements,
       closeAddElements,
+      browsingSavedItems,
+      openSavedItems,
+      closeSavedItems,
+      browsingBrand,
+      openBrandBoards,
+      closeBrandBoards,
+      browsingVersionHistory,
+      openVersionHistory,
+      closeVersionHistory,
+      composerDraftText: composerDraft.text,
+      composerDraftAttachments: composerDraft.attachments,
+      composerDraftModelId: composerDraft.modelId,
+      composerDraftPrimaryReferenceId: composerDraft.primaryReferenceId,
+      setComposerDraftText,
+      setComposerDraftModelId,
+      addComposerDraftFiles: addComposerDraftFilesToSession,
+      removeComposerDraftAttachment: removeComposerDraftAttachmentFromSession,
+      setComposerDraftPrimary,
+      clearComposerDraft,
+      brandDraft,
+      brandHasPreview: Boolean(brandDraft),
+      previewBrandSelection,
+      applyBrandSelection,
+      cancelBrandPreview,
+      customBoards,
+      brandCatalog,
+      upsertCustomBoard,
+      removeCustomBoard,
+      previewUnsavedBoard,
+      brandTokens,
+      paletteDragging,
+      setPaletteDragging,
+      elementDrag,
+      beginElementDrag,
+      updateElementDragPointer,
+      commitElementDrag,
+      cancelElementDrag,
+      relocatePlacedElement,
       placedElements: effective.placedElements,
       addPlacedElement,
       updatePlacedElementContent,
+      updatePlacedElement,
       removePlacedElement,
       duplicatePlacedElement,
       canMovePlacedElement,
       movePlacedElement,
       reorderPlacedElement,
+      savedItems,
+      saveItemDraft,
+      beginSaveSelected,
+      confirmSaveItem,
+      cancelSaveItem,
+      saveAvailability,
+      insertSavedItem,
+      replaceSelectedWithSavedItem,
+      replaceAvailability,
+      renameSavedItem,
+      duplicateSavedItem,
+      deleteSavedItem,
       isBlankSession,
       promptFocusToken,
       focusPrompt,
@@ -3178,11 +4993,23 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       retryGeneration,
       dismissError,
       hasGeneratedOnce,
+      isReferenceReconstruction,
+      canCompareReferenceResult: canCompareReference,
+      referencePreviewUrl,
+      referenceSourceName,
+      referenceSourceId,
+      referenceMoodHex: referenceAnalysis?.dominantHex ?? null,
+      compareWithReference,
+      setCompareWithReference,
       preThoughtDurationSec,
       preReasoning,
       thoughtDurationSec,
       todos,
       questions,
+      clarificationAskedCount,
+      clarificationAskableCount,
+      clarificationSurface,
+      clarificationTargetId,
       receivedAnswers,
       generatedLayout: effective.generatedLayout,
       sendMessage,
@@ -3191,6 +5018,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       aiEditingLayer,
       submitAnswers,
       skipQuestions,
+      submitFreeformClarification,
       stopGeneration,
       canUndo,
       canRedo,
@@ -3201,12 +5029,22 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       exitVersionPreview,
       restoreVersion,
       hasVersionSnapshot,
+      documentVersions,
+      currentVersionId,
+      previewingHistoricalVersion: Boolean(
+        previewVersionId &&
+          documentVersions.some((version) => version.id === previewVersionId)
+      ),
+      previewDocumentVersion,
+      restoreDocumentVersion,
+      closeVersionHistoryPreview,
       feedbackToast,
       showFeedbackToast,
       canvasToast,
       showCanvasToast,
       hasUnsavedChanges,
       markSaved,
+      saveLayout,
     }),
     [
       name,
@@ -3227,6 +5065,9 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       detachCode,
       updateCodeOverride,
       reattachCode,
+      commitCodeOverrideVersion,
+      compareWithReference,
+      previewVersionId,
       panelOpen,
       panelWidth,
       editMode,
@@ -3240,9 +5081,12 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       layerText,
       setLayerText,
       layerStyles,
+      hiddenLayers,
+      layerDuplicates,
       setLayerStyle,
       hasLayerChanges,
       resetLayer,
+      resetLayerToBrand,
       isLayerHidden,
       layerDuplicateCount,
       duplicateLayer,
@@ -3258,6 +5102,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       moveLayer,
       registerLayerMover,
       inspectingLayer,
+      inspectingDisplayLabel,
       inspectLayer,
       inspectingLayerKind,
       editsTab,
@@ -3270,16 +5115,64 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       setLayerRule,
       clearLayerRule,
       addingElement,
+      revealSavedItems,
       openAddElements,
       closeAddElements,
+      browsingSavedItems,
+      openSavedItems,
+      closeSavedItems,
+      browsingBrand,
+      openBrandBoards,
+      closeBrandBoards,
+      browsingVersionHistory,
+      openVersionHistory,
+      closeVersionHistory,
+      composerDraft,
+      setComposerDraftText,
+      setComposerDraftModelId,
+      addComposerDraftFilesToSession,
+      removeComposerDraftAttachmentFromSession,
+      setComposerDraftPrimary,
+      clearComposerDraft,
+      brandDraft,
+      previewBrandSelection,
+      applyBrandSelection,
+      cancelBrandPreview,
+      customBoards,
+      brandCatalog,
+      upsertCustomBoard,
+      removeCustomBoard,
+      previewUnsavedBoard,
+      brandTokens,
+      paletteDragging,
+      setPaletteDragging,
+      elementDrag,
+      beginElementDrag,
+      updateElementDragPointer,
+      commitElementDrag,
+      cancelElementDrag,
+      relocatePlacedElement,
       placedElements,
       addPlacedElement,
       updatePlacedElementContent,
+      updatePlacedElement,
       removePlacedElement,
       duplicatePlacedElement,
       canMovePlacedElement,
       movePlacedElement,
       reorderPlacedElement,
+      savedItems,
+      saveItemDraft,
+      beginSaveSelected,
+      confirmSaveItem,
+      cancelSaveItem,
+      saveAvailability,
+      insertSavedItem,
+      replaceSelectedWithSavedItem,
+      replaceAvailability,
+      renameSavedItem,
+      duplicateSavedItem,
+      deleteSavedItem,
       isBlankSession,
       promptFocusToken,
       focusPrompt,
@@ -3289,11 +5182,22 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       retryGeneration,
       dismissError,
       hasGeneratedOnce,
+      isReferenceReconstruction,
+      canCompareReference,
+      referencePreviewUrl,
+      referenceSourceName,
+      referenceSourceId,
+      referenceAnalysis,
+      compareWithReference,
       preThoughtDurationSec,
       preReasoning,
       thoughtDurationSec,
       todos,
       questions,
+      clarificationAskedCount,
+      clarificationAskableCount,
+      clarificationSurface,
+      clarificationTargetId,
       receivedAnswers,
       generatedLayout,
       sendMessage,
@@ -3302,6 +5206,7 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       aiEditingLayer,
       submitAnswers,
       skipQuestions,
+      submitFreeformClarification,
       stopGeneration,
       canUndo,
       canRedo,
@@ -3313,6 +5218,11 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       exitVersionPreview,
       restoreVersion,
       hasVersionSnapshot,
+      documentVersions,
+      currentVersionId,
+      previewDocumentVersion,
+      restoreDocumentVersion,
+      closeVersionHistoryPreview,
       snapshotVersion,
       feedbackToast,
       showFeedbackToast,
@@ -3320,6 +5230,14 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       showCanvasToast,
       hasUnsavedChanges,
       markSaved,
+      saveLayout,
+      elementDrag,
+      beginElementDrag,
+      updateElementDragPointer,
+      commitElementDrag,
+      cancelElementDrag,
+      relocatePlacedElement,
+      previewUnsavedBoard,
     ]
   )
 
@@ -3343,6 +5261,10 @@ export function LayoutBuilderProvider({ children }: { children: ReactNode }) {
       />
     </LayoutBuilderContext.Provider>
   )
+}
+
+export function useLayoutBuilderOptional(): LayoutBuilderContextValue | null {
+  return useContext(LayoutBuilderContext)
 }
 
 export function useLayoutBuilder(): LayoutBuilderContextValue {

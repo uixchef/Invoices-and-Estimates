@@ -2,7 +2,9 @@
 
 import {
   Fragment,
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -14,6 +16,7 @@ import {
 import {
   ArrowDown,
   ArrowUp,
+  Bookmark,
   CheckCircle2,
   Code2,
   Copy,
@@ -25,8 +28,10 @@ import {
   RotateCcw,
   Trash2,
 } from "lucide-react"
+import { SaveItemNamePopover } from "@/components/invoices/builder/save-item-name-popover"
 
-import { GeneratingCarousel } from "@/components/invoices/builder/generating-carousel"
+import { DropSlot } from "@/components/invoices/builder/element-drag-layer"
+import { GeneratingCarousel, ReconstructingCanvas } from "@/components/invoices/builder/generating-carousel"
 import {
   VisualEditSelector,
   type SelectorAction,
@@ -38,8 +43,15 @@ import {
   DELETE_CONFIRMATION_LABEL,
   getDeleteConfirmationDescription,
 } from "@/lib/delete-confirmation-copy"
+import {
+  FamilySlotsProvider,
+  InvoiceFamilyDocument,
+  paperFontForFamily,
+} from "@/components/invoices/documents/invoice-family-document"
+import { normalizeLayoutStyle } from "@/lib/layout-family"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import { getDocumentPageProfile } from "@/lib/mediums-data"
+import { serializeInvoiceDocument } from "@/lib/serialize-invoice-document"
 import { useMediumsStore } from "@/lib/mediums-store"
 import type {
   BuilderLayerStyle,
@@ -53,14 +65,48 @@ import {
   PAGE_LAYER_LABEL,
   PLACED_ELEMENT_REORDER_MIME,
 } from "@/lib/layout-builder-types"
+import { inheritPlacedAppearance, mergeInheritedStyle } from "@/lib/brand-boards"
+import { lineAmount } from "@/lib/invoice-totals"
+import {
+  REFERENCE_COMPARE_TRANSITION_MS,
+  referenceCompareAltText,
+} from "@/lib/reference-comparison"
 import {
   getPlacedElementLayerKind,
-  getPlacedElementSeed,
   isMultilinePlacedKind,
   isStructuralPlacedKind,
 } from "@/lib/placed-element-defaults"
-import { pageStyleFromComputed } from "@/lib/page-layer-style"
+import { boundValue } from "@/lib/placed-element-prompt"
+import { columnCountForKind, inspectorTabForKind } from "@/lib/placed-elements"
+import {
+  childrenOf,
+  rootsOf,
+} from "@/lib/placed-tree"
 import { cn } from "@/lib/utils"
+import {
+  nativeInstanceId,
+  nativeSectionInstanceId,
+  withCopySuffix,
+  slotFromDisplayLabel,
+  readLayerStore,
+} from "@/lib/native-instance-id"
+
+type NativePathValue = {
+  slots: readonly string[]
+  displays: readonly string[]
+}
+
+const ROOT_NATIVE_PATH: NativePathValue = {
+  slots: [],
+  displays: [],
+}
+
+/**
+ * Ancestor machine-slot path. Display labels are carried only for gen-2
+ * compatibility aliases, never as identity.
+ */
+const SectionPathContext = createContext<NativePathValue>(ROOT_NATIVE_PATH)
+const useSectionPath = (): NativePathValue => useContext(SectionPathContext)
 
 /** DnD payload type for reordering top-level document sections via the grip. */
 const SECTION_REORDER_MIME = "application/x-invoice-section-reorder"
@@ -331,18 +377,27 @@ function Monogram({
 function EditableText({
   value,
   label,
+  slot: slotProp,
   onCommit,
   className,
   showBadge = true,
+  instanceIdOverride,
+  occurrence = 1,
 }: {
   value: string
   label: string
-  /** Structured-field setter. When omitted, edits persist to `layerText[label]`. */
+  slot?: string
+  /** Structured-field setter. When omitted, edits persist to `layerText`. */
   onCommit?: (next: string) => void
   className?: string
   /** When false, renders bare inline editing without the layer selector chrome
    * (e.g. inside a VisualEditSelector that already owns the selection chrome). */
   showBadge?: boolean
+  /** Explicit instance ID override (used by duplicates to get a fresh ID
+   * while keeping the same authored key for family default lookup). */
+  instanceIdOverride?: string
+  /** Stable same-parent index when two nodes share a slot. Default 1. */
+  occurrence?: number
 }) {
   const {
     editMode,
@@ -352,12 +407,15 @@ function EditableText({
     setLayerText,
     layerStyles,
     selectLayer,
-    seedLayer,
     isLayerHidden,
     layerDuplicateCount,
     canMoveLayer,
     moveLayer,
   } = useLayoutBuilder()
+  const sectionPath = useSectionPath()
+  const slot = slotProp ?? slotFromDisplayLabel(label)
+  const instanceId =
+    instanceIdOverride ?? nativeInstanceId(sectionPath.slots, slot, occurrence)
   const spanRef = useRef<HTMLSpanElement>(null)
   // Bare leaves (inside a section selector) rest as plain text so a click
   // selects the whole enclosing section; a double-click flips this on to edit
@@ -384,12 +442,13 @@ function EditableText({
 
   // Overrides win for display so inspector / inline edits show immediately;
   // structured fields also stay in sync via onCommit (for the code view).
-  const current = layerText[label] ?? value
-  const isSelected = selections.some((selection) => selection.label === label)
-  const appliedStyle = styleFromLayer(layerStyles[label])
+  // Legacy label-keyed overrides are carried forward losslessly.
+  const current = readLayerStore(layerText, instanceId) ?? value
+  const isSelected = selections.some((selection) => selection.label === instanceId)
+  const appliedStyle = styleFromLayer(readLayerStore(layerStyles, instanceId))
 
   // Deleted layers stay hidden in both edit and preview until undone.
-  if (isLayerHidden(label)) {
+  if (isLayerHidden(instanceId)) {
     return null
   }
 
@@ -402,36 +461,14 @@ function EditableText({
   }
 
   const commit = (next: string) => {
-    setLayerText(label, next)
+    setLayerText(instanceId, next)
     onCommit?.(next)
   }
 
   // Captures the layer's live content + computed typography on first inspect so
   // the Visual edits panel opens pre-filled with real values.
   const openInspector = () => {
-    const node = spanRef.current
-    if (node) {
-      const cs = window.getComputedStyle(node)
-      const align = ["left", "center", "right", "justify"].includes(cs.textAlign)
-        ? (cs.textAlign as BuilderLayerStyle["textAlign"])
-        : "left"
-      seedLayer(label, {
-        content: node.textContent ?? current,
-        style: {
-          fontFamily: cs.fontFamily,
-          fontSize: Math.round(parseFloat(cs.fontSize)) || undefined,
-          fontStyle: cs.fontStyle === "italic" ? "italic" : "normal",
-          fontWeight: Number(cs.fontWeight) || undefined,
-          textAlign: align,
-          color: cs.color,
-          backgroundColor:
-            cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)"
-              ? cs.backgroundColor
-              : undefined,
-        },
-      })
-    }
-    selectLayer(label, "text")
+    selectLayer(instanceId, "text", { authoredKey: slot, chipLabel: label })
   }
 
   const editable = (ringClass: string) => (
@@ -541,31 +578,33 @@ function EditableText({
   // inline fields keep only the reorder controls upfront (move up / down) —
   // duplicate / delete live in the inspector's "More options" menu to avoid
   // crowding the compact toolbar.
-  const duplicateCount = layerDuplicateCount(label)
+  const duplicateCount = layerDuplicateCount(instanceId)
   // Only surface a reorder arrow for a direction that's actually available — no
   // permanently-disabled controls cluttering the compact field toolbar. Fields
   // with no registered reorder handler show just the "+".
   const moveActions: SelectorAction[] = []
-  if (canMoveLayer(label, "up")) {
+  if (canMoveLayer(instanceId, "up")) {
     moveActions.push({
       icon: <ArrowUp />,
       label: `Move ${label} up`,
-      onClick: () => moveLayer(label, "up"),
+      onClick: () => moveLayer(instanceId, "up"),
     })
   }
-  if (canMoveLayer(label, "down")) {
+  if (canMoveLayer(instanceId, "down")) {
     moveActions.push({
       icon: <ArrowDown />,
       label: `Move ${label} down`,
-      onClick: () => moveLayer(label, "down"),
+      onClick: () => moveLayer(instanceId, "down"),
     })
   }
   return (
     <>
       <VisualEditSelector
-        label={label}
+        label={instanceId}
+        displayLabel={label}
+        authoredKey={slot}
         selected={isSelected}
-        working={isLayerEditing(label)}
+        working={isLayerEditing(instanceId)}
         onSelect={openInspector}
         leftActions={moveActions}
         className="inline-flex max-w-full align-baseline"
@@ -573,13 +612,15 @@ function EditableText({
         {editable("focus:ring-2 focus:ring-[#6938ef]")}
       </VisualEditSelector>
       {Array.from({ length: duplicateCount }, (_, index) => {
-        const copyLabel = `${label} copy ${index + 1}`
+        const copyId = withCopySuffix(instanceId, index + 1)
         return (
           <EditableText
-            key={copyLabel}
+            key={copyId}
             value={current}
-            label={copyLabel}
+            label={label}
+            slot={slot}
             className={className}
+            instanceIdOverride={copyId}
           />
         )
       })}
@@ -744,14 +785,20 @@ type SectionMove = {
 
 function SelectableSection({
   label,
+  slot: slotProp,
   className,
+  style,
   children,
   move,
+  occurrence = 1,
 }: {
   label: string
+  slot?: string
   className?: string
+  style?: CSSProperties
   children: ReactNode
   move?: SectionMove
+  occurrence?: number
 }) {
   const {
     editMode,
@@ -764,7 +811,20 @@ function SelectableSection({
     duplicateLayer,
     requestDeleteLayer,
     registerLayerMover,
+    beginSaveSelected,
+    saveAvailability,
   } = useLayoutBuilder()
+  const parentPath = useSectionPath()
+  const slot = slotProp ?? slotFromDisplayLabel(label)
+  const instanceId = nativeSectionInstanceId(parentPath.slots, slot, occurrence)
+  const childPath: NativePathValue = {
+    slots: [
+      ...parentPath.slots,
+      occurrence > 1 ? `${slot}@${occurrence}` : slot,
+    ],
+    displays: [...parentPath.displays, label],
+  }
+  const saveState = saveAvailability(instanceId)
 
   // Expose this section's reorder handlers to the inspector's "More options"
   // menu (Move up / Move down) via context. The handler closures churn each
@@ -777,47 +837,63 @@ function SelectableSection({
   const canMoveDown = move?.canDown ?? false
   useEffect(() => {
     if (!hasMove) {
-      registerLayerMover(label, null)
+      registerLayerMover(instanceId, null)
       return
     }
-    registerLayerMover(label, {
+    registerLayerMover(instanceId, {
       canUp: canMoveUp,
       canDown: canMoveDown,
       up: () => moveRef.current?.onUp(),
       down: () => moveRef.current?.onDown(),
     })
-    return () => registerLayerMover(label, null)
-  }, [label, hasMove, canMoveUp, canMoveDown, registerLayerMover])
+    return () => registerLayerMover(instanceId, null)
+  }, [instanceId, hasMove, canMoveUp, canMoveDown, registerLayerMover])
 
-  if (isLayerHidden(label)) {
+  if (isLayerHidden(instanceId)) {
     return null
   }
 
-  const duplicateCount = layerDuplicateCount(label)
+  const duplicateCount = layerDuplicateCount(instanceId)
   // Section-level style edits from the Visual edits panel apply to the section's
   // box (padding, colours, border, radius, spacing). Keep its block/flex display.
-  const appliedStyle = styleFromLayer(layerStyles[label], false)
+  const appliedStyle = {
+    ...style,
+    ...styleFromLayer(readLayerStore(layerStyles, instanceId), false),
+  }
 
   // Preview / edit-mode-off: drop the selection chrome but keep the applied
   // style overrides (and any duplicates) so edits made in edit mode persist when
   // it's turned off, matching what the user sees while editing.
   if (!editMode) {
-    if (!className && !appliedStyle && duplicateCount === 0) {
-      return <>{children}</>
+    if (!className && !style && !appliedStyle && duplicateCount === 0) {
+      return (
+        <SectionPathContext.Provider value={childPath}>
+          {children}
+        </SectionPathContext.Provider>
+      )
     }
     return (
       <>
-        <div className={className} style={appliedStyle}>
-          {children}
-        </div>
-        {Array.from({ length: duplicateCount }, (_, index) => (
-          <div
-            key={`${label} copy ${index + 1}`}
-            className={className}
-            style={appliedStyle}
-          >
+        <SectionPathContext.Provider value={childPath}>
+          <div className={className} style={appliedStyle}>
             {children}
           </div>
+        </SectionPathContext.Provider>
+        {Array.from({ length: duplicateCount }, (_, index) => (
+          <SectionPathContext.Provider
+            key={withCopySuffix(instanceId, index + 1)}
+            value={{
+              slots: [
+                ...parentPath.slots,
+                withCopySuffix(occurrence > 1 ? `${slot}@${occurrence}` : slot, index + 1),
+              ],
+              displays: [...parentPath.displays, withCopySuffix(label, index + 1)],
+            }}
+          >
+            <div className={className} style={appliedStyle}>
+              {children}
+            </div>
+          </SectionPathContext.Provider>
         ))}
       </>
     )
@@ -854,57 +930,98 @@ function SelectableSection({
 
   return (
     <>
-      <VisualEditSelector
-        label={label}
-        scope="section"
-        selected={selections.some((selection) => selection.label === label)}
-        working={isLayerEditing(label)}
-        onSelect={() => selectLayer(label)}
-        leftActions={leftActions}
-        rightActions={[
-          {
-            icon: <Copy />,
-            label: `Duplicate ${label}`,
-            onClick: () => duplicateLayer(label),
-          },
-          {
-            icon: <Trash2 />,
-            label: `Delete ${label}`,
-            onClick: () => requestDeleteLayer(label),
-          },
-        ]}
-        onReorderDragOver={
-          move
-            ? (event) => {
-                if (event.dataTransfer.types.includes(SECTION_REORDER_MIME)) {
-                  event.preventDefault()
-                  event.dataTransfer.dropEffect = "move"
+      <SectionPathContext.Provider value={childPath}>
+        <VisualEditSelector
+          label={instanceId}
+          displayLabel={label}
+          authoredKey={slot}
+          scope="section"
+          selected={selections.some((selection) => selection.label === instanceId)}
+          working={isLayerEditing(instanceId)}
+          onSelect={() =>
+            selectLayer(instanceId, "container", {
+              authoredKey: slot,
+              chipLabel: label,
+            })
+          }
+          leftActions={leftActions}
+          rightActions={[
+            {
+              icon: <Copy />,
+              label: `Duplicate ${label}`,
+              onClick: () => duplicateLayer(instanceId),
+            },
+            {
+              icon: <Bookmark />,
+              label: saveState.ok ? "Save item" : saveState.reason,
+              saveTrigger: true,
+              onClick: (event) => {
+                const rect = event?.currentTarget.getBoundingClientRect()
+                beginSaveSelected(
+                  rect
+                    ? {
+                        top: rect.top,
+                        left: rect.left,
+                        right: rect.right,
+                        bottom: rect.bottom,
+                        width: rect.width,
+                        height: rect.height,
+                      }
+                    : null
+                )
+              },
+              disabled: !saveState.ok,
+            },
+            {
+              icon: <Trash2 />,
+              label: `Delete ${label}`,
+              onClick: () => requestDeleteLayer(instanceId),
+            },
+          ]}
+          onReorderDragOver={
+            move
+              ? (event) => {
+                  if (event.dataTransfer.types.includes(SECTION_REORDER_MIME)) {
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = "move"
+                  }
                 }
-              }
-            : undefined
-        }
-        onReorderDrop={
-          move
-            ? (event) => {
-                const dragged = event.dataTransfer.getData(SECTION_REORDER_MIME)
+              : undefined
+          }
+          onReorderDrop={
+            move
+              ? (event) => {
+                  const dragged = event.dataTransfer.getData(SECTION_REORDER_MIME)
                 if (dragged) {
                   event.preventDefault()
                   move.onDrop(dragged)
                 }
               }
-            : undefined
-        }
-        className={className}
-        style={appliedStyle}
-      >
-        {children}
-      </VisualEditSelector>
+              : undefined
+          }
+          className={className}
+          style={appliedStyle}
+        >
+          {children}
+        </VisualEditSelector>
+      </SectionPathContext.Provider>
       {Array.from({ length: duplicateCount }, (_, index) => {
-        const copyLabel = `${label} copy ${index + 1}`
+        const copyId = withCopySuffix(instanceId, index + 1)
         return (
-          <div key={copyLabel} className={className} style={appliedStyle}>
-            {children}
-          </div>
+          <SectionPathContext.Provider
+            key={copyId}
+            value={{
+              slots: [
+                ...parentPath.slots,
+                withCopySuffix(occurrence > 1 ? `${slot}@${occurrence}` : slot, index + 1),
+              ],
+              displays: [...parentPath.displays, withCopySuffix(label, index + 1)],
+            }}
+          >
+            <div className={className} style={appliedStyle}>
+              {children}
+            </div>
+          </SectionPathContext.Provider>
         )
       })}
     </>
@@ -1016,7 +1133,6 @@ function SelectablePageShell({
     selectLayer,
     isLayerEditing,
     layerStyles,
-    seedLayer,
   } = useLayoutBuilder()
 
   const pageStyle = layerStyles[PAGE_LAYER_LABEL]
@@ -1034,21 +1150,12 @@ function SelectablePageShell({
   )
 
   const openInspector = () => {
-    const node = document.querySelector(
-      `[data-layer="${PAGE_LAYER_LABEL}"]`
-    )
-    if (node instanceof HTMLElement) {
-      seedLayer(PAGE_LAYER_LABEL, {
-        content: "",
-        style: pageStyleFromComputed(node),
-      })
-    }
     selectLayer(PAGE_LAYER_LABEL, "page")
   }
 
   if (!editMode) {
     return (
-      <div className={className} style={mergedStyle}>
+      <div className={className} style={mergedStyle} data-document-paper>
         {children}
         <WatermarkOverlay style={pageStyle} />
       </div>
@@ -1056,6 +1163,7 @@ function SelectablePageShell({
   }
 
   return (
+    <div data-document-paper>
     <VisualEditSelector
       label={PAGE_LAYER_LABEL}
       scope="section"
@@ -1071,6 +1179,7 @@ function SelectablePageShell({
       {children}
       <WatermarkOverlay style={pageStyle} />
     </VisualEditSelector>
+    </div>
   )
 }
 
@@ -1155,24 +1264,6 @@ function PaginatedDocument({
   )
 }
 
-function parseElementDrag(
-  dataTransfer: DataTransfer
-): { kind: string; label: string } | null {
-  const raw = dataTransfer.getData(ELEMENT_DRAG_MIME)
-  if (!raw) {
-    return null
-  }
-  try {
-    const parsed = JSON.parse(raw) as { kind?: string; label?: string }
-    if (!parsed.kind || !parsed.label) {
-      return null
-    }
-    return { kind: parsed.kind, label: parsed.label }
-  } catch {
-    return null
-  }
-}
-
 function PlacedEditableText({
   value,
   onChange,
@@ -1252,9 +1343,22 @@ function PlacedElementView({
   layerStyle?: BuilderLayerStyle
 }) {
   const { kind, content } = element
+  const { generatedLayout, updateLayout, updatePlacedElement, placedElements, setLayerStyle, brandTokens } =
+    useLayoutBuilder()
   const multiline = isMultilinePlacedKind(kind)
-  const textStyle = contentStyleFromLayer(layerStyle)
-  const blockStyle = contentStyleFromLayer(layerStyle, false)
+  const inherited = inheritPlacedAppearance(kind, brandTokens)
+  const resolvedStyle = mergeInheritedStyle(
+    {
+      fontFamily: inherited.fontFamily,
+      color: inherited.color,
+      backgroundColor: inherited.backgroundColor,
+      borderColor: inherited.borderColor,
+    },
+    layerStyle
+  )
+  const textStyle = contentStyleFromLayer(resolvedStyle)
+  const blockStyle = contentStyleFromLayer(resolvedStyle, false)
+  const accent = generatedLayout.accent
 
   const editable = (className: string) => (
     <PlacedEditableText
@@ -1278,7 +1382,8 @@ function PlacedElementView({
           ...blockStyle,
           height: layerStyle?.height ?? 1,
           minHeight: 1,
-          backgroundColor: layerStyle?.backgroundColor ?? "#eaecf0",
+          backgroundColor:
+            layerStyle?.backgroundColor ?? inherited.borderColor ?? "#eaecf0",
         }}
         aria-hidden
       />
@@ -1382,12 +1487,36 @@ function PlacedElementView({
             />
           )
         ) : (
-          <>
+          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 p-3">
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              aria-label="Upload image"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                event.currentTarget.value = ""
+                if (!file || file.size > 10 * 1024 * 1024) {
+                  return
+                }
+                const reader = new FileReader()
+                reader.onload = () => {
+                  setLayerStyle(element.id, {
+                    backgroundImage: String(reader.result),
+                    imageAlign: "full",
+                    imageSizeMode: "custom",
+                    width: layerStyle?.width ?? 160,
+                    height: layerStyle?.height ?? 100,
+                  })
+                }
+                reader.readAsDataURL(file)
+              }}
+            />
             <ImageIcon className="size-8 text-[#98a2b3]" aria-hidden />
             <span className="font-[family-name:var(--font-inter)] text-sm text-[#667085]">
-              {editMode ? "Replace image" : "Image placeholder"}
+              {editMode ? "Upload or choose an image" : "Image placeholder"}
             </span>
-          </>
+          </label>
         )}
       </div>
     )
@@ -1411,32 +1540,78 @@ function PlacedElementView({
   }
 
   if (kind === "button") {
+    const href = element.href?.trim()
+    const className =
+      "inline-flex h-9 items-center rounded border bg-white px-4 font-[family-name:var(--font-inter)] text-sm font-semibold shadow-[0_1px_2px_rgba(16,24,40,0.05)]"
+    const buttonStyle = {
+      ...textStyle,
+      borderColor: layerStyle?.color ?? accent,
+      color: layerStyle?.color ?? accent,
+    }
+    if (href && !editMode) {
+      return (
+        <a href={href} className={className} style={buttonStyle}>
+          {content || "Button label"}
+        </a>
+      )
+    }
     return (
-      <span
-        className="inline-flex h-9 items-center rounded border border-[#d0d5dd] bg-white px-4 font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054] shadow-[0_1px_2px_rgba(16,24,40,0.05)]"
-        style={textStyle}
-      >
+      <span className={className} style={buttonStyle}>
         {editable("inline")}
       </span>
     )
   }
 
   if (kind.startsWith("columns-")) {
-    const count = Number.parseInt(kind.split("-")[1] ?? "1", 10)
+    const count = columnCountForKind(kind) ?? 1
     return (
-      <div className="flex w-full gap-4" style={blockStyle}>
-        {Array.from({ length: count }).map((_, index) => (
-          <div key={index} className="min-w-0 flex-1">
-            {editable(
-              "font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]"
-            )}
-          </div>
-        ))}
+      <div className="flex w-full gap-3" style={blockStyle}>
+        {Array.from({ length: count }, (_, slot) => {
+          const kids = childrenOf(placedElements, element.id, slot)
+          return (
+            <div
+              key={slot}
+              className="flex min-h-[72px] min-w-0 flex-1 flex-col rounded-[6px] border border-dashed border-[#eaecf0] p-2"
+            >
+              <DropSlot
+                dest={{
+                  kind: "child",
+                  parentId: element.id,
+                  parentKind: kind,
+                  slot,
+                  index: 0,
+                }}
+                variant="region"
+                label={`Column ${slot + 1}`}
+              />
+              {kids.map((child, childIndex) => (
+                <Fragment key={child.id}>
+                  <SelectablePlacedElement element={child} />
+                  <DropSlot
+                    dest={{
+                      kind: "child",
+                      parentId: element.id,
+                      parentKind: kind,
+                      slot,
+                      index: childIndex + 1,
+                    }}
+                  />
+                </Fragment>
+              ))}
+            </div>
+          )
+        })}
       </div>
     )
   }
 
   if (kind === "table") {
+    const rows = element.bindToLineItems
+      ? generatedLayout.lineItems
+      : [{ description: "Item name", qty: 1, rate: 0 }]
+    const money = (value: number) =>
+      formatMoney(generatedLayout.currencySymbol, value)
+    const amountFor = (item: GeneratedLineItem) => lineAmount(item)
     return (
       <div
         className="w-full overflow-hidden rounded border border-[#eaecf0]"
@@ -1447,11 +1622,34 @@ function PlacedElementView({
           <span className="text-right">Qty</span>
           <span className="text-right">Amount</span>
         </div>
-        <div className="grid grid-cols-[1fr_56px_80px] gap-3 px-3 py-2.5 font-[family-name:var(--font-inter)] text-sm text-[#101828]">
-          <span className="text-[#667085]">Item name</span>
-          <span className="text-right text-[#667085]">1</span>
-          <span className="text-right font-medium">$0.00</span>
-        </div>
+        {rows.map((item, index) => (
+          <div
+            key={index}
+            className="grid grid-cols-[1fr_56px_80px] gap-3 px-3 py-2.5 font-[family-name:var(--font-inter)] text-sm text-[#101828]"
+          >
+            {editMode && element.bindToLineItems ? (
+              <input
+                value={item.description}
+                aria-label={`Item ${index + 1} description`}
+                onChange={(event) => {
+                  const lineItems = generatedLayout.lineItems.map((line, lineIndex) =>
+                    lineIndex === index
+                      ? { ...line, description: event.target.value }
+                      : line
+                  )
+                  updateLayout({ lineItems })
+                }}
+                className="border-0 bg-transparent p-0 text-sm text-[#667085] outline-none"
+              />
+            ) : (
+              <span className="text-[#667085]">{item.description}</span>
+            )}
+            <span className="text-right text-[#667085]">{item.qty}</span>
+            <span className="text-right font-medium">
+              {money(amountFor(item))}
+            </span>
+          </div>
+        ))}
       </div>
     )
   }
@@ -1463,7 +1661,7 @@ function PlacedElementView({
   }
 
   if (kind === "list") {
-    const items = content.split("\n").filter(Boolean)
+    const items = content.length > 0 ? content.split("\n") : [""]
     return (
       <ul
         className="list-disc space-y-1 pl-5 font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]"
@@ -1504,14 +1702,37 @@ function PlacedElementView({
   }
 
   if (kind === "container") {
+    const kids = childrenOf(placedElements, element.id, 0)
     return (
       <div
-        className="rounded border border-[#eaecf0] bg-[#fcfcfd] p-4"
+        className="flex flex-col rounded border border-[#eaecf0] bg-[#fcfcfd] p-3"
         style={blockStyle}
       >
-        {editable(
-          "font-[family-name:var(--font-inter)] text-sm leading-5 text-[#667085]"
-        )}
+        <DropSlot
+          dest={{
+            kind: "child",
+            parentId: element.id,
+            parentKind: "container",
+            slot: 0,
+            index: 0,
+          }}
+          variant="region"
+          label="Drop into container"
+        />
+        {kids.map((child, childIndex) => (
+          <Fragment key={child.id}>
+            <SelectablePlacedElement element={child} />
+            <DropSlot
+              dest={{
+                kind: "child",
+                parentId: element.id,
+                parentKind: "container",
+                slot: 0,
+                index: childIndex + 1,
+              }}
+            />
+          </Fragment>
+        ))}
       </div>
     )
   }
@@ -1530,7 +1751,6 @@ function SelectablePlacedElement({ element }: { element: PlacedElement }) {
   const {
     inspectingLayer,
     selectLayer,
-    seedLayer,
     isLayerEditing,
     layerText,
     layerStyles,
@@ -1540,30 +1760,38 @@ function SelectablePlacedElement({ element }: { element: PlacedElement }) {
     removePlacedElement,
     canMovePlacedElement,
     movePlacedElement,
-    reorderPlacedElement,
+    beginElementDrag,
+    elementDrag,
+    generatedLayout,
     registerLayerMover,
+    beginSaveSelected,
+    saveAvailability,
   } = useLayoutBuilder()
   const [pendingRemove, setPendingRemove] = useState(false)
   const nodeRef = useRef<HTMLDivElement>(null)
 
   const label = element.label
-  const displayContent = layerText[label] ?? element.content
-  const layerStyle = layerStyles[label]
-  const isSelected = inspectingLayer === label
+  const inspectKey = element.id
+  const bound = boundValue(generatedLayout, element.bindField)
+  const displayContent = bound ?? layerText[inspectKey] ?? layerText[label] ?? element.content
+  const layerStyle = layerStyles[inspectKey] ?? layerStyles[label]
+  const isSelected = inspectingLayer === inspectKey || inspectingLayer === label
   const shellStyle = marginStyleFromLayer(layerStyle)
   const layerKind = getPlacedElementLayerKind(element.kind)
   const canUp = canMovePlacedElement(element.id, "up")
   const canDown = canMovePlacedElement(element.id, "down")
+  const saveState = saveAvailability(inspectKey)
 
   useEffect(() => {
-    registerLayerMover(label, {
+    registerLayerMover(inspectKey, {
       canUp,
       canDown,
       up: () => movePlacedElement(element.id, "up"),
       down: () => movePlacedElement(element.id, "down"),
     })
-    return () => registerLayerMover(label, null)
+    return () => registerLayerMover(inspectKey, null)
   }, [
+    inspectKey,
     label,
     element.id,
     canUp,
@@ -1573,33 +1801,10 @@ function SelectablePlacedElement({ element }: { element: PlacedElement }) {
   ])
 
   const openInspector = () => {
-    if (element.kind === "image" || isStructuralPlacedKind(element.kind)) {
-      seedLayer(
-        label,
-        getPlacedElementSeed(element.kind, displayContent)
-      )
-    } else {
-      const node = nodeRef.current
-      if (node) {
-        const cs = window.getComputedStyle(node)
-        const align = ["left", "center", "right", "justify"].includes(cs.textAlign)
-          ? (cs.textAlign as BuilderLayerStyle["textAlign"])
-          : "left"
-        seedLayer(label, {
-          content: displayContent,
-          style: {
-            fontFamily: cs.fontFamily,
-            fontSize: Math.round(parseFloat(cs.fontSize)) || undefined,
-            fontStyle: cs.fontStyle === "italic" ? "italic" : "normal",
-            fontWeight: Number(cs.fontWeight) || undefined,
-            textAlign: align,
-            color: cs.color,
-          },
-        })
-      }
-    }
-    selectLayer(label, layerKind, {
+    selectLayer(inspectKey, layerKind, {
       keepAddElements: messages.length === 0,
+      tab: inspectorTabForKind(element.kind),
+      chipLabel: label,
     })
   }
 
@@ -1608,10 +1813,17 @@ function SelectablePlacedElement({ element }: { element: PlacedElement }) {
       icon: <Move />,
       label: `Drag to move ${label}`,
       onClick: () => {},
-      draggable: true,
-      onDragStart: (event) => {
-        event.dataTransfer.setData(PLACED_ELEMENT_REORDER_MIME, element.id)
-        event.dataTransfer.effectAllowed = "move"
+      onPointerDown: (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        beginElementDrag({
+          mode: "move",
+          kind: element.kind,
+          label: element.label,
+          elementId: element.id,
+          x: event.clientX,
+          y: event.clientY,
+        })
       },
     },
     {
@@ -1631,16 +1843,47 @@ function SelectablePlacedElement({ element }: { element: PlacedElement }) {
   return (
     <>
       <VisualEditSelector
-        label={label}
+        label={inspectKey}
+        displayLabel={label}
         selected={isSelected}
-        working={isLayerEditing(label)}
+        working={isLayerEditing(inspectKey) || isLayerEditing(label)}
         onSelect={openInspector}
+        className={cn(
+          "block",
+          elementDrag?.mode === "move" && elementDrag.elementId === element.id
+            ? "opacity-40"
+            : undefined
+        )}
         leftActions={leftActions}
         rightActions={[
           {
             icon: <Copy />,
-            label: `Duplicate ${label}`,
+            label: element.bindToLineItems
+              ? "Line items can only appear once on this invoice"
+              : `Duplicate ${label}`,
             onClick: () => duplicatePlacedElement(element.id),
+            disabled: Boolean(element.bindToLineItems),
+          },
+          {
+            icon: <Bookmark />,
+            label: saveState.ok ? "Save item" : saveState.reason,
+            saveTrigger: true,
+            onClick: (event) => {
+              const rect = event?.currentTarget.getBoundingClientRect()
+              beginSaveSelected(
+                rect
+                  ? {
+                      top: rect.top,
+                      left: rect.left,
+                      right: rect.right,
+                      bottom: rect.bottom,
+                      width: rect.width,
+                      height: rect.height,
+                    }
+                  : null
+              )
+            },
+            disabled: !saveState.ok,
           },
           {
             icon: <Trash2 />,
@@ -1648,20 +1891,6 @@ function SelectablePlacedElement({ element }: { element: PlacedElement }) {
             onClick: () => setPendingRemove(true),
           },
         ]}
-        onReorderDragOver={(event) => {
-          if (event.dataTransfer.types.includes(PLACED_ELEMENT_REORDER_MIME)) {
-            event.preventDefault()
-            event.dataTransfer.dropEffect = "move"
-          }
-        }}
-        onReorderDrop={(event) => {
-          const dragged = event.dataTransfer.getData(PLACED_ELEMENT_REORDER_MIME)
-          if (dragged) {
-            event.preventDefault()
-            reorderPlacedElement(dragged, element.id)
-          }
-        }}
-        className="block"
       >
         <div ref={nodeRef} style={shellStyle}>
           <PlacedElementView
@@ -1701,86 +1930,48 @@ function SelectablePlacedElement({ element }: { element: PlacedElement }) {
 }
 
 /**
- * Drop target between document sections. Invisible until an element is dragged
- * over — then shows a 1.5px insertion line. Renders placed element placeholders
- * after drop.
+ * Drop target between document sections. Insertion seams sit before, between,
+ * and after placed blocks so a drop lands at the previewed index.
  */
 function ElementDropZone({ zone }: { zone: PlacedElementZone }) {
   const {
     placedElements,
-    addPlacedElement,
     updatePlacedElementContent,
     editMode,
     layerStyles,
   } = useLayoutBuilder()
-  const [dragOver, setDragOver] = useState(false)
-  const zoneElements = placedElements.filter((element) => element.zone === zone)
+  const zoneElements = rootsOf(placedElements).filter(
+    (element) => element.zone === zone
+  )
 
-  const acceptDrag = (event: React.DragEvent) => {
-    if (!event.dataTransfer.types.includes(ELEMENT_DRAG_MIME)) {
-      return
-    }
-    event.preventDefault()
-    event.dataTransfer.dropEffect = "copy"
-    setDragOver(true)
-  }
-
-  const handleDragLeave = (event: React.DragEvent) => {
-    const related = event.relatedTarget as Node | null
-    if (related && event.currentTarget.contains(related)) {
-      return
-    }
-    setDragOver(false)
-  }
-
-  const handleDrop = (event: React.DragEvent) => {
-    event.preventDefault()
-    setDragOver(false)
-    const payload = parseElementDrag(event.dataTransfer)
-    if (!payload) {
-      return
-    }
-    addPlacedElement({ kind: payload.kind, label: payload.label, zone })
-  }
+  const renderElement = (element: PlacedElement) =>
+    editMode ? (
+      <SelectablePlacedElement key={element.id} element={element} />
+    ) : (
+      <div
+        key={element.id}
+        style={marginStyleFromLayer(layerStyles[element.id] ?? layerStyles[element.label])}
+      >
+        <PlacedElementView
+          element={element}
+          editMode={false}
+          layerStyle={layerStyles[element.id] ?? layerStyles[element.label]}
+          onContentChange={(content) =>
+            updatePlacedElementContent(element.id, content)
+          }
+        />
+      </div>
+    )
 
   return (
     <div className="flex flex-col gap-2">
-      {zoneElements.map((element) =>
-        editMode ? (
-          <SelectablePlacedElement key={element.id} element={element} />
-        ) : (
-          <div
-            key={element.id}
-            style={marginStyleFromLayer(layerStyles[element.label])}
-          >
-            <PlacedElementView
-              element={element}
-              editMode={false}
-              layerStyle={layerStyles[element.label]}
-              onContentChange={(content) =>
-                updatePlacedElementContent(element.id, content)
-              }
-            />
-          </div>
-        )
-      )}
-
-      {/* Transparent hit target; only the 1.5px line shows while dragging over. */}
-      <div
-        onDragOver={acceptDrag}
-        onDragEnter={acceptDrag}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className="relative -my-1 flex h-2 items-center"
-        aria-hidden
-      >
-        <div
-          className={cn(
-            "w-full rounded-full bg-[#6938ef] transition-opacity duration-150",
-            dragOver ? "h-[1.5px] opacity-100" : "h-0 opacity-0"
-          )}
-        />
-      </div>
+      <DropSlot dest={{ kind: "root", zone, index: 0 }} />
+      {zoneElements.map((element, offset) => (
+        <Fragment key={element.id}>
+          {renderElement(element)}
+          <DropSlot dest={{ kind: "root", zone, index: offset + 1 }} />
+        </Fragment>
+      ))}
     </div>
   )
 }
@@ -1845,6 +2036,164 @@ function DocumentStage({ children }: { children: ReactNode }) {
           {children}
         </div>
       </div>
+    </div>
+  )
+}
+
+function CompareDocumentStage({
+  documentBody,
+  source,
+  compareWithReference,
+  onSourceUnavailable,
+}: {
+  documentBody: ReactNode
+  source: { id: string; name: string; previewUrl: string } | null
+  compareWithReference: boolean
+  onSourceUnavailable: () => void
+}) {
+  const [failed, setFailed] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [reduceMotion, setReduceMotion] = useState(false)
+
+  useEffect(() => {
+    setFailed(false)
+    setLoaded(false)
+  }, [source?.previewUrl])
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return
+    }
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)")
+    const update = () => setReduceMotion(media.matches)
+    update()
+    media.addEventListener("change", update)
+    return () => media.removeEventListener("change", update)
+  }, [])
+
+  const fadeMs = reduceMotion ? 0 : REFERENCE_COMPARE_TRANSITION_MS
+  const showSource = Boolean(source) && !failed
+
+  return (
+    <DocumentStage>
+      <div className="relative" data-compare-stage="">
+        <div
+          data-compare-layer="result"
+          data-result-mounted="true"
+          inert={compareWithReference ? true : undefined}
+          className={cn(
+            "ease-out motion-reduce:!transition-none",
+            compareWithReference && "pointer-events-none"
+          )}
+          style={{
+            opacity: compareWithReference ? 0 : 1,
+            transitionProperty: "opacity",
+            transitionDuration: `${fadeMs}ms`,
+          }}
+        >
+          {documentBody}
+        </div>
+        {showSource && source ? (
+          <div
+            data-compare-layer="reference"
+            data-primary-reference-id={source.id}
+            className="absolute inset-0 flex items-center justify-center overflow-hidden bg-[#f9fafb] ease-out motion-reduce:!transition-none"
+            style={{
+              opacity: compareWithReference ? 1 : 0,
+              pointerEvents: compareWithReference ? "auto" : "none",
+              transitionProperty: "opacity",
+              transitionDuration: `${fadeMs}ms`,
+            }}
+            aria-hidden={!compareWithReference}
+          >
+            {compareWithReference && !loaded ? (
+              <div
+                className="absolute inset-0 bg-[#f9fafb]"
+                data-reference-pending=""
+                aria-hidden
+              />
+            ) : null}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={source.previewUrl}
+              alt={
+                compareWithReference
+                  ? referenceCompareAltText(source.name)
+                  : ""
+              }
+              onLoad={() => setLoaded(true)}
+              onError={() => {
+                setFailed(true)
+                onSourceUnavailable()
+              }}
+              className="max-h-full max-w-full object-contain object-center"
+            />
+            {compareWithReference && loaded ? (
+              <p className="pointer-events-none absolute inset-x-0 bottom-2 px-3 text-center font-[family-name:var(--font-inter)] text-[10px] font-medium leading-4 text-[#667085]">
+                {source.name}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </DocumentStage>
+  )
+}
+
+function ReferenceResultToggle({
+  compareWithReference,
+  onChange,
+}: {
+  compareWithReference: boolean
+  onChange: (value: boolean) => void
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Compare reference and result"
+      className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center rounded-full border border-[#eaecf0] bg-white/95 p-1 shadow-[0_8px_16px_-6px_rgba(16,24,40,0.18)] backdrop-blur-sm"
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") {
+          event.preventDefault()
+          onChange(true)
+        } else if (event.key === "ArrowRight") {
+          event.preventDefault()
+          onChange(false)
+        }
+      }}
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-label="Show original reference"
+        aria-checked={compareWithReference}
+        tabIndex={compareWithReference ? 0 : -1}
+        onClick={() => onChange(true)}
+        className={cn(
+          "rounded-full px-3 py-1.5 font-[family-name:var(--font-inter)] text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
+          compareWithReference
+            ? "bg-[#f4f3ff] font-semibold text-[#5b21b6] shadow-[inset_0_0_0_1px_rgba(91,33,182,0.18)]"
+            : "font-medium text-[#667085] hover:bg-[#f9fafb]"
+        )}
+      >
+        Reference
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-label="Show reconstructed result"
+        aria-checked={!compareWithReference}
+        tabIndex={!compareWithReference ? 0 : -1}
+        onClick={() => onChange(false)}
+        className={cn(
+          "rounded-full px-3 py-1.5 font-[family-name:var(--font-inter)] text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
+          !compareWithReference
+            ? "bg-[#f4f3ff] font-semibold text-[#5b21b6] shadow-[inset_0_0_0_1px_rgba(91,33,182,0.18)]"
+            : "font-medium text-[#667085] hover:bg-[#f9fafb]"
+        )}
+      >
+        Result
+      </button>
     </div>
   )
 }
@@ -2665,7 +3014,16 @@ function DocumentSurface() {
                       className="inline-flex h-10 items-center justify-center rounded-lg px-5 text-sm font-semibold text-white"
                       style={{ backgroundColor: layout.accent }}
                     >
-                      <EditableText value="Pay online" label="Pay online button" />
+                      <a
+                        href={layout.payment.payUrl}
+                        className="text-inherit no-underline"
+                        onClick={(event) => event.preventDefault()}
+                      >
+                        <EditableText
+                          value={layout.payment.payLabel}
+                          label="Pay online button"
+                        />
+                      </a>
                     </div>
                   </SelectableSection>
                 </Fragment>
@@ -2720,12 +3078,20 @@ function DocumentSurface() {
                 </p>
                 <div className="mt-1 flex flex-col gap-0.5 text-sm text-[#667085]">
                   <EditableText
-                    value={`Bank: ${layout.businessName} · Acct 0042 1188`}
-                    label="Payment details account"
+                    value={layout.payment.bankName}
+                    label="Payment bank name"
                   />
                   <EditableText
-                    value="Routing 110000000 · SWIFT NWBKUS33"
-                    label="Payment details routing"
+                    value={layout.payment.accountName}
+                    label="Payment account name"
+                  />
+                  <EditableText
+                    value={`Account ${layout.payment.accountNumber}`}
+                    label="Payment account number"
+                  />
+                  <EditableText
+                    value={`Routing ${layout.payment.routingNumber}`}
+                    label="Payment routing number"
                   />
                 </div>
               </div>
@@ -2768,308 +3134,29 @@ function DocumentSurface() {
   )
 }
 
-/**
- * Generated source for the document, plus a map of each selectable layer label
- * to the line range it occupies. The labels and `data-el` markers mirror the
- * preview's `EditableText` / `SelectableSection` labels so a selection in the
- * preview maps 1:1 to a highlighted (and scrolled-to) region in the editor.
- */
-type CodeBuild = { code: string; ranges: Record<string, [number, number]> }
-
-function buildCode(
+function buildCodeFromDocument(
   layout: GeneratedLayout,
-  overrides: Record<string, string> = {}
-): CodeBuild {
-  const lines: string[] = []
-  const ranges: Record<string, [number, number]> = {}
-  const sym = layout.currencySymbol
-  const money = (value: number) => `${sym}${value.toFixed(2)}`
-  // Edited text wins (same precedence as the preview's EditableText), so the
-  // code and the rendered document always show the same content.
-  const ov = (label: string, fallback: string) => overrides[label] ?? fallback
-  const subtotal = layout.lineItems.reduce(
-    (sum, item) => sum + item.qty * item.rate,
-    0
-  )
-  const discount = layout.sections.discount ? subtotal * layout.discountRate : 0
-  const tax = layout.sections.taxes ? (subtotal - discount) * layout.taxRate : 0
-  const total = subtotal - discount + tax
-
-  const add = (text: string) => {
-    lines.push(text)
+  extras: {
+    layerText: Record<string, string>
+    layerStyles: Record<string, BuilderLayerStyle>
+    hiddenLayers: string[]
+    layerDuplicates: Record<string, number>
+    placedElements: PlacedElement[]
+    brandTokens: import("@/lib/brand-boards").ResolvedFamilyBrand
+    pageProfile: ReturnType<typeof getDocumentPageProfile>
   }
-  // Records the range for one or more labels that live on a single line.
-  const tag = (labels: string | string[], text: string) => {
-    const index = lines.length
-    lines.push(text)
-    for (const label of Array.isArray(labels) ? labels : [labels]) {
-      ranges[label] = [index, index]
-    }
-  }
-  // Records the range for a multi-line block (the section labels).
-  const block = (label: string, fn: () => void) => {
-    const start = lines.length
-    fn()
-    ranges[label] = [start, lines.length - 1]
-  }
-
-  add(`<!doctype html>`)
-  add(`<html lang="en">`)
-  add(`  <head>`)
-  add(`    <meta charset="utf-8" />`)
-  add(`    <title>${layout.documentType} · ${layout.businessName}</title>`)
-  add(`    <style>`)
-  add(`      :root { --accent: ${layout.accent}; }`)
-  add(
-    `      body { font-family: ${
-      layout.style === "classic" ? "Georgia, serif" : "Inter, sans-serif"
-    }; color: #101828; margin: 0; }`
-  )
-  add(`      .muted { color: #667085; }`)
-  add(`      .doc-title { color: var(--accent); font-size: 24px; font-weight: 600; }`)
-  add(`      table { width: 100%; border-collapse: collapse; }`)
-  add(`      th { border-bottom: 2px solid var(--accent); text-align: left; }`)
-  add(`      td, th { padding: 8px 0; }`)
-  add(`      .num { text-align: right; }`)
-  add(`      .total { color: var(--accent); font-weight: 700; }`)
-  add(`      .pay-online { display: inline-block; background: var(--accent); color: #fff; font-weight: 600; padding: 10px 20px; border-radius: 8px; text-decoration: none; }`)
-  add(`    </style>`)
-  add(`  </head>`)
-  add(`  <body>`)
-
-  add(`    <!-- Header -->`)
-  block("Header", () => {
-    add(`    <header data-el="Header">`)
-    tag(
-      "Business name",
-      `      <h1 data-el="Business name">${ov("Business name", layout.businessName)}</h1>`
-    )
-    tag(
-      "Business address",
-      `      <p class="muted" data-el="Business address">${ov(
-        "Business address",
-        "123 Market Street · Suite 400"
-      )}</p>`
-    )
-    tag(
-      "Document type",
-      `      <p class="doc-title" data-el="Document type">${ov(
-        "Document type",
-        layout.documentType
-      )}</p>`
-    )
-    tag(
-      "Document number",
-      `      <p class="muted" data-el="Document number">${ov(
-        "Document number",
-        layout.documentNumber
-      )}</p>`
-    )
-    add(`    </header>`)
+) {
+  const serialized = serializeInvoiceDocument({
+    layout,
+    layerText: extras.layerText,
+    layerStyles: extras.layerStyles,
+    hiddenLayers: extras.hiddenLayers,
+    layerDuplicates: extras.layerDuplicates,
+    placedElements: extras.placedElements,
+    brandTokens: extras.brandTokens,
+    pageProfile: extras.pageProfile,
   })
-
-  add(`    <!-- Billing details -->`)
-  block("Billing details", () => {
-    add(`    <section data-el="Billing details">`)
-    tag(
-      "Bill to label",
-      `      <p class="muted" data-el="Bill to label">${ov("Bill to label", "Bill to")}</p>`
-    )
-    tag(
-      "Client name",
-      `      <p data-el="Client name">${ov("Client name", layout.clientName)}</p>`
-    )
-    tag(
-      "Client address line 1",
-      `      <p class="muted" data-el="Client address line 1">${ov(
-        "Client address line 1",
-        "456 Client Avenue"
-      )}</p>`
-    )
-    tag(
-      "Client address line 2",
-      `      <p class="muted" data-el="Client address line 2">${ov(
-        "Client address line 2",
-        "San Francisco, CA 94103"
-      )}</p>`
-    )
-    tag(
-      ["Issued label", "Issue date"],
-      `      <p><span data-el="Issued label">${ov(
-        "Issued label",
-        "Issued"
-      )}</span> <span data-el="Issue date">${ov("Issue date", layout.issueDate)}</span></p>`
-    )
-    tag(
-      ["Due label", "Due date"],
-      `      <p><span data-el="Due label">${ov(
-        "Due label",
-        "Due"
-      )}</span> <span data-el="Due date">${ov("Due date", layout.dueDate)}</span></p>`
-    )
-    tag(
-      ["Currency label", "Currency code"],
-      `      <p><span data-el="Currency label">${ov(
-        "Currency label",
-        "Currency"
-      )}</span> <span data-el="Currency code">${ov(
-        "Currency code",
-        layout.currencyCode
-      )}</span></p>`
-    )
-    add(`    </section>`)
-  })
-
-  if (layout.sections.items) {
-    add(`    <!-- Line items -->`)
-    add(`    <table>`)
-    block("Table header", () => {
-      add(`      <thead data-el="Table header">`)
-      add(`        <tr>`)
-      tag(
-        "Description header",
-        `          <th>${ov("Description header", "Description")}</th>`
-      )
-      tag("Qty header", `          <th class="num">${ov("Qty header", "Qty")}</th>`)
-      tag("Rate header", `          <th class="num">${ov("Rate header", "Rate")}</th>`)
-      tag(
-        "Amount header",
-        `          <th class="num">${ov("Amount header", "Amount")}</th>`
-      )
-      add(`        </tr>`)
-      add(`      </thead>`)
-    })
-    add(`      <tbody>`)
-    layout.lineItems.forEach((item, index) => {
-      const label = `Item ${index + 1}`
-      block(label, () => {
-        add(`        <tr data-el="${label}">`)
-        tag(
-          `${label} description`,
-          `          <td data-el="${label} description">${ov(
-            `${label} description`,
-            item.description
-          )}</td>`
-        )
-        add(`          <td class="num">${item.qty}</td>`)
-        add(`          <td class="num">${money(item.rate)}</td>`)
-        add(`          <td class="num">${money(item.qty * item.rate)}</td>`)
-        add(`        </tr>`)
-      })
-    })
-    add(`      </tbody>`)
-    add(`    </table>`)
-  }
-
-  add(`    <!-- Totals -->`)
-  block("Totals", () => {
-    add(`    <section data-el="Totals">`)
-    tag(
-      "Subtotal label",
-      `      <p><span data-el="Subtotal label">${ov(
-        "Subtotal label",
-        "Subtotal"
-      )}</span> <span class="num">${money(subtotal)}</span></p>`
-    )
-    if (layout.sections.discount) {
-      add(`      <p>Discount (${Math.round(layout.discountRate * 100)}%) <span class="num">-${money(discount)}</span></p>`)
-    }
-    if (layout.sections.taxes) {
-      add(`      <p>Tax (${Math.round(layout.taxRate * 100)}%) <span class="num">${money(tax)}</span></p>`)
-    }
-    tag(
-      "Total label",
-      `      <p class="total"><span data-el="Total label">${ov(
-        "Total label",
-        "Total"
-      )}</span> <span class="num">${money(total)}</span></p>`
-    )
-    add(`    </section>`)
-  })
-
-  if (layout.sections.onlinePayment) {
-    add(`    <!-- Pay online -->`)
-    block("Pay online", () => {
-      tag(
-        "Pay online button",
-        `    <a class="pay-online" href="#" data-el="Pay online button">${ov(
-          "Pay online button",
-          "Pay online"
-        )}</a>`
-      )
-    })
-  }
-
-  if (
-    layout.sections.notes ||
-    layout.sections.terms ||
-    layout.sections.paymentDetails
-  ) {
-    add(`    <!-- Notes & terms -->`)
-    block("Notes & terms", () => {
-      add(`    <section data-el="Notes &amp; terms">`)
-      if (layout.sections.notes) {
-        tag(
-          "Notes heading",
-          `      <h3 data-el="Notes heading">${ov("Notes heading", "Notes")}</h3>`
-        )
-        tag(
-          "Notes body",
-          `      <p class="muted" data-el="Notes body">${ov(
-            "Notes body",
-            `Thank you for your business.${
-              layout.emphasis ? ` Designed to emphasise ${layout.emphasis}.` : ""
-            }`
-          )}</p>`
-        )
-      }
-      if (layout.sections.terms) {
-        tag(
-          "Payment terms heading",
-          `      <h3 data-el="Payment terms heading">${ov(
-            "Payment terms heading",
-            "Payment terms"
-          )}</h3>`
-        )
-        tag(
-          "Payment terms body",
-          `      <p class="muted" data-el="Payment terms body">${ov(
-            "Payment terms body",
-            "Payment due within 14 days. Late payments may incur a 1.5% monthly fee."
-          )}</p>`
-        )
-      }
-      if (layout.sections.paymentDetails) {
-        tag(
-          "Payment details heading",
-          `      <h3 data-el="Payment details heading">${ov(
-            "Payment details heading",
-            "Payment details"
-          )}</h3>`
-        )
-        tag(
-          "Payment details account",
-          `      <p class="muted" data-el="Payment details account">${ov(
-            "Payment details account",
-            `Bank: ${layout.businessName} · Acct 0042 1188`
-          )}</p>`
-        )
-        tag(
-          "Payment details routing",
-          `      <p class="muted" data-el="Payment details routing">${ov(
-            "Payment details routing",
-            "Routing 110000000 · SWIFT NWBKUS33"
-          )}</p>`
-        )
-      }
-      add(`    </section>`)
-    })
-  }
-
-  add(`  </body>`)
-  add(`</html>`)
-
-  return { code: lines.join("\n"), ranges }
+  return { code: serialized.html, ranges: serialized.ranges }
 }
 
 // Syntax palette from Figma (Email Marketing · Code snippet, 299:76555).
@@ -3381,20 +3468,17 @@ function CodePreviewFrame({ html }: { html: string }) {
  * (including new structure like extra line-item rows) renders verbatim in the
  * preview. "Revert to layout" restores the structured + AI model.
  */
-function LayoutCodeEditor() {
+function LayoutCodeEditor({ derived }: { derived: { code: string; ranges: Record<string, [number, number]> } }) {
   const {
-    generatedLayout: layout,
     selections,
-    layerText,
     codeOverride,
     isCodeDetached,
     detachCode,
     updateCodeOverride,
+    commitCodeOverrideVersion,
+    documentEditingLocked,
   } = useLayoutBuilder()
-  const { code, ranges } = useMemo(
-    () => buildCode(layout, layerText),
-    [layout, layerText]
-  )
+  const { code, ranges } = derived
 
   // Before any edit the editor shows the generated `code` (a live projection of
   // the structured model). The first edit makes the code the source of truth:
@@ -3462,7 +3546,16 @@ function LayoutCodeEditor() {
       </div>
       <textarea
         value={displayText}
+        readOnly={documentEditingLocked}
+        onBlur={() => {
+          if (isCodeDetached) {
+            commitCodeOverrideVersion()
+          }
+        }}
         onChange={(event) => {
+          if (documentEditingLocked) {
+            return
+          }
           if (isCodeDetached) {
             updateCodeOverride(event.target.value)
             return
@@ -3548,135 +3641,11 @@ function CanvasBlankEmptyState({
  * (matches the funnel-builder drop affordance). End caps + a 3px bar read as a
  * clear "your element lands here" cue. Collapses to nothing when inactive.
  */
-function DropIndicator({ active }: { active: boolean }) {
-  return (
-    <div
-      className={cn(
-        "flex w-full items-center transition-opacity duration-150",
-        active ? "opacity-100" : "h-0 opacity-0"
-      )}
-      aria-hidden
-    >
-      <span className="size-2 shrink-0 rounded-full bg-[#2970ff]" />
-      <span className="h-[3px] flex-1 rounded-full bg-[#2970ff]" />
-      <span className="size-2 shrink-0 rounded-full bg-[#2970ff]" />
-    </div>
-  )
-}
-
-/**
- * Drop target on the blank build-from-scratch page. `seam` is the thin gap
- * between placed blocks; `fill` is the tall empty-page target shown before the
- * first element exists. Both insert at `index` so a drop lands exactly where
- * the blue line previews.
- */
-function BlankDropZone({
-  index,
-  variant = "seam",
-}: {
-  index: number
-  variant?: "seam" | "fill" | "tail"
-}) {
-  const { addPlacedElement } = useLayoutBuilder()
-  const [over, setOver] = useState(false)
-
-  const accept = (event: React.DragEvent) => {
-    if (!event.dataTransfer.types.includes(ELEMENT_DRAG_MIME)) {
-      return
-    }
-    event.preventDefault()
-    event.dataTransfer.dropEffect = "copy"
-    setOver(true)
-  }
-
-  const handleDragLeave = (event: React.DragEvent) => {
-    const related = event.relatedTarget as Node | null
-    if (related && event.currentTarget.contains(related)) {
-      return
-    }
-    setOver(false)
-  }
-
-  const handleDrop = (event: React.DragEvent) => {
-    event.preventDefault()
-    // Stop the canvas-level handler from treating this as a miss/revert.
-    event.stopPropagation()
-    setOver(false)
-    const payload = parseElementDrag(event.dataTransfer)
-    if (!payload) {
-      return
-    }
-    addPlacedElement({
-      kind: payload.kind,
-      label: payload.label,
-      zone: "end",
-      index,
-    })
-  }
-
-  if (variant === "fill") {
-    return (
-      <div
-        onDragOver={accept}
-        onDragEnter={accept}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={cn(
-          "flex min-h-[320px] flex-1 flex-col items-center justify-center gap-3 rounded-[8px] border border-dashed p-8 text-center transition-colors",
-          over ? "border-[#2970ff] bg-[#eff8ff]" : "border-[#d0d5dd] bg-transparent"
-        )}
-      >
-        <DropIndicator active={over} />
-        <p className="font-[family-name:var(--font-inter)] text-sm font-medium leading-5 text-[#475467]">
-          Drop elements here to start building
-        </p>
-        <p className="font-[family-name:var(--font-inter)] text-xs leading-[18px] text-[#98a2b3]">
-          Drag any element from the Add elements panel onto the page
-        </p>
-      </div>
-    )
-  }
-
-  // The trailing zone grows to fill the rest of the sheet so a drop anywhere in
-  // the empty space below the last block appends to the end.
-  if (variant === "tail") {
-    return (
-      <div
-        onDragOver={accept}
-        onDragEnter={accept}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className="flex min-h-[56px] flex-1 flex-col pt-1.5"
-        aria-hidden
-      >
-        <DropIndicator active={over} />
-      </div>
-    )
-  }
-
-  return (
-    <div
-      onDragOver={accept}
-      onDragEnter={accept}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className="relative -my-1.5 flex h-3 items-center"
-      aria-hidden
-    >
-      <DropIndicator active={over} />
-    </div>
-  )
-}
-
-/**
- * The blank build-from-scratch page: a white invoice-sized sheet that only ever
- * holds the elements the user drops (no invoice scaffold). Drop seams between
- * blocks let new elements be inserted at any position.
- */
 function BlankPage() {
   const { placedElements, mediumId } = useLayoutBuilder()
   const profile = getDocumentPageProfile(mediumId)
   const { padding } = profile
+  const roots = rootsOf(placedElements)
 
   return (
     <DocumentStage>
@@ -3694,20 +3663,29 @@ function BlankPage() {
             paddingRight: padding.right,
           }}
         >
-          {placedElements.length === 0 ? (
-            <BlankDropZone index={0} variant="fill" />
+          {roots.length === 0 ? (
+            <DropSlot dest={{ kind: "root", zone: "end", index: 0 }} variant="fill" />
           ) : (
             <>
-              <BlankDropZone index={0} />
-              {placedElements.map((element, elementIndex) => (
+              <DropSlot dest={{ kind: "root", zone: "end", index: 0 }} />
+              {roots.map((element, elementIndex) => (
                 <Fragment key={element.id}>
                   <SelectablePlacedElement element={element} />
-                  {elementIndex < placedElements.length - 1 ? (
-                    <BlankDropZone index={elementIndex + 1} />
+                  {elementIndex < roots.length - 1 ? (
+                    <DropSlot
+                      dest={{
+                        kind: "root",
+                        zone: "end",
+                        index: elementIndex + 1,
+                      }}
+                    />
                   ) : null}
                 </Fragment>
               ))}
-              <BlankDropZone index={placedElements.length} variant="tail" />
+              <DropSlot
+                dest={{ kind: "root", zone: "end", index: roots.length }}
+                variant="tail"
+              />
             </>
           )}
         </div>
@@ -3731,77 +3709,20 @@ function BlankCanvas({
   onInsertElements: () => void
   onGenerate: () => void
 }) {
-  const { placedElements } = useLayoutBuilder()
-  const [dragging, setDragging] = useState(false)
-  // Enter/leave fire for every nested child during a drag; a depth counter
-  // tells a real boundary crossing apart from movement between children.
-  const depthRef = useRef(0)
-
-  // Safety net for a cancelled drag: when a drag ends without a drop (dropped
-  // off-canvas, or Escape), the canvas may never receive a balanced dragleave —
-  // the element under the cursor can unmount mid-drag. `dragend`/`drop` fire
-  // globally at the end of any drag, so reset there to restore the empty state.
-  useEffect(() => {
-    const reset = () => {
-      depthRef.current = 0
-      setDragging(false)
-    }
-    window.addEventListener("dragend", reset)
-    window.addEventListener("drop", reset)
-    return () => {
-      window.removeEventListener("dragend", reset)
-      window.removeEventListener("drop", reset)
-    }
-  }, [])
-
-  const carriesElement = (event: React.DragEvent) =>
-    event.dataTransfer.types.includes(ELEMENT_DRAG_MIME)
-
-  const handleDragEnter = (event: React.DragEvent) => {
-    if (!carriesElement(event)) {
-      return
-    }
-    event.preventDefault()
-    depthRef.current += 1
-    setDragging(true)
-  }
-
-  const handleDragOver = (event: React.DragEvent) => {
-    if (!carriesElement(event)) {
-      return
-    }
-    event.preventDefault()
-    event.dataTransfer.dropEffect = "copy"
-  }
-
-  const handleDragLeave = (event: React.DragEvent) => {
-    if (!carriesElement(event)) {
-      return
-    }
-    depthRef.current = Math.max(0, depthRef.current - 1)
-    if (depthRef.current === 0) {
-      setDragging(false)
-    }
-  }
-
-  const handleDrop = () => {
-    depthRef.current = 0
-    setDragging(false)
-  }
-
+  const { placedElements, elementDrag, addingElement, browsingSavedItems } = useLayoutBuilder()
   const hasContent = placedElements.length > 0
-  const showPage = hasContent || dragging
+  const showPage = hasContent || Boolean(elementDrag) || addingElement || browsingSavedItems
 
   return (
     <div
       className="flex min-h-0 flex-1 flex-col"
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      data-blank-canvas={showPage ? "page" : "cta"}
     >
       {showPage ? (
-        <div className="flex min-w-0 flex-1 items-start justify-center overflow-auto bg-[#f9fafb] p-4">
+        <div
+          data-canvas-scroll
+          className="flex min-w-0 flex-1 items-start justify-center overflow-auto bg-[#f9fafb] p-4"
+        >
           <BlankPage />
         </div>
       ) : (
@@ -3844,6 +3765,88 @@ function CanvasWorkingShimmer() {
   )
 }
 
+function FamilyDocumentSurface() {
+  const { generatedLayout: layout, updateLayout, mediumId, brandCatalog } =
+    useLayoutBuilder()
+  const pageProfile = getDocumentPageProfile(mediumId)
+  const family = normalizeLayoutStyle(layout.style)
+  const paperClassName = cn(
+    paperFontForFamily(family),
+    family === "ledger" ? "bg-[#101218]" : "bg-white"
+  )
+
+  return (
+    <PaginatedDocument
+      pageWidth={pageProfile.widthPx}
+      pageHeight={pageProfile.heightPx}
+      padTop={0}
+      padBottom={0}
+      paperClassName={cn("bg-white", paperClassName)}
+    >
+      <SectionPathContext.Provider
+        value={{
+          slots: [],
+          displays: [],
+        }}
+      >
+      <FamilySlotsProvider
+        value={{
+          text: ({ label, slot, occurrence, value, className, onCommit }) => (
+            <EditableText
+              label={label}
+              slot={slot}
+              occurrence={occurrence}
+              value={value}
+              className={className}
+              onCommit={(next) => {
+                if (onCommit) {
+                  onCommit(next)
+                  return
+                }
+                const key = slot ?? slotFromDisplayLabel(label)
+                if (key === "business-name") {
+                  updateLayout({ businessName: next })
+                }
+                if (key === "client-name") {
+                  updateLayout({ clientName: next })
+                }
+                if (key === "document-number") {
+                  updateLayout({ documentNumber: next })
+                }
+                if (key === "issue-date") {
+                  updateLayout({ issueDate: next })
+                }
+                if (key === "due-date") {
+                  updateLayout({ dueDate: next })
+                }
+              }}
+            />
+          ),
+          section: ({ label, slot, occurrence, className, style, children }) => (
+            <SelectableSection
+              label={label}
+              slot={slot}
+              occurrence={occurrence}
+              className={className}
+              style={style}
+            >
+              {children}
+            </SelectableSection>
+          ),
+          zone: (zone) => <ElementDropZone zone={zone} />,
+        }}
+      >
+        <InvoiceFamilyDocument
+          layout={layout}
+          pageProfile={pageProfile}
+          customBoards={brandCatalog}
+        />
+      </FamilySlotsProvider>
+      </SectionPathContext.Provider>
+    </PaginatedDocument>
+  )
+}
+
 export function LayoutBuilderCanvas() {
   const {
     status,
@@ -3858,21 +3861,65 @@ export function LayoutBuilderCanvas() {
     openAddElements,
     focusPrompt,
     canvasToast,
-    generatedLayout,
     mediumId,
+    generatedLayout,
+    layerText,
+    layerStyles,
+    hiddenLayers,
+    layerDuplicates,
+    brandTokens,
+    isReferenceReconstruction,
+    referencePreviewUrl,
+    referenceSourceName,
+    referenceSourceId,
+    referenceMoodHex,
+    canCompareReferenceResult,
+    compareWithReference,
+    setCompareWithReference,
+    todos,
   } = useLayoutBuilder()
   // Resolves medium context for future preview sizing; kept for parity with prompt selection.
   useMediumsStore()
 
-  // The detailed branded template has its own editable surface (mirrors the pure
-  // `BrandedInvoiceDocument` used by cards + preview, so they can't drift). Other
-  // styles use the standard editable `DocumentSurface`.
-  const documentBody =
-    generatedLayout.style === "branded" ? (
-      <BrandedDocumentSurface />
-    ) : (
-      <DocumentSurface />
-    )
+  const documentBody = <FamilyDocumentSurface />
+  const [sourceFailed, setSourceFailed] = useState(false)
+
+  useEffect(() => {
+    setSourceFailed(false)
+  }, [referencePreviewUrl])
+
+  const comparisonSource =
+    canCompareReferenceResult && referencePreviewUrl && !sourceFailed
+      ? {
+          id: referenceSourceId ?? "creation-primary",
+          name: referenceSourceName ?? "reference image",
+          previewUrl: referencePreviewUrl,
+        }
+      : null
+
+  const derivedCode = useMemo(
+    () =>
+      buildCodeFromDocument(generatedLayout, {
+        layerText,
+        layerStyles,
+        hiddenLayers,
+        layerDuplicates,
+        placedElements,
+        brandTokens,
+        pageProfile: getDocumentPageProfile(mediumId),
+      }),
+    [
+      generatedLayout,
+      layerText,
+      layerStyles,
+      hiddenLayers,
+      layerDuplicates,
+      placedElements,
+      brandTokens,
+      mediumId,
+    ]
+  )
+  const previewHtml = isCodeDetached ? codeOverride ?? "" : derivedCode.code
 
   const isReady = status === "ready"
   // Blank build-from-scratch session (Figma 3268:37410): the canvas owns its own
@@ -4000,12 +4047,36 @@ export function LayoutBuilderCanvas() {
             onGenerate={focusPrompt}
           />
         ) : customizingPlaced ? (
-          <div className="flex min-w-0 flex-1 items-start justify-center overflow-auto bg-[#f9fafb] p-4">
+          <div
+            data-canvas-scroll
+            className="flex min-w-0 flex-1 items-start justify-center overflow-auto bg-[#f9fafb] p-4"
+          >
             <BlankPage />
+          </div>
+        ) : showCarousel && isReferenceReconstruction ? (
+          <div className="flex flex-1 items-center justify-center overflow-hidden">
+            <ReconstructingCanvas
+              phase={
+                status === "thinking"
+                  ? "thinking"
+                  : status === "asking"
+                    ? "asking"
+                    : "reasoning"
+              }
+              referenceUrl={referencePreviewUrl}
+              moodHex={referenceMoodHex}
+              stageLabel={
+                todos.find((item) => item.status === "in-progress")?.label ??
+                todos.find((item) => item.status === "pending")?.label ??
+                "Reading structure"
+              }
+            />
           </div>
         ) : showCarousel ? (
           <div className="flex flex-1 items-center justify-center overflow-hidden">
-            <GeneratingCarousel />
+            <GeneratingCarousel
+              phase={status === "thinking" ? "thinking" : status === "asking" ? "asking" : "reasoning"}
+            />
           </div>
         ) : showSplit ? (
           <>
@@ -4015,15 +4086,11 @@ export function LayoutBuilderCanvas() {
             >
               <CodeEditorBar />
               <div className="min-h-0 flex-1 overflow-auto">
-                <LayoutCodeEditor />
+                <LayoutCodeEditor derived={derivedCode} />
               </div>
             </div>
-            <div className="flex h-full min-w-0 flex-1 items-start justify-center overflow-auto border-l border-[#eaecf0] bg-[#f9fafb] p-4">
-              {isCodeDetached ? (
-                <CodePreviewFrame html={codeOverride ?? ""} />
-              ) : (
-                <DocumentStage>{documentBody}</DocumentStage>
-              )}
+            <div className="relative flex h-full min-w-0 flex-1 items-start justify-center overflow-auto border-l border-[#eaecf0] bg-[#f9fafb] p-4">
+              <CodePreviewFrame html={previewHtml} />
             </div>
 
             {/* Drag handle on the code/preview seam (Figma 3189:58977). Pinned to
@@ -4057,15 +4124,34 @@ export function LayoutBuilderCanvas() {
           <div className="flex h-full w-full flex-col overflow-hidden bg-[#1c1917]">
             <CodeEditorBar />
             <div className="min-h-0 flex-1 overflow-auto">
-              <LayoutCodeEditor />
+              <LayoutCodeEditor derived={derivedCode} />
             </div>
           </div>
         ) : (
-          <div className="flex min-w-0 flex-1 items-start justify-center overflow-auto bg-[#f9fafb] p-4">
+          <div
+            data-canvas-scroll
+            className="relative flex min-w-0 flex-1 items-start justify-center overflow-auto bg-[#f9fafb] p-4"
+          >
             {isCodeDetached ? (
               <CodePreviewFrame html={codeOverride ?? ""} />
             ) : (
-              <DocumentStage>{documentBody}</DocumentStage>
+              <>
+                <CompareDocumentStage
+                  documentBody={documentBody}
+                  source={comparisonSource}
+                  compareWithReference={compareWithReference}
+                  onSourceUnavailable={() => {
+                    setSourceFailed(true)
+                    setCompareWithReference(false)
+                  }}
+                />
+                {isReady && comparisonSource ? (
+                  <ReferenceResultToggle
+                    compareWithReference={compareWithReference}
+                    onChange={setCompareWithReference}
+                  />
+                ) : null}
+              </>
             )}
           </div>
         )}
@@ -4074,6 +4160,7 @@ export function LayoutBuilderCanvas() {
         {showWorkingEdge ? <CanvasWorkingEdge /> : null}
 
         {canvasToast ? <CanvasToast message={canvasToast} /> : null}
+        <SaveItemNamePopover />
       </div>
     </div>
   )

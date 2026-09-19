@@ -12,6 +12,7 @@ import { mkdir, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { cleanupIntermediateVideos } from "./cleanup-videos"
 import { chromium, type Locator, type Page } from "playwright"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -281,6 +282,7 @@ async function main() {
     }
 
     await video.saveAs(OUTPUT_WEBM)
+    await cleanupIntermediateVideos(ARTIFACTS_DIR)
     await browser.close()
   }
 

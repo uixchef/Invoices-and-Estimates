@@ -66,7 +66,7 @@ export function LayoutBuilderHeader() {
     hasGeneratedOnce,
     placedElements,
     hasUnsavedChanges,
-    markSaved,
+    saveLayout,
   } = useLayoutBuilder()
 
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
@@ -98,15 +98,19 @@ export function LayoutBuilderHeader() {
   }
 
   const handleSave = () => {
-    // Persistence is stubbed in the prototype; saving confirms via a toast and
-    // keeps the user in the builder (unlike Publish, which returns to the list).
-    showSuccess(`${name} has been saved.`)
-    markSaved()
+    const saved = saveLayout("Draft")
+    if (!saved) {
+      return
+    }
+    showSuccess(`${saved.name} has been saved.`)
   }
 
   const handlePublish = () => {
-    showSuccess(`${name} has been published.`)
-    markSaved()
+    const saved = saveLayout("Published")
+    if (!saved) {
+      return
+    }
+    showSuccess(`${saved.name} has been published.`)
     router.push(LAYOUTS_LIST_HREF)
   }
 
@@ -125,7 +129,7 @@ export function LayoutBuilderHeader() {
 
   return (
     <>
-      <div className="flex h-[52px] w-full shrink-0 items-center border-b border-[#d0d5dd] bg-white px-4 py-1">
+      <div className="flex h-[52px] w-full shrink-0 items-center border-b border-[#eaecf0] bg-white px-4 py-1">
       <div className="w-[200px] shrink-0">
         <button
           type="button"

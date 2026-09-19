@@ -1,6 +1,5 @@
 "use client"
 
-import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Input } from "@/components/highrise/input-text"
@@ -12,18 +11,18 @@ import {
   navGroupBeforePayments,
 } from "@/lib/payment-hub-sidebar-nav"
 import { usePaymentsHubSidebarCollapsed } from "@/lib/payment-hub-sidebar"
+import { SHELL_UNAVAILABLE_LABEL } from "@/lib/payment-hub-nav"
 import { cn } from "@/lib/utils"
 
 const ICON = "/icons/sidebar"
 
 function SidebarNavIcon({ file, active }: { file: string; active?: boolean }) {
   return (
-    <Image
+    <img
       src={`${ICON}/${file}`}
       alt=""
       width={24}
       height={24}
-      unoptimized
       className={cn(
         "size-6 shrink-0 object-contain",
         active && "brightness-0 invert"
@@ -124,129 +123,127 @@ export function Sidebar() {
                 collapsed ? "w-full max-w-[40px]" : "w-full"
               )}
             >
-              <Image
+              <img
                 src="/payment-hub-logo.png"
                 alt="Brand logo"
                 width={160}
                 height={40}
-                unoptimized
                 className={cn(
                   "h-10 w-auto max-w-full object-contain object-center",
                   collapsed && "max-h-10 max-w-[40px]"
                 )}
-                priority
               />
             </div>
 
             {collapsed ? (
-              <button
-                type="button"
-                className="flex w-full max-w-[40px] items-center justify-center rounded-[8px] bg-[#344054] p-2 hover:bg-[#344054]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-                aria-label="Switch subaccount"
+              <span
+                className="flex w-full max-w-[40px] items-center justify-center rounded-[8px] bg-[#344054] p-2"
+                title={SHELL_UNAVAILABLE_LABEL}
+                aria-label={`Switch subaccount. ${SHELL_UNAVAILABLE_LABEL}`}
+                role="img"
               >
-                <Image
+                <img
                   src={`${ICON}/chevron-right.svg`}
                   alt=""
                   width={16}
                   height={16}
-                  unoptimized
                   className="size-4 shrink-0"
                   aria-hidden
                 />
-              </button>
+              </span>
             ) : (
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-[8px] bg-[#344054] p-2 text-left text-sm font-medium leading-none text-white hover:bg-[#344054]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+              <div
+                className="flex w-full items-center gap-2 rounded-[8px] bg-[#344054] p-2 text-left text-sm font-medium leading-none text-white"
+                title={SHELL_UNAVAILABLE_LABEL}
               >
                 <span className="min-w-0 flex-1 truncate opacity-[0.71]">
                   Headquarters 1800-PLUMBER-200..
                 </span>
-                <Image
+                <img
                   src={`${ICON}/chevron-right.svg`}
                   alt=""
                   width={16}
                   height={16}
-                  unoptimized
                   className="size-4 shrink-0"
                   aria-hidden
                 />
-              </button>
+              </div>
             )}
           </div>
 
           {collapsed ? (
             <div className="flex w-full flex-col gap-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-center rounded-[8px] border border-[#344054] p-1 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-                aria-label="Search"
+              <span
+                className="flex w-full items-center justify-center rounded-[8px] border border-[#344054] p-1"
+                title={SHELL_UNAVAILABLE_LABEL}
+                aria-label={`Search. ${SHELL_UNAVAILABLE_LABEL}`}
+                role="img"
               >
-                <Image
+                <img
                   src={`${ICON}/search-md.svg`}
                   alt=""
                   width={16}
                   height={16}
-                  unoptimized
                   className="size-4 shrink-0"
                   aria-hidden
                 />
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center justify-center rounded-[8px] bg-[#344054] px-[11px] py-1.5 hover:bg-[#3d4a5f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-                aria-label="Quick actions"
+              </span>
+              <span
+                className="flex w-full items-center justify-center rounded-[8px] bg-[#344054] px-[11px] py-1.5"
+                title={SHELL_UNAVAILABLE_LABEL}
+                aria-label={`Quick actions. ${SHELL_UNAVAILABLE_LABEL}`}
+                role="img"
               >
-                <Image
+                <img
                   src={`${ICON}/icon_quickact.svg`}
                   alt=""
                   width={20}
                   height={20}
-                  unoptimized
                   className="size-5"
                   aria-hidden
                 />
-              </button>
+              </span>
             </div>
           ) : (
             <div className="flex shrink-0 gap-2">
               <div className="flex min-h-9 min-w-0 flex-1 items-center justify-between rounded-[8px] border border-[#344054] py-1 pl-2 pr-1">
                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <Image
+                  <img
                     src={`${ICON}/search-md.svg`}
                     alt=""
                     width={16}
                     height={16}
-                    unoptimized
                     className="size-4 shrink-0"
                     aria-hidden
                   />
                   <Input
                     type="search"
                     placeholder="Search"
-                    aria-label="Search"
-                    className="h-auto min-w-0 flex-1 border-0 bg-transparent p-0 text-base leading-6 text-white placeholder:text-[#98a2b3] focus-visible:ring-0"
+                    aria-label={`Search. ${SHELL_UNAVAILABLE_LABEL}`}
+                    readOnly
+                    tabIndex={-1}
+                    className="h-auto min-w-0 flex-1 cursor-default border-0 bg-transparent p-0 text-base leading-6 text-white placeholder:text-[#98a2b3] focus-visible:ring-0"
                   />
                 </div>
                 <kbd className="shrink-0 rounded border border-[#344054] bg-[#344054] px-1 py-0.5 text-xs font-normal leading-5 text-[#d0d5dd]">
                   ⌘K
                 </kbd>
               </div>
-              <button
-                type="button"
-                className="flex shrink-0 items-center justify-center rounded-[8px] bg-[#344054] px-[11px] py-1.5 hover:bg-[#3d4a5f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-                aria-label="Quick actions"
+              <span
+                className="flex shrink-0 items-center justify-center rounded-[8px] bg-[#344054] px-[11px] py-1.5"
+                title={SHELL_UNAVAILABLE_LABEL}
+                aria-label={`Quick actions. ${SHELL_UNAVAILABLE_LABEL}`}
+                role="img"
               >
-                <Image
+                <img
                   src={`${ICON}/icon_quickact.svg`}
                   alt=""
                   width={20}
                   height={20}
-                  unoptimized
                   className="size-5"
                   aria-hidden
                 />
-              </button>
+              </span>
             </div>
           )}
 
@@ -331,12 +328,11 @@ export function Sidebar() {
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         className="absolute bottom-6 -right-3 flex size-6 items-center justify-center overflow-hidden rounded-xl border-0 bg-[#73e2a3] p-0 shadow-[0_1px_3px_rgba(16,24,40,0.1),0_1px_2px_rgba(16,24,40,0.06)] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]"
       >
-        <Image
+        <img
           src={`${ICON}/chevron-left.svg`}
           alt=""
           width={16}
           height={16}
-          unoptimized
           className={cn(
             "block size-4 transition-transform duration-200",
             collapsed && "rotate-180"

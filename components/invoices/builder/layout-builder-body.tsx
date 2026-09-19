@@ -4,9 +4,11 @@ import { useCallback, useRef } from "react"
 import { GripVertical } from "lucide-react"
 
 import { EditsOverlay } from "@/components/invoices/builder/edits-overlay"
+import { ElementDragLayer } from "@/components/invoices/builder/element-drag-layer"
 import { InvoiceAiPanel } from "@/components/invoices/builder/invoice-ai-panel"
 import { LayoutBuilderCanvas } from "@/components/invoices/builder/layout-builder-canvas"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
+import { PRODUCT_RESIZE_LABEL } from "@/lib/product-name"
 
 const KEYBOARD_STEP = 16
 
@@ -96,7 +98,7 @@ export function LayoutBuilderBody() {
           <div
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize Invoice AI panel"
+            aria-label={PRODUCT_RESIZE_LABEL}
             aria-valuenow={panelWidth}
             aria-valuemin={panelMinWidth}
             aria-valuemax={panelMaxWidth}
@@ -122,6 +124,7 @@ export function LayoutBuilderBody() {
           slot empty so the canvas stays full width); docked it becomes a
           full-height right column and the canvas reflows (Figma 3181:33796). */}
       <EditsOverlay />
+      <ElementDragLayer />
     </div>
   )
 }

@@ -1,0 +1,13 @@
+---
+description: Always reveal captured screenshots in Finder
+alwaysApply: true
+---
+
+# Open screenshots in Finder
+
+Whenever this session writes, captures, or updates screenshots (PNG/JPEG/WebP stills, including portfolio capture artifacts), immediately open them in Finder with macOS `open`.
+
+- Prefer `open -R` on the files so Finder reveals the actual images.
+- If there are several stills in one folder, also `open` the folder.
+- Do this as soon as the files exist. Do not wait to be asked.
+- Do not substitute Preview-only or in-chat thumbnails for this step.

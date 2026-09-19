@@ -45,12 +45,21 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { BRAND_FONTS, inheritPlacedAppearance, type ResolvedFamilyBrand } from "@/lib/brand-boards"
+import {
+  connectedFieldsForLayer,
+  effectiveInspectorTab,
+  inspectorPropertyGroups,
+  resolveElementProperties,
+} from "@/lib/element-properties"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
 import type {
   BuilderConditionRule,
   BuilderLayerStyle,
+  PlacedElement,
 } from "@/lib/layout-builder-types"
 import { isPageLayer } from "@/lib/layout-builder-types"
+import { authoredKeyFromId } from "@/lib/native-instance-id"
 import { cn } from "@/lib/utils"
 
 /**
@@ -109,10 +118,8 @@ function IconImg({
 }
 
 const FONT_FAMILIES = [
-  { label: "Default", value: "" },
-  { label: "Sans serif", value: "Inter, system-ui, sans-serif" },
-  { label: "Serif", value: 'Georgia, "Times New Roman", Times, serif' },
-  { label: "Monospace", value: "ui-monospace, SFMono-Regular, Menlo, monospace" },
+  { label: "Brand default", value: "" },
+  ...BRAND_FONTS.map((font) => ({ label: font.label, value: font.value })),
 ]
 
 const FONT_WEIGHTS = [
@@ -238,53 +245,6 @@ const CONNECTABLE_FIELDS = [
   "Payment methods › Stripe › Bank debit only",
   "Payment methods › NMI › Bank debit only",
 ]
-
-/**
- * Data fields bound to a given layer. A container (section) exposes every field
- * it contains; a single text leaf binds to exactly one. Keyed by the canvas's
- * selectable labels so the Advanced panel reflects the real selection.
- */
-const CONNECTED_FIELDS_BY_LAYER: Record<string, string[]> = {
-  // Containers
-  Header: ["Company name", "Business address", "Document type", "Invoice number"],
-  "Billing details": [
-    "Client name",
-    "Address line 1",
-    "Address line 2",
-    "Issue date",
-    "Due date",
-    "Currency",
-  ],
-  Totals: ["Subtotal", "Tax total", "Grand total"],
-  "Table header": ["Item description", "Quantity", "Unit price", "Line total"],
-  "Pay online": ["Online payment link", "Grand total"],
-  // Single leaves
-  "Business name": ["Company name"],
-  "Business address": ["Business address"],
-  "Document type": ["Document type"],
-  "Document number": ["Invoice number"],
-  "Client name": ["Client name"],
-  "Client address line 1": ["Address line 1"],
-  "Client address line 2": ["Address line 2"],
-  "Issue date": ["Issue date"],
-  "Due date": ["Due date"],
-  "Currency code": ["Currency"],
-}
-
-/** Resolves the connected fields for whichever layer is selected on the canvas. */
-function connectedFieldsFor(label: string | null): string[] {
-  if (!label) {
-    return []
-  }
-  if (label in CONNECTED_FIELDS_BY_LAYER) {
-    return CONNECTED_FIELDS_BY_LAYER[label]
-  }
-  // Line-item rows are labelled "Item 1", "Item 2", … and share a binding set.
-  if (label.startsWith("Item ")) {
-    return ["Item description", "Quantity", "Unit price", "Line total"]
-  }
-  return []
-}
 
 /** Conditional-logic accordion items — all share the same show/hide form. */
 const CONDITION_ACCORDIONS: {
@@ -879,8 +839,32 @@ function ImageSourceField({
           onClear={clearImage}
         />
         <p className="font-[family-name:var(--font-inter)] text-xs leading-[17px] text-[#475467]">
-          Upload image of up to 10MB file size.
+          Upload image of up to 10MB file size, or use a demo image.
         </p>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { src: "/layouts/thumbnails/template-01.svg", label: "Demo 1" },
+            { src: "/layouts/thumbnails/template-02.svg", label: "Demo 2" },
+            { src: "/file.svg", label: "Mark" },
+          ].map((demo) => (
+            <button
+              key={demo.src}
+              type="button"
+              onClick={() =>
+                set({
+                  backgroundImage: demo.src,
+                  imageAlign: "full",
+                  imageSizeMode: "custom",
+                  width: style.width ?? 160,
+                  height: style.height ?? 100,
+                })
+              }
+              className="rounded-[4px] border border-[#d0d5dd] px-2 py-1 text-xs text-[#344054] outline-none hover:border-[#84adff] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+            >
+              {demo.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {urlMode ? (
@@ -1272,12 +1256,11 @@ function PageWatermarkField({
 }
 
 /**
- * Edits inspector (Figma 3246:40316 / 3246:56726). Replaces the AI chat with a
- * two-tab property panel for the selected layer:
- *  - Style: typography, colors, spacing, sizing, and border — wired live to the
- *    layer's overrides so the preview updates instantly.
- *  - Advanced: conditional visibility, repetition, and data-field binding — UI
- *    scaffolding for forward-looking dynamic-content features.
+ * Edits inspector (Figma 3246:40316 / 3246:56726). Property groups come from
+ * the selected node's capabilities:
+ *  - Content: copy, bindings, and connected fields when those controls exist
+ *  - Style: typography, colors, spacing, sizing, and border
+ *  - Advanced: omitted until conditional rules have a real renderer
  */
 export function VisualEditsPanel() {
   const {
@@ -1289,64 +1272,119 @@ export function VisualEditsPanel() {
     layerText,
     setLayerText,
     placedElements,
+    generatedLayout,
+    brandTokens,
+    resetLayerToBrand,
   } = useLayoutBuilder()
 
   const inspectingPlacedKind = placedElements.find(
-    (element) => element.label === inspectingLayer
+    (element) => element.label === inspectingLayer || element.id === inspectingLayer
   )?.kind
+  const inspectingPlaced = placedElements.find(
+    (element) => element.label === inspectingLayer || element.id === inspectingLayer
+  )
+  const inspectingAuthoredKey = inspectingPlaced
+    ? undefined
+    : authoredKeyFromId(inspectingLayer ?? "")
+
+  const resolved = inspectingLayer
+    ? resolveElementProperties({
+        layerId: inspectingLayer,
+        authoredKey: inspectingAuthoredKey,
+        kind: inspectingLayerKind,
+        layout: generatedLayout,
+        tokens: brandTokens,
+        layerStyles,
+        layerText,
+        placed: inspectingPlaced,
+      })
+    : null
+
+  const groups = inspectorPropertyGroups({
+    layerId: inspectingLayer,
+    authoredKey: inspectingAuthoredKey,
+    kind: inspectingLayerKind,
+    placed: inspectingPlaced,
+  })
+  const activeTab = effectiveInspectorTab(editsTab, groups)
 
   if (!inspectingLayer) {
     return null
   }
 
-  if (editsTab === "advanced") {
+  if (isPageLayer(inspectingLayer)) {
+    return (
+      <PageStyleTab
+        key={inspectingLayer}
+        label={inspectingLayer}
+        style={resolved?.style ?? {}}
+        setLayerStyle={setLayerStyle}
+      />
+    )
+  }
+
+  if (activeTab === "advanced") {
     return <AdvancedTab />
   }
 
-  if (editsTab === "content") {
+  if (activeTab === "content") {
+    const showCopy =
+      inspectingLayerKind === "text" ||
+      inspectingPlacedKind === "button" ||
+      inspectingPlacedKind === "table"
     return (
       <ContentTab
+        key={inspectingLayer}
         label={inspectingLayer}
-        isPage={isPageLayer(inspectingLayer)}
-        // "Content" only applies to individual text layers, not sections /
-        // containers, which have no single editable string of their own.
+        authoredKey={inspectingAuthoredKey}
+        isPage={false}
         content={
-          inspectingLayerKind === "text"
-            ? (layerText[inspectingLayer] ?? "")
+          showCopy && inspectingPlacedKind !== "table"
+            ? (resolved?.content ?? "")
             : null
         }
         setContent={(next) => setLayerText(inspectingLayer, next)}
+        placed={inspectingPlaced}
       />
     )
   }
 
   return (
-    isPageLayer(inspectingLayer) ? (
-      <PageStyleTab
-        label={inspectingLayer}
-        style={layerStyles[inspectingLayer] ?? {}}
-        setLayerStyle={setLayerStyle}
-      />
-    ) : inspectingLayerKind === "image" ? (
+    inspectingLayerKind === "image" ? (
       <StyleTab
+        key={inspectingLayer}
         label={inspectingLayer}
-        style={layerStyles[inspectingLayer] ?? {}}
+        style={resolved?.style ?? {}}
+        override={resolved?.override ?? {}}
         setLayerStyle={setLayerStyle}
         variant="image"
+        brandTokens={brandTokens}
+        resetLayerToBrand={resetLayerToBrand}
+        placedKind={inspectingPlacedKind}
       />
     ) : inspectingLayerKind === "structural" ? (
       <StyleTab
+        key={inspectingLayer}
         label={inspectingLayer}
-        style={layerStyles[inspectingLayer] ?? {}}
+        style={resolved?.style ?? {}}
+        override={resolved?.override ?? {}}
         setLayerStyle={setLayerStyle}
         variant="structural"
         structuralPlacedKind={inspectingPlacedKind}
+        brandTokens={brandTokens}
+        resetLayerToBrand={resetLayerToBrand}
+        placedKind={inspectingPlacedKind}
       />
     ) : (
       <StyleTab
+        key={inspectingLayer}
         label={inspectingLayer}
-        style={layerStyles[inspectingLayer] ?? {}}
+        style={resolved?.style ?? {}}
+        override={resolved?.override ?? {}}
         setLayerStyle={setLayerStyle}
+        brandTokens={brandTokens}
+        resetLayerToBrand={resetLayerToBrand}
+        placedKind={inspectingPlacedKind}
       />
     )
   )
@@ -1437,6 +1475,26 @@ function PageStyleTab({
   )
 }
 
+const NATIVE_IDENTITY_BINDINGS = new Set([
+  "businessName",
+  "clientName",
+  "documentNumber",
+  "issueDate",
+  "dueDate",
+  "currencyCode",
+])
+
+function paymentBindKey(field: string | undefined): string | null {
+  if (!field?.startsWith("payment.")) {
+    return null
+  }
+  return field.slice("payment.".length)
+}
+
+function isNativeIdentityBinding(field: string | undefined): boolean {
+  return Boolean(field && NATIVE_IDENTITY_BINDINGS.has(field))
+}
+
 /**
  * Content tab (Figma 3344:47420). Edits the layer's text (text leaves only) and
  * manages the data fields bound to the layer. Connected-field management lives
@@ -1444,27 +1502,144 @@ function PageStyleTab({
  */
 function ContentTab({
   label,
+  authoredKey,
   content,
   setContent,
   isPage = false,
+  placed,
 }: {
   label: string
-  /**
-   * Editable text for an individual text layer; null for sections / containers
-   * (which hide the "Content" field entirely).
-   */
+  authoredKey?: string
   content: string | null
   setContent: (next: string) => void
-  /** Page layer has no bound fields or editable copy. */
   isPage?: boolean
+  placed?: PlacedElement
 }) {
+  const { updatePlacedElement, generatedLayout, updateLayout } = useLayoutBuilder()
+
   return (
     <div className="flex flex-col gap-6 pb-4">
-      {content !== null ? (
+      {placed?.kind === "button" ? (
+        <section className="flex flex-col gap-1">
+          <p className="text-xs font-medium leading-[18px] text-[#344054]">
+            Link
+          </p>
+          <input
+            type="url"
+            value={placed.href ?? ""}
+            onChange={(event) =>
+              updatePlacedElement(placed.id, { href: event.target.value })
+            }
+            placeholder="https://"
+            aria-label={`Link for ${label}`}
+            className={cn(
+              "h-9 w-full rounded-[4px] border border-[#d0d5dd] bg-white px-2",
+              "font-[family-name:var(--font-inter)] text-sm leading-5 text-[#101828]",
+              "outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+            )}
+          />
+        </section>
+      ) : null}
+      {placed?.bindToLineItems ? (
+        <section className="flex flex-col gap-3">
+          <p className="text-xs font-medium leading-[18px] text-[#344054]">
+            Line items
+          </p>
+          {generatedLayout.lineItems.map((item, index) => (
+            <div key={index} className="grid grid-cols-[1fr_56px_80px_auto] gap-2">
+              <input
+                value={item.description}
+                aria-label={`Item ${index + 1} description`}
+                onChange={(event) => {
+                  const lineItems = generatedLayout.lineItems.map((line, lineIndex) =>
+                    lineIndex === index
+                      ? { ...line, description: event.target.value }
+                      : line
+                  )
+                  updateLayout({ lineItems })
+                }}
+                className="h-8 rounded-[4px] border border-[#d0d5dd] px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+              />
+              <input
+                type="number"
+                value={item.qty}
+                aria-label={`Item ${index + 1} quantity`}
+                onChange={(event) => {
+                  const qty = Number(event.target.value) || 0
+                  const lineItems = generatedLayout.lineItems.map((line, lineIndex) =>
+                    lineIndex === index ? { ...line, qty } : line
+                  )
+                  updateLayout({ lineItems })
+                }}
+                className="h-8 rounded-[4px] border border-[#d0d5dd] px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+              />
+              <input
+                type="number"
+                value={item.rate}
+                aria-label={`Item ${index + 1} rate`}
+                onChange={(event) => {
+                  const rate = Number(event.target.value) || 0
+                  const lineItems = generatedLayout.lineItems.map((line, lineIndex) =>
+                    lineIndex === index ? { ...line, rate } : line
+                  )
+                  updateLayout({ lineItems })
+                }}
+                className="h-8 rounded-[4px] border border-[#d0d5dd] px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+              />
+              <button
+                type="button"
+                aria-label={`Remove item ${index + 1}`}
+                disabled={generatedLayout.lineItems.length <= 1}
+                onClick={() => {
+                  if (generatedLayout.lineItems.length <= 1) {
+                    return
+                  }
+                  updateLayout({
+                    lineItems: generatedLayout.lineItems.filter(
+                      (_, lineIndex) => lineIndex !== index
+                    ),
+                  })
+                }}
+                className="h-8 px-1 text-xs text-[#667085] outline-none hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40 disabled:opacity-40"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              updateLayout({
+                lineItems: [
+                  ...generatedLayout.lineItems,
+                  { description: "Item name", qty: 1, rate: 0 },
+                ],
+              })
+            }
+            className="self-start text-sm font-medium text-[#155eef] outline-none hover:text-[#004eeb] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+          >
+            Add line item
+          </button>
+        </section>
+      ) : null}
+      {content !== null && !placed?.bindToLineItems && !isNativeIdentityBinding(placed?.bindField) ? (
         <section className="flex flex-col gap-1">
           <textarea
             value={content}
-            onChange={(event) => setContent(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value
+              setContent(next)
+              const paymentKey = paymentBindKey(placed?.bindField)
+              if (paymentKey && placed) {
+                updateLayout({
+                  payment: {
+                    ...generatedLayout.payment,
+                    [paymentKey]: next,
+                  },
+                })
+                updatePlacedElement(placed.id, { content: next })
+              }
+            }}
             rows={2}
             aria-label={`Content for ${label}`}
             className={cn(
@@ -1482,7 +1657,37 @@ function ContentTab({
         </p>
       ) : null}
 
-      {!isPage ? <ConnectedFields label={label} /> : null}
+      {placed &&
+      !placed.bindToLineItems &&
+      ["heading", "paragraph", "list", "quote", "button"].includes(placed.kind) ? (
+        <section className="flex flex-col gap-1">
+          <p className="text-xs font-medium leading-[18px] text-[#344054]">
+            Bound field
+          </p>
+          <select
+            aria-label={`Bound field for ${label}`}
+            value={placed.bindField ?? ""}
+            onChange={(event) =>
+              updatePlacedElement(placed.id, {
+                bindField: event.target.value || undefined,
+              })
+            }
+            className="h-9 rounded-[4px] border border-[#d0d5dd] bg-white px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+          >
+            <option value="">None — static text</option>
+            <option value="businessName">Company name</option>
+            <option value="clientName">Client name</option>
+            <option value="documentNumber">Invoice number</option>
+            <option value="issueDate">Issue date</option>
+            <option value="dueDate">Due date</option>
+            <option value="currencyCode">Currency</option>
+          </select>
+        </section>
+      ) : null}
+
+      {connectedFieldsForLayer(label, authoredKey).length > 0 ? (
+        <ConnectedFields label={label} authoredKey={authoredKey} />
+      ) : null}
     </div>
   )
 }
@@ -1490,15 +1695,23 @@ function ContentTab({
 function StyleTab({
   label,
   style,
+  override,
   setLayerStyle,
   variant = "default",
   structuralPlacedKind,
+  brandTokens,
+  resetLayerToBrand,
+  placedKind,
 }: {
   label: string
   style: BuilderLayerStyle
+  override?: BuilderLayerStyle
   setLayerStyle: (label: string, patch: Partial<BuilderLayerStyle>) => void
   variant?: "default" | "image" | "structural"
   structuralPlacedKind?: string
+  brandTokens: ResolvedFamilyBrand
+  resetLayerToBrand: (label: string) => void
+  placedKind?: string
 }) {
   const isImage = variant === "image"
   const isStructural = variant === "structural"
@@ -1512,6 +1725,10 @@ function StyleTab({
   const [borderWidthPerSide, setBorderWidthPerSide] = useState(false)
 
   const set = (patch: Partial<BuilderLayerStyle>) => setLayerStyle(label, patch)
+  const inherited = inheritPlacedAppearance(placedKind ?? "paragraph", brandTokens)
+  const hasBrandOverride = Boolean(
+    override?.color || override?.fontFamily || override?.backgroundColor
+  )
 
   const setMarginSide = (
     side: "Top" | "Right" | "Bottom" | "Left",
@@ -1678,7 +1895,7 @@ function StyleTab({
             <FieldLabel>Style</FieldLabel>
             <div className="flex items-start gap-1">
               <StyleToggleButton
-                active={Boolean(style.bold)}
+                active={Boolean(style.bold) || (style.fontWeight ?? 0) >= 700}
                 label="Bold"
                 onClick={() => set({ bold: !style.bold })}
               >
@@ -1727,7 +1944,18 @@ function StyleTab({
 
       {/* Colors */}
       <section className="flex flex-col gap-3">
-        <SectionLabel>Colors</SectionLabel>
+        <div className="flex items-center justify-between gap-2">
+          <SectionLabel>Colors</SectionLabel>
+          {hasBrandOverride ? (
+            <button
+              type="button"
+              onClick={() => resetLayerToBrand(label)}
+              className="text-xs font-medium text-[#155eef] outline-none hover:text-[#004eeb] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
+            >
+              Reset to brand
+            </button>
+          ) : null}
+        </div>
         {isImage ? (
           <label className="flex flex-col gap-1">
             <FieldLabel>Block background</FieldLabel>
@@ -1740,7 +1968,7 @@ function StyleTab({
           <label className="flex flex-col gap-1">
             <FieldLabel>{isSpacer ? "Fill color" : "Line color"}</FieldLabel>
             <ColorField
-              value={style.backgroundColor}
+              value={style.backgroundColor ?? inherited.borderColor ?? inherited.backgroundColor}
               onChange={(next) => set({ backgroundColor: next })}
             />
           </label>
@@ -1748,7 +1976,10 @@ function StyleTab({
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1">
             <FieldLabel>Text</FieldLabel>
-            <ColorField value={style.color} onChange={(next) => set({ color: next })} />
+            <ColorField
+              value={style.color ?? inherited.color}
+              onChange={(next) => set({ color: next })}
+            />
           </label>
           <label className="flex flex-col gap-1">
             <FieldLabel>Background</FieldLabel>
@@ -2368,6 +2599,10 @@ function FieldSearchList({
   )
 }
 
+/**
+ * Advanced tab — historical Highrise-style conditional cards.
+ * Not mounted by the overlay while FUNCTIONAL_ADVANCED_KINDS is empty.
+ */
 function AdvancedTab() {
   const {
     inspectingLayer,
@@ -2428,14 +2663,17 @@ function AdvancedTab() {
  * shows just its one binding. Add / Change / Disconnect edit a local copy that
  * resets when the selection moves. Lives in the Content tab.
  */
-function ConnectedFields({ label }: { label: string }) {
+function ConnectedFields({ label, authoredKey }: { label: string; authoredKey?: string }) {
   // Index of the row whose binding is being changed (its picker is open).
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   // Whether the "Add field" accordion is open at the top of the list.
   const [addingField, setAddingField] = useState(false)
   const [search, setSearch] = useState("")
 
-  const baseFields = useMemo(() => connectedFieldsFor(label), [label])
+  const baseFields = useMemo(
+    () => connectedFieldsForLayer(label, authoredKey),
+    [label, authoredKey]
+  )
   const [fields, setFields] = useState<string[]>(baseFields)
   useEffect(() => {
     setFields(baseFields)

@@ -17,10 +17,7 @@ export function EditsEmptyState({ className }: { className?: string }) {
       <MousePointerClick className="size-8 text-[#344054]" aria-hidden />
       <div className="flex flex-col gap-1">
         <p className="font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#101828]">
-          Select elements to edit and style visually
-        </p>
-        <p className="font-[family-name:var(--font-inter)] text-xs font-normal leading-[17px] text-[#475467]">
-          Hold cmd to select multiple elements
+          Select an element to edit its content and style.
         </p>
       </div>
     </div>

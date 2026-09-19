@@ -10,6 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test lib/portfolio-walkthrough-prompt.test.ts lib/portfolio-capture/portfolio-capture.test.ts lib/layout-family.test.ts lib/composer-height.test.ts lib/composer-copy.test.ts lib/reference-layout.test.ts lib/layout-prompt-edit.test.ts lib/builder-narrative.test.ts lib/placed-elements.test.ts lib/brand-boards.test.ts lib/clarification.test.ts lib/clarification-ux.test.ts lib/saved-items.test.ts lib/builder-left-panel.test.ts lib/prompt-attachments.test.ts lib/hero-heading.test.ts lib/element-properties.test.ts lib/document-actions.test.ts lib/conversation-scroll.test.ts lib/native-instance-id.test.ts lib/builder-attachments.test.ts lib/document-versions.test.ts lib/version-history-panel.test.ts lib/reference-roles.test.ts lib/reference-comparison.test.ts lib/document-edit-guard.test.ts lib/serialize-invoice-document.test.ts lib/product-name.test.ts lib/dead-control-audit.test.ts lib/credibility-closure.test.ts",
+    "capture:first-slice": "PLAYWRIGHT_BROWSERS_PATH=\"$HOME/Library/Caches/ms-playwright\" tsx e2e/capture-first-slice.ts",
     "record:layouts-ai": "PLAYWRIGHT_BROWSERS_PATH=\"$HOME/Library/Caches/ms-playwright\" tsx e2e/record-layouts-ai-walkthrough.ts",
     "convert:layouts-ai-video": "PLAYWRIGHT_BROWSERS_PATH=\"$HOME/Library/Caches/ms-playwright\" tsx e2e/convert-layouts-ai-walkthrough.ts"
   },

@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react"
 
+import { shouldFreezeCaptureMotion } from "@/lib/portfolio-capture"
 import { cn } from "@/lib/utils"
 
 /**
@@ -111,17 +112,18 @@ export function StreamingText({
   className,
 }: StreamingTextProps) {
   const [revealedChars, setRevealedChars] = useState(() =>
-    streaming ? 0 : text.length
+    streaming && !shouldFreezeCaptureMotion() ? 0 : text.length
   )
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!streaming || prefersReducedMotion()) {
+    if (!streaming || prefersReducedMotion() || shouldFreezeCaptureMotion()) {
       setRevealedChars(text.length)
       return
     }
 
-    setRevealedChars(0)
+    setRevealedChars((current) => (current > text.length ? 0 : current))
+
     const interval = window.setInterval(() => {
       setRevealedChars((current) => {
         const next = current + charsPerTick
@@ -137,6 +139,7 @@ export function StreamingText({
   }, [charsPerTick, streaming, text, tickMs])
 
   const visibleText = streaming ? text.slice(0, revealedChars) : text
+  const streamingComplete = !streaming || revealedChars >= text.length
   const [topFade, setTopFade] = useState(false)
 
   useEffect(() => {
@@ -154,6 +157,7 @@ export function StreamingText({
   if (!viewportHeight) {
     return (
       <div
+        data-streaming-complete={streamingComplete ? "1" : "0"}
         className={cn(
           "text-[12px] leading-[17px] text-[#3e1c96]",
           className
@@ -166,6 +170,7 @@ export function StreamingText({
 
   return (
     <div
+      data-streaming-complete={streamingComplete ? "1" : "0"}
       className={cn("relative overflow-hidden", className)}
       style={{ height: viewportHeight }}
     >

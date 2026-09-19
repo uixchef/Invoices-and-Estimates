@@ -4,7 +4,7 @@ export type PromptAttachment = {
   previewUrl: string
   name: string
   mimeType: string
-  /** Images are passed to the layout generation model as visual references. */
+  /** Raster image eligible as a visual reference. PDFs are never this. */
   usedForGeneration: boolean
 }
 
@@ -19,6 +19,8 @@ export type CreateWithAiGenerateRequest = {
 export type CreateWithAiGenerateInput = {
   prompt: string
   referenceImages: File[]
+  /** The single image used for deterministic reconstruction, if any. */
+  primaryReferenceId?: string | null
   mediumId: string
   modelId: string
 }

@@ -22,25 +22,22 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
+import { PRODUCT_NAME } from "@/lib/product-name"
 import { useMediumsStore } from "@/lib/mediums-store"
+import { VisualEditToggle } from "@/components/invoices/builder/visual-edit-toggle"
 import { cn } from "@/lib/utils"
 
 /**
  * Wraps a control in a hover/focus tooltip when a label is supplied. Disabled
  * triggers don't emit pointer events, so the button is wrapped in a span to keep
  * the tooltip working even while the action is unavailable.
- *
- * When `description` is set the tooltip stacks the label over a muted subtitle —
- * used for the "Coming soon" treatment on not-yet-built tools (Figma 3137:155701).
  */
 function WithTooltip({
   label,
-  description,
   disabled,
   children,
 }: {
   label?: string
-  description?: string
   disabled?: boolean
   children: React.ReactElement
 }) {
@@ -56,16 +53,7 @@ function WithTooltip({
           children
         )}
       </TooltipTrigger>
-      <TooltipContent>
-        {description ? (
-          <span className="flex flex-col gap-0.5">
-            <span className="font-semibold text-[#101828]">{label}</span>
-            <span className="text-[#475467]">{description}</span>
-          </span>
-        ) : (
-          label
-        )}
-      </TooltipContent>
+      <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   )
 }
@@ -74,8 +62,6 @@ type ToolbarIconButtonProps = React.ComponentProps<"button"> & {
   active?: boolean
   tone?: "default" | "accent"
   tooltip?: string
-  /** Marks a placeholder tool: shows a "Coming soon" subtitle in the tooltip. */
-  comingSoon?: boolean
 }
 
 function ToolbarIconButton({
@@ -83,13 +69,11 @@ function ToolbarIconButton({
   active = false,
   tone = "default",
   tooltip,
-  comingSoon = false,
   ...props
 }: ToolbarIconButtonProps) {
   return (
     <WithTooltip
       label={tooltip ?? props["aria-label"]}
-      description={comingSoon ? "Coming soon" : undefined}
       disabled={props.disabled}
     >
       <button
@@ -101,12 +85,7 @@ function ToolbarIconButton({
           "disabled:pointer-events-none disabled:text-[#d0d5dd]",
           active && tone === "accent" && "bg-[#ebe9fe] text-[#6938ef]",
           active && tone === "default" && "bg-[#f2f4f7] text-[#101828]",
-          !active &&
-            !comingSoon &&
-            "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]",
-          // Not-yet-built tools stay hoverable (for the tooltip) but signal that
-          // they can't be actioned yet — no hover fill, just the resting color.
-          comingSoon && "cursor-not-allowed text-[#475467]",
+          !active && "text-[#475467] hover:bg-[#f2f4f7] hover:text-[#101828]",
           className
         )}
         {...props}
@@ -207,6 +186,15 @@ export function LayoutBuilderToolbar() {
     addingElement,
     openAddElements,
     closeAddElements,
+    browsingSavedItems,
+    openSavedItems,
+    closeSavedItems,
+    browsingBrand,
+    openBrandBoards,
+    closeBrandBoards,
+    browsingVersionHistory,
+    openVersionHistory,
+    closeVersionHistory,
     canUndo,
     canRedo,
     undo,
@@ -225,7 +213,12 @@ export function LayoutBuilderToolbar() {
   // inspecting no longer deselects this button. It's only inactive when the
   // panel is closed, the Add elements palette is open, or edit mode is showing
   // its "select an element" empty state instead of the chat.
-  const aiPanelActive = panelOpen && !addingElement
+  const aiPanelActive =
+    panelOpen &&
+    !addingElement &&
+    !browsingBrand &&
+    !browsingSavedItems &&
+    !browsingVersionHistory
 
   const mediumName = mediumId ? getMediumName(mediumId) : "Paper type"
 
@@ -245,24 +238,24 @@ export function LayoutBuilderToolbar() {
     (canEdit || placedElements.length > 0 || hasGeneratedOnce) && !isCodeDetached
 
   return (
-    <div className="relative flex h-11 w-full shrink-0 items-center gap-4 border-b border-[#d0d5dd] bg-white px-4 py-1">
+    <div className="relative flex h-11 w-full shrink-0 items-center gap-4 border-b border-[#eaecf0] bg-white px-4 py-1">
       {/* Width tracks the Invoice AI panel so this cluster's right edge stays
           aligned with the panel's right edge as it's resized. */}
       <div
         className="flex shrink-0 items-center gap-0.5"
         style={panelOpen ? { width: panelWidth } : undefined}
       >
-        <div className="flex items-center gap-0.5">
+        <div className="relative z-20 flex items-center gap-0.5">
           <ToolbarIconButton
             aria-label="Add elements"
             active={addingElement}
             disabled={!canAddElements}
-            onClick={addingElement ? closeAddElements : openAddElements}
+            onClick={addingElement ? closeAddElements : () => openAddElements()}
           >
             <Plus aria-hidden />
           </ToolbarIconButton>
           <ToolbarIconButton
-            aria-label="Invoice AI"
+            aria-label={PRODUCT_NAME}
             tone="accent"
             active={aiPanelActive}
             onClick={() => {
@@ -275,11 +268,18 @@ export function LayoutBuilderToolbar() {
               // closes it, so we no longer clear the inspected layer here.
               setPanelOpen(true)
               closeAddElements()
+              closeBrandBoards()
+              closeSavedItems()
+              closeVersionHistory()
             }}
           >
             <AutoAwesomeIcon className="size-4 text-[#6938ef]" />
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Brand boards" comingSoon>
+          <ToolbarIconButton
+            aria-label="Brand boards"
+            active={browsingBrand}
+            onClick={browsingBrand ? closeBrandBoards : openBrandBoards}
+          >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden className="size-4">
               <path
                 d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1 .8-1.8 1.8-1.8H16a5 5 0 0 0 5-5c0-3.9-4-7-9-7Z"
@@ -292,7 +292,19 @@ export function LayoutBuilderToolbar() {
               <circle cx="14.5" cy="7.5" r="1" fill="currentColor" />
             </svg>
           </ToolbarIconButton>
-          <ToolbarIconButton aria-label="Saved items" comingSoon>
+          <ToolbarIconButton
+            aria-label="Saved items"
+            data-builder-tool="saved-items"
+            active={browsingSavedItems}
+            onClick={() => {
+              if (browsingSavedItems) {
+                closeSavedItems()
+                setPanelOpen(false)
+                return
+              }
+              openSavedItems()
+            }}
+          >
             <Save aria-hidden />
           </ToolbarIconButton>
         </div>
@@ -300,7 +312,15 @@ export function LayoutBuilderToolbar() {
         <div className="min-w-px flex-1" />
 
         <div className="flex items-center gap-0.5">
-          <ToolbarIconButton aria-label="Version history" disabled={!canEdit}>
+          <ToolbarIconButton
+            aria-label="Version history"
+            data-builder-tool="version-history"
+            active={browsingVersionHistory}
+            disabled={!canEdit}
+            onClick={
+              browsingVersionHistory ? closeVersionHistory : openVersionHistory
+            }
+          >
             <History aria-hidden />
           </ToolbarIconButton>
           <ToolbarIconButton
@@ -327,6 +347,7 @@ export function LayoutBuilderToolbar() {
           active={previewOpen}
           onClick={togglePreview}
         />
+        <VisualEditToggle size="toolbar" />
       </div>
 
       {/* Absolutely centred on the toolbar so it lines up with the page-centred
@@ -349,14 +370,14 @@ export function LayoutBuilderToolbar() {
         <div className="flex items-center gap-1">
           <ToolbarIconButton
             aria-label="Undo"
-            disabled={!canEdit || !canUndo}
+            disabled={!canUndo}
             onClick={undo}
           >
             <Undo2 aria-hidden />
           </ToolbarIconButton>
           <ToolbarIconButton
             aria-label="Redo"
-            disabled={!canEdit || !canRedo}
+            disabled={!canRedo}
             onClick={redo}
           >
             <Redo2 aria-hidden />

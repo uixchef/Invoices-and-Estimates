@@ -7,24 +7,30 @@ import {
   CheckCircle2,
   ChevronDown,
   Copy,
-  Eye,
-  ImageIcon,
   Link2,
-  MousePointerClick,
-  Paperclip,
   Send,
   Square,
-  Upload,
   X,
 } from "lucide-react"
 
+import { VisualEditToggle } from "@/components/invoices/builder/visual-edit-toggle"
 import { AiAnswer } from "@/components/ai/ai-answer"
 import { AiInAction } from "@/components/ai/ai-in-action"
 import { AiQuestions } from "@/components/ai/ai-questions"
 import { AiTodoList } from "@/components/ai/ai-todo-list"
 import { StreamingText } from "@/components/ai/streaming-text"
 import { AddElementsPanel } from "@/components/invoices/builder/add-elements-panel"
+import { BrandBoardsPanel } from "@/components/invoices/builder/brand-boards-panel"
+import { SavedItemsPanel } from "@/components/invoices/builder/saved-items-panel"
+import { VersionHistoryPanel, PreviewVersionBanner } from "@/components/invoices/builder/version-history-panel"
 import { AiWelcomeState } from "@/components/invoices/builder/ai-welcome-state"
+import {
+  BuilderAttachMenu,
+  BuilderAttachmentStrip,
+  BuilderComposerDropTarget,
+  MEDIA_LIBRARY_UNAVAILABLE_MESSAGE,
+} from "@/components/invoices/builder/builder-composer-attachments"
+import { SubmittedAttachmentChip } from "@/components/invoices/prompt-attachment-chips"
 import { AutoAwesomeIcon } from "@/components/icons/auto-awesome-icon"
 import {
   DropdownMenu,
@@ -37,15 +43,47 @@ import {
   buildPostReasoning,
   buildReasoning,
   buildRecommendations,
+  buildWorkingNarrative,
+  workingPhaseFor,
 } from "@/lib/builder-narrative"
+import { getMediumName } from "@/lib/mediums-data"
 import { useLayoutBuilder } from "@/lib/layout-builder-context"
+import {
+  PRODUCT_CLOSE_LABEL,
+  PRODUCT_DISCLAIMER,
+  PRODUCT_MESSAGE_LABEL,
+  PRODUCT_NAME,
+} from "@/lib/product-name"
+import { cn } from "@/lib/utils"
+import {
+  builderComposerCanSend,
+  planBuilderComposerSend,
+  snapshotComposerAttachments,
+  submittedAttachmentsForTurn,
+} from "@/lib/builder-attachments"
+import { analyzeReferenceImage } from "@/lib/reference-layout"
+import { fileForPrimaryAnalysis } from "@/lib/reference-roles"
 import type {
   BuilderAssistantMessage,
   BuilderMessage,
   BuilderReceivedAnswer,
   BuilderUserMessage,
 } from "@/lib/layout-builder-types"
-import { cn } from "@/lib/utils"
+import {
+  APPROACH_LABEL,
+  CLARIFICATION_COMPOSER_PLACEHOLDER,
+  NEEDS_CLARIFICATION_LABEL,
+  UNDERSTANDING_LABEL,
+  showsGlobalClarification,
+} from "@/lib/clarification-copy"
+import {
+  applyConversationScroll,
+  conversationOnContentChange,
+  conversationOnEntry,
+  conversationOnSubmit,
+  conversationOnUserScroll,
+  type ConversationScrollMetrics,
+} from "@/lib/conversation-scroll"
 
 /**
  * Figma: Sent (User chat message blob) — "Sent" (5625:23886) and
@@ -156,8 +194,8 @@ function UserMessageBubble({
 
 /**
  * Asking-phase indicator (Figma 73:37885 / 7013:103918). When the assistant
- * pauses to ask, it first shows "Asking questions…" with the processing dots,
- * then settles into "Waiting for answer…" while the docked questions await input.
+ * pauses to ask, it first shows the clarification status with processing dots,
+ * then settles while the docked questions await input.
  */
 function AskingIndicator() {
   const [waiting, setWaiting] = useState(false)
@@ -168,12 +206,12 @@ function AskingIndicator() {
   }, [])
 
   if (waiting) {
-    return <AiInAction type="asking" label="Waiting for answer..." />
+    return <AiInAction type="asking" label={NEEDS_CLARIFICATION_LABEL} />
   }
 
   return (
     <>
-      <AiInAction type="asking" label="Asking questions..." />
+      <AiInAction type="asking" label={NEEDS_CLARIFICATION_LABEL} />
       <AiInAction type="processing" />
     </>
   )
@@ -187,21 +225,51 @@ function AskingIndicator() {
 function AiStatusIndicator() {
   const {
     status,
-    preThoughtDurationSec,
     preReasoning,
     receivedAnswers,
     messages,
+    todos,
+    generatedLayout,
+    mediumId,
   } = useLayoutBuilder()
 
   const lastUser = [...messages]
     .reverse()
     .find((message) => message.role === "user")
+  const firstUser = messages.find((message) => message.role === "user")
+  const userCount = messages.filter((message) => message.role === "user").length
+  const isFollowUp = userCount > 1
   const prompt = lastUser?.text ?? ""
-  const preThoughtText = preReasoning ?? buildReasoning(prompt)
+  const completedTodos = todos.filter((item) => item.status === "done").length
+  const phase = workingPhaseFor(
+    status,
+    completedTodos,
+    todos.length,
+    isFollowUp
+  )
+  const request = {
+    prompt,
+    hasReference: (firstUser?.references.length ?? 0) > 0,
+    isFollowUp,
+    paperName: mediumId ? getMediumName(mediumId) : "A4",
+    family: generatedLayout.style,
+    receivedAnswers,
+    phase,
+  }
+  const preThoughtText =
+    preReasoning ??
+    buildReasoning(prompt, { ...request, phase: "interpret" })
+  const thinkingPhase =
+    receivedAnswers && receivedAnswers.length > 0 && phase === "interpret"
+      ? "decide"
+      : phase
   const postThoughtText =
     receivedAnswers && receivedAnswers.length > 0
-      ? buildPostReasoning(prompt, receivedAnswers)
-      : buildReasoning(prompt)
+      ? buildPostReasoning(prompt, receivedAnswers, {
+          ...request,
+          phase: thinkingPhase,
+        })
+      : buildWorkingNarrative({ ...request, phase: thinkingPhase })
 
   // Stream while actively reasoning/thinking; once it pauses to ask questions,
   // collapse to the "Thought for Xs" summary above the docked questions.
@@ -216,7 +284,7 @@ function AiStatusIndicator() {
   if (status === "asking") {
     return (
       <>
-        <AiInAction type="thought" durationSec={preThoughtDurationSec ?? 0}>
+        <AiInAction type="thought" label={UNDERSTANDING_LABEL}>
           <StreamingText text={preThoughtText} />
         </AiInAction>
         <AskingIndicator />
@@ -242,32 +310,22 @@ function AiStatusIndicator() {
  * like the "Thought for Ns" row — collapsed by default, expanding to a numbered
  * list of prompts with the chosen answers italicized beneath each one.
  */
-function ReceivedAnswers({ items }: { items: BuilderReceivedAnswer[] }) {
-  if (items.length === 0) {
+function ClarificationAcknowledgement({
+  items,
+}: {
+  items: BuilderReceivedAnswer[]
+}) {
+  const lines = items
+    .map((item) => item.acknowledgement)
+    .filter((line): line is string => Boolean(line))
+  if (lines.length === 0) {
     return null
   }
 
   return (
-    <AiInAction type="received-answers">
-      <ol className="flex list-decimal flex-col gap-1.5 pl-[18px]">
-        {items.map((item, index) => (
-          <li key={index} className="space-y-0.5">
-            <span className="leading-[17px]">{item.prompt}</span>
-            {item.values.length === 1 ? (
-              <p className="italic leading-[17px]">{item.values[0]}</p>
-            ) : (
-              <ul className="list-disc pl-[18px]">
-                {item.values.map((value, valueIndex) => (
-                  <li key={valueIndex} className="italic leading-[17px]">
-                    {value}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </li>
-        ))}
-      </ol>
-    </AiInAction>
+    <p className="font-[family-name:var(--font-inter)] text-[13px] font-medium leading-[18px] text-[#3e1c96]">
+      {lines[lines.length - 1]}
+    </p>
   )
 }
 
@@ -310,14 +368,14 @@ function AssistantTurn({
   return (
     <div className="flex flex-col gap-3">
       {hasAnswers && message.preReasoning ? (
-        <AiInAction type="thought" durationSec={message.preDurationSec ?? 0}>
+        <AiInAction type="thought" label={UNDERSTANDING_LABEL}>
           <StreamingText text={message.preReasoning} />
         </AiInAction>
       ) : null}
       {hasAnswers ? (
-        <ReceivedAnswers items={message.receivedAnswers!} />
+        <ClarificationAcknowledgement items={message.receivedAnswers!} />
       ) : null}
-      <AiInAction type="thought" durationSec={message.durationSec}>
+      <AiInAction type="thought" label={APPROACH_LABEL}>
         <StreamingText text={message.reasoning} />
       </AiInAction>
       <AiTodoList items={message.todos} />
@@ -386,39 +444,46 @@ function AiComposer() {
     status,
     stopGeneration,
     questions,
+    clarificationAskedCount,
+    clarificationAskableCount,
+    clarificationSurface,
     submitAnswers,
     skipQuestions,
     messages,
-    editMode,
-    toggleEditMode,
-    isCodeDetached,
-    inspectingLayer,
-    inspectLayer,
-    aiEditingLayer,
     selections,
     removeSelection,
     clearSelections,
     isBlankSession,
-    placedElements,
     previewVersionId,
     exitVersionPreview,
     promptFocusToken,
+    hasGeneratedOnce,
+    showFeedbackToast,
+    composerDraftText,
+    composerDraftAttachments,
+    composerDraftModelId,
+    setComposerDraftText,
+    setComposerDraftModelId,
+    addComposerDraftFiles,
+    removeComposerDraftAttachment,
+    setComposerDraftPrimary,
+    clearComposerDraft,
+    composerDraftPrimaryReferenceId,
   } = useLayoutBuilder()
-  const [value, setValue] = useState("")
-  const [modelId, setModelId] = useState(AI_MODELS[0].id)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const value = composerDraftText
+  const attachments = composerDraftAttachments
+  const addFiles = addComposerDraftFiles
+  const remove = removeComposerDraftAttachment
+  const clear = clearComposerDraft
+  const modelId = composerDraftModelId
+  const setModelId = setComposerDraftModelId
 
   // Model picker appears once the docked composer is in play (generated layout
   // or blank build-from-scratch). Edit only after there is something on canvas.
   const hasGenerated =
     status === "ready" || messages.some((message) => message.role === "assistant")
   const showComposerActions = hasGenerated || isBlankSession
-  const showEditAction = hasGenerated || placedElements.length > 0
-  // The Edit toggle reads active whenever a layer's Visual edits panel is open —
-  // in the AI flow that always implies edit mode; the blank flow opens the
-  // inspector directly, so fold the inspecting state into the active look too.
-  const editActive = editMode || inspectingLayer !== null
   const activeModel =
     AI_MODELS.find((model) => model.id === modelId) ?? AI_MODELS[0]
 
@@ -433,7 +498,7 @@ function AiComposer() {
 
   useLayoutEffect(() => {
     syncHeight()
-  }, [syncHeight, value])
+  }, [syncHeight, value, attachments.length])
 
   // Canvas "Generate with AI" CTA focuses the docked composer when it owns
   // the prompt during a blank welcome with canvas content.
@@ -450,17 +515,65 @@ function AiComposer() {
   // selected layer), so the left composer suppresses its own questions stencil
   // for that case — but still shows them if the overlay isn't on that layer.
   const scopedQuestionInOverlay =
-    isAsking && aiEditingLayer !== null && aiEditingLayer === inspectingLayer
-  const isBusy = isGenerating || isReasoning
-  const canSend = value.trim().length > 0 && !isBusy
+    isAsking && !showsGlobalClarification(clarificationSurface)
+  const isBusy =
+    isGenerating || isReasoning || scopedQuestionInOverlay
+  const canSend = builderComposerCanSend({
+    text: value,
+    attachmentCount: attachments.length,
+    status,
+    scopedQuestionLocksComposer: scopedQuestionInOverlay,
+  })
 
   const handleSend = () => {
     if (!canSend) {
       return
     }
-    sendMessage(value)
-    setValue("")
-    clearSelections()
+    const plan = planBuilderComposerSend({
+      text: value,
+      attachmentCount: attachments.length,
+      status,
+    })
+    if (plan === "ignore") {
+      return
+    }
+    if (plan === "clarify") {
+      sendMessage(value)
+      setComposerDraftText("")
+      return
+    }
+
+    const draft = attachments
+    const prompt = value
+    void (async () => {
+      let referenceAnalysis = undefined
+      if (!hasGeneratedOnce) {
+        const primaryFile = fileForPrimaryAnalysis(
+          draft,
+          composerDraftPrimaryReferenceId
+        )
+        if (primaryFile) {
+          try {
+            referenceAnalysis = await analyzeReferenceImage(primaryFile)
+          } catch {
+            referenceAnalysis = undefined
+          }
+        }
+      }
+      const submitted = await snapshotComposerAttachments(draft)
+      const queued = sendMessage(prompt, submitted, {
+        referenceAnalysis,
+        primaryReferenceId: hasGeneratedOnce
+          ? undefined
+          : composerDraftPrimaryReferenceId,
+      })
+      if (!queued) {
+        return
+      }
+      setComposerDraftText("")
+      clearSelections()
+      clear()
+    })()
   }
 
   return (
@@ -483,15 +596,19 @@ function AiComposer() {
                 key={questions.map((question) => question.id).join("|")}
                 docked
                 questions={questions}
+                progressAskedCount={clarificationAskedCount}
+                progressAskableCount={clarificationAskableCount}
                 onComplete={submitAnswers}
-                onSkip={skipQuestions}
+                onUseJudgment={skipQuestions}
               />
             </div>
           ) : null}
 
-          <div
+          <BuilderComposerDropTarget
+            disabled={isBusy}
+            onFiles={addFiles}
             className={cn(
-              "flex w-full flex-col gap-2.5 rounded-lg border p-2 transition-colors",
+              "flex w-full flex-col gap-2.5 rounded-lg border p-2 transition-colors duration-150 ease-out motion-reduce:transition-none",
               // Muted while questions are docked here, active otherwise (incl.
               // when questions moved to the edits overlay). Focusing the input
               // always promotes it to the active (white + purple) state.
@@ -528,13 +645,13 @@ function AiComposer() {
           </div>
 
           <label className="sr-only" htmlFor="builder-composer">
-            Message Invoice AI
+            {PRODUCT_MESSAGE_LABEL}
           </label>
           <textarea
             ref={textareaRef}
             id="builder-composer"
             value={value}
-            onChange={(event) => setValue(event.target.value)}
+            onChange={(event) => setComposerDraftText(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault()
@@ -543,7 +660,11 @@ function AiComposer() {
             }}
             rows={1}
             disabled={isBusy}
-            placeholder="Plan, build, modify anything..."
+            placeholder={
+              isAsking
+                ? CLARIFICATION_COMPOSER_PLACEHOLDER
+                : "Plan, build, modify anything..."
+            }
             className={cn(
               "w-full resize-none border-0 bg-transparent p-0 outline-none",
               "font-[family-name:var(--font-inter)] text-sm font-normal leading-5 text-[#101828]",
@@ -552,93 +673,29 @@ function AiComposer() {
             )}
           />
 
+          <BuilderAttachmentStrip
+            attachments={attachments}
+            onRemove={remove}
+            primaryReferenceId={
+              hasGeneratedOnce ? null : composerDraftPrimaryReferenceId
+            }
+            showReferenceRoles={!hasGeneratedOnce}
+            onSetPrimary={
+              hasGeneratedOnce ? undefined : setComposerDraftPrimary
+            }
+          />
+
           <div className="flex items-center gap-1">
             <div className="flex items-center gap-0.5">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
-                multiple
-                className="hidden"
-                aria-hidden
-                tabIndex={-1}
-                onChange={(event) => {
-                  event.target.value = ""
-                }}
+              <BuilderAttachMenu
+                disabled={isBusy}
+                onPickFiles={addFiles}
+                onMediaLibrary={() =>
+                  showFeedbackToast(MEDIA_LIBRARY_UNAVAILABLE_MESSAGE)
+                }
               />
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Attach file"
-                    disabled={isBusy}
-                    className={cn(
-                      "inline-flex size-6 items-center justify-center rounded-[4px] text-[#667085] outline-none transition-colors",
-                      "hover:bg-[#f2f4f7] focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
-                      "disabled:cursor-not-allowed disabled:text-[#d0d5dd] disabled:hover:bg-transparent"
-                    )}
-                  >
-                    <Paperclip className="size-4" aria-hidden />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="min-w-[220px]"
-                >
-                  <DropdownMenuItem
-                    className="gap-2.5 px-3 py-2"
-                    onSelect={() => fileInputRef.current?.click()}
-                  >
-                    <Upload className="size-4 text-[#667085]" aria-hidden />
-                    <span className="font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054]">
-                      Upload file
-                    </span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="gap-2.5 px-3 py-2">
-                    <ImageIcon className="size-4 text-[#667085]" aria-hidden />
-                    <span className="font-[family-name:var(--font-inter)] text-sm font-semibold text-[#344054]">
-                      Add from media library
-                    </span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              {/* Visual edit toggle (Figma 3191:71120 / 3192:71293): gray at
-                  rest, purple while editing the invoice directly. */}
-              {showEditAction ? (
-                <button
-                  type="button"
-                  aria-pressed={editActive}
-                  onClick={() => {
-                    // One click should always exit the active state: close the
-                    // open inspector directly when edit mode isn't what's driving
-                    // it (blank flow), otherwise toggle edit mode as usual.
-                    if (inspectingLayer !== null && !editMode) {
-                      inspectLayer(null)
-                    } else {
-                      toggleEditMode()
-                    }
-                  }}
-                  disabled={isCodeDetached}
-                  title={
-                    isCodeDetached
-                      ? "Revert to layout to use visual edits"
-                      : undefined
-                  }
-                  className={cn(
-                    "inline-flex h-6 items-center justify-center gap-1 rounded-[4px] border px-1.5 outline-none transition-colors",
-                    "text-xs font-semibold leading-[17px] focus-visible:ring-2 focus-visible:ring-[#155eef]/40",
-                    "disabled:cursor-not-allowed disabled:border-[#f9fafb] disabled:bg-[#f2f4f7] disabled:text-[#d0d5dd]",
-                    editActive
-                      ? "border-[#f4f3ff] bg-[#ebe9fe] text-[#5925dc]"
-                      : "border-[#f9fafb] bg-[#f2f4f7] text-[#475467] hover:bg-[#eaecf0]"
-                  )}
-                >
-                  <MousePointerClick className="size-3.5" aria-hidden />
-                  Edit
-                </button>
-              ) : null}
+              <VisualEditToggle />
             </div>
 
             <div className="min-w-px flex-1" />
@@ -710,11 +767,11 @@ function AiComposer() {
               </button>
             )}
           </div>
-        </div>
+        </BuilderComposerDropTarget>
         </div>
 
         <p className="text-center font-[family-name:var(--font-inter)] text-xs font-normal leading-4 text-[#475467]">
-          Invoice AI can make mistakes. Please double-check responses.
+          {PRODUCT_DISCLAIMER}
         </p>
       </div>
     </div>
@@ -765,16 +822,36 @@ export function InvoiceAiPanel({
     errorMessage,
     retryGeneration,
     feedbackToast,
-    preThoughtDurationSec,
     preReasoning,
     receivedAnswers,
     addingElement,
+    browsingSavedItems,
+    browsingBrand,
+    browsingVersionHistory,
     closeAddElements,
+    closeBrandBoards,
+    closeSavedItems,
+    closeVersionHistory,
     isBlankSession,
     placedElements,
   } = useLayoutBuilder()
   const scrollRef = useRef<HTMLDivElement>(null)
+  const transcriptRef = useRef<HTMLDivElement>(null)
+  const stickToLatestRef = useRef(true)
+  const applyingScrollRef = useRef(false)
   const adding = addingElement
+  const branding = browsingBrand
+  const library = browsingSavedItems
+  const history = browsingVersionHistory
+  const panelTitle = adding
+    ? "Add elements"
+    : library
+      ? "Saved items"
+      : branding
+        ? "Brand boards"
+        : history
+          ? "Version history"
+          : PRODUCT_NAME
   const hasUserPrompt = messages.some((message) => message.role === "user")
   const welcomeHasCanvasContent = placedElements.length > 0
   // "Start from blank" welcome state (Figma 3268:37411) — greeting + suggestions
@@ -782,68 +859,80 @@ export function InvoiceAiPanel({
   // (drop elements, open properties, edit mode) do not dismiss it. Yields only
   // to the Add elements palette. Once elements exist, the docked composer
   // (Edit + layer badges) takes over the prompt while the welcome hero stays.
-  const blankWelcome = isBlankSession && !hasUserPrompt && !adding
-  const showComposer = !blankWelcome || welcomeHasCanvasContent
-  const lastTurnRef = useRef<HTMLDivElement>(null)
-  // Drives the spacer min-height on the latest turn so its prompt can always be
-  // scrolled to the very top of the viewport, the way Cursor pins each turn.
-  const [viewportHeight, setViewportHeight] = useState(0)
-
+  const blankWelcome = isBlankSession && !hasUserPrompt && !adding && !branding && !library && !history
+  const showComposer = (!blankWelcome || welcomeHasCanvasContent) && !branding && !library && !history
   const turns = groupTurns(messages)
   const isBusy =
     status === "reasoning" || status === "asking" || status === "thinking"
+  const showChat = !adding && !branding && !library && !history && !blankWelcome
+  const hasHistory = turns.length > 0
+  const userTurnCount = turns.filter((turn) => turn.user).length
+  const prevUserTurnCount = useRef(userTurnCount)
+
+  const readMetrics = (): ConversationScrollMetrics | null => {
+    const node = scrollRef.current
+    if (!node) {
+      return null
+    }
+    return {
+      scrollTop: node.scrollTop,
+      clientHeight: node.clientHeight,
+      scrollHeight: node.scrollHeight,
+    }
+  }
+
+  const alignIfNeeded = (alignToLatest: boolean) => {
+    const node = scrollRef.current
+    const metrics = readMetrics()
+    if (!node || !metrics) {
+      return
+    }
+    const next = applyConversationScroll(metrics, {
+      stickToLatest: stickToLatestRef.current,
+      alignToLatest,
+    })
+    if (next == null || next === node.scrollTop) {
+      return
+    }
+    applyingScrollRef.current = true
+    node.scrollTop = next
+    applyingScrollRef.current = false
+  }
 
   useLayoutEffect(() => {
+    if (!showChat) {
+      stickToLatestRef.current = true
+      return
+    }
     const node = scrollRef.current
+    const content = transcriptRef.current
     if (!node) {
       return
     }
-    const measure = () => setViewportHeight(node.clientHeight)
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [])
+    const entry = conversationOnEntry(hasHistory)
+    stickToLatestRef.current = entry.stickToLatest
+    alignIfNeeded(entry.alignToLatest)
 
-  // On each new prompt, jump the latest turn to the top of the viewport (rather
-  // than the bottom) so the sticky prompt header leads the streaming response.
-  const userTurnCount = turns.filter((turn) => turn.user).length
-  const prevUserTurnCount = useRef(userTurnCount)
+    const onResize = () => {
+      const decision = conversationOnContentChange(stickToLatestRef.current)
+      alignIfNeeded(decision.alignToLatest)
+    }
+    const observer = new ResizeObserver(onResize)
+    observer.observe(node)
+    if (content) {
+      observer.observe(content)
+    }
+    return () => observer.disconnect()
+  }, [showChat, hasHistory])
+
   useLayoutEffect(() => {
     if (userTurnCount > prevUserTurnCount.current) {
-      const node = scrollRef.current
-      const last = lastTurnRef.current
-      if (node && last) {
-        node.scrollTop = last.offsetTop
-      }
+      const decision = conversationOnSubmit()
+      stickToLatestRef.current = decision.stickToLatest
+      alignIfNeeded(decision.alignToLatest)
     }
     prevUserTurnCount.current = userTurnCount
   }, [userTurnCount])
-
-  // Entering the chat (open builder / return from the inspector) should land on
-  // the latest turn, not scrolled to the top replaying the whole history. Pin
-  // the last turn to the top of the viewport — the same resting place as a new
-  // prompt — once per entry. The flag resets whenever the chat is hidden.
-  const showChat = !adding && !blankWelcome
-  const didEntryScrollRef = useRef(false)
-  useLayoutEffect(() => {
-    if (!showChat) {
-      didEntryScrollRef.current = false
-      return
-    }
-    if (didEntryScrollRef.current) {
-      return
-    }
-    const node = scrollRef.current
-    const last = lastTurnRef.current
-    if (!node || turns.length === 0) {
-      return
-    }
-    node.scrollTop = last ? last.offsetTop : node.scrollHeight
-    didEntryScrollRef.current = true
-    // Keep the new-prompt baseline in sync so it doesn't double-jump this render.
-    prevUserTurnCount.current = userTurnCount
-  }, [showChat, turns.length, viewportHeight, userTurnCount])
 
   return (
     <aside
@@ -857,16 +946,39 @@ export function InvoiceAiPanel({
         )}
       >
         <div className="flex items-center gap-2">
-          {!adding ? (
+          {!adding && !branding && !library && !history ? (
             <AutoAwesomeIcon className="size-4 shrink-0 text-[#6938ef]" />
           ) : null}
           <p className="min-w-0 flex-1 font-[family-name:var(--font-inter)] text-base font-semibold leading-6 text-[#101828]">
-            {adding ? "Add elements" : "Invoice AI"}
+            {panelTitle}
           </p>
           <button
             type="button"
-            aria-label={adding ? "Close add elements" : "Close Invoice AI"}
-            onClick={adding ? closeAddElements : onClose}
+            aria-label={
+              adding
+                ? "Close add elements"
+                : library
+                  ? "Close saved items"
+                  : branding
+                    ? "Close Brand boards"
+                    : history
+                      ? "Close Version history"
+                      : PRODUCT_CLOSE_LABEL
+            }
+            onClick={
+              adding
+                ? closeAddElements
+                : library
+                  ? () => {
+                      closeSavedItems()
+                      onClose()
+                    }
+                  : branding
+                    ? closeBrandBoards
+                    : history
+                      ? closeVersionHistory
+                      : onClose
+            }
             className="inline-flex size-5 items-center justify-center rounded text-[#667085] outline-none transition-colors hover:text-[#101828] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
           >
             <X className="size-5" aria-hidden />
@@ -876,13 +988,30 @@ export function InvoiceAiPanel({
 
       {adding ? (
         <AddElementsPanel />
+      ) : library ? (
+        <SavedItemsPanel />
+      ) : branding ? (
+        <BrandBoardsPanel />
+      ) : history ? (
+        <VersionHistoryPanel />
       ) : blankWelcome ? (
         <AiWelcomeState dockedComposer={welcomeHasCanvasContent} />
       ) : (
       <div
         ref={scrollRef}
-        className="relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4"
+        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4"
+        onScroll={() => {
+          if (applyingScrollRef.current) {
+            return
+          }
+          const metrics = readMetrics()
+          if (!metrics) {
+            return
+          }
+          stickToLatestRef.current = conversationOnUserScroll(metrics).stickToLatest
+        }}
       >
+        <div ref={transcriptRef} className="flex flex-col gap-3">
         {turns.map((turn, index) => {
           const isLast = index === turns.length - 1
           const isActiveTurn = isLast && isBusy
@@ -891,10 +1020,6 @@ export function InvoiceAiPanel({
           return (
             <div
               key={user?.id ?? turn.assistant?.id ?? index}
-              ref={isLast ? lastTurnRef : undefined}
-              // The latest turn reserves a viewport's worth of height so its
-              // prompt can pin to the top with the response flowing beneath.
-              style={isLast && viewportHeight ? { minHeight: viewportHeight } : undefined}
               className="flex flex-col gap-3"
             >
               {user ? (
@@ -902,15 +1027,15 @@ export function InvoiceAiPanel({
                 // its response streams below (Cursor's per-turn pinning). The
                 // opaque band masks content scrolling underneath.
                 <div className="sticky top-0 z-10 -mx-4 flex flex-col items-end gap-3 bg-white px-4 pb-1 pt-4">
-                  {user.references.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {user.references.map((reference) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          key={reference.id}
-                          src={reference.previewUrl}
-                          alt={reference.name}
-                          className="size-12 rounded-md border border-[#eaecf0] object-cover"
+                  {submittedAttachmentsForTurn(user).length > 0 ? (
+                    <div className="flex max-w-full flex-wrap justify-end gap-1.5">
+                      {submittedAttachmentsForTurn(user).map((attachment) => (
+                        <SubmittedAttachmentChip
+                          key={attachment.id}
+                          attachment={attachment}
+                          isPrimary={
+                            attachment.id === user.primaryReferenceId
+                          }
                         />
                       ))}
                     </div>
@@ -940,15 +1065,12 @@ export function InvoiceAiPanel({
                   receivedAnswers &&
                   receivedAnswers.length > 0 &&
                   preReasoning ? (
-                    <AiInAction
-                      type="thought"
-                      durationSec={preThoughtDurationSec ?? 0}
-                    >
+                    <AiInAction type="thought" label={UNDERSTANDING_LABEL}>
                       <StreamingText text={preReasoning} />
                     </AiInAction>
                   ) : null}
                   {receivedAnswers && receivedAnswers.length > 0 ? (
-                    <ReceivedAnswers items={receivedAnswers} />
+                    <ClarificationAcknowledgement items={receivedAnswers} />
                   ) : null}
                   <AiStatusIndicator />
                   <AiTodoList items={todos} />
@@ -957,6 +1079,7 @@ export function InvoiceAiPanel({
             </div>
           )
         })}
+        </div>
       </div>
       )}
 
@@ -987,31 +1110,6 @@ function FeedbackToast({ message }: { message: string }) {
           {message}
         </span>
       </div>
-    </div>
-  )
-}
-
-/**
- * Read-only "previewing an earlier version" bar, docked directly above the
- * composer the same way the pending-changes bar sits over the prompt input
- * (Figma 3247:62513). One tap on "Back to current" returns to the live document.
- */
-function PreviewVersionBanner({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="flex items-center gap-1 rounded-[8px] border border-[#9b8afb] bg-white p-2 shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)]">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5">
-        <Eye className="size-3.5 shrink-0 text-[#6938ef]" aria-hidden />
-        <span className="truncate font-[family-name:var(--font-inter)] text-xs font-medium leading-[18px] text-[#475467]">
-          Previewing an earlier version
-        </span>
-      </div>
-      <button
-        type="button"
-        onClick={onExit}
-        className="inline-flex h-6 shrink-0 items-center justify-center rounded-[4px] bg-[#6938ef] px-1.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-[18px] text-white outline-none transition-colors hover:bg-[#5925dc] focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-      >
-        Back to current
-      </button>
     </div>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { Copy, Pencil, Trash2, X } from "lucide-react"
 
@@ -62,6 +62,14 @@ export function LayoutPreviewPanel() {
   const { requestLayoutEdit } = useCreateWithAi()
   const { getMediumName } = useMediumsStore()
 
+  // The portal targets document.body, which only exists in the browser. Render
+  // the portal after mount so SSR output is deterministic (nothing) and the
+  // client mounts the same empty tree first, avoiding a hydration mismatch.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   useEffect(() => {
     if (!isOpen) {
       return
@@ -84,7 +92,7 @@ export function LayoutPreviewPanel() {
     }
   }, [isOpen, close])
 
-  if (typeof document === "undefined") {
+  if (!mounted) {
     return null
   }
 

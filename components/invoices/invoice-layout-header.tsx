@@ -23,7 +23,7 @@ export function InvoiceLayoutHeader() {
             Layouts
           </h2>
           <p className="font-[family-name:var(--font-inter)] text-sm font-normal leading-5 text-[#475467]">
-            Author handlebars layouts against the platform document types.
+            Design reusable layouts for invoices, estimates, and receipts.
           </p>
         </div>
 

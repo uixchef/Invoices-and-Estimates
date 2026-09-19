@@ -14,6 +14,7 @@ import { CreateWithAiPromptInput } from "@/components/invoices/create-with-ai-pr
 import { HeroAccent } from "@/components/invoices/hero-accent"
 import { VibeHeroCanvas } from "@/components/invoices/vibe-hero-canvas"
 import { useCreateWithAi } from "@/lib/create-with-ai-context"
+import { PRODUCT_NAME } from "@/lib/product-name"
 import { cn } from "@/lib/utils"
 
 const HERO_ACCENT_PHRASES = [
@@ -141,7 +142,7 @@ export function CreateWithAiPanel() {
         <section
           aria-label="Create with AI"
           className={cn(
-            "vibe-hero-banner relative flex flex-col items-center gap-4 overflow-hidden rounded-lg px-6 pb-10 pt-10 md:px-32",
+            "vibe-hero-banner relative flex flex-col items-center gap-4 overflow-hidden rounded-lg px-6 pb-10 pt-3 md:px-32",
             "transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none",
             isOpen
               ? "translate-y-0 opacity-100"
@@ -161,17 +162,19 @@ export function CreateWithAiPanel() {
 
           <div className="vibe-hero-inner relative z-[1] flex w-full max-w-[960px] flex-col items-start gap-6">
             <div className="flex w-full flex-col items-start gap-3">
-              <span className="hero-eyebrow relative inline-flex h-9 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-[#ddd6fe] bg-[linear-gradient(135deg,#f5f3ff_0%,#ebe9fe_100%)] px-3.5 font-[family-name:var(--font-inter)] text-sm font-semibold leading-5 text-[#5b21b6] shadow-[inset_0_1px_#ffffffb3,inset_0_-1px_#5b21b60f,0_1px_2px_#5b21b614]">
-                <AutoAwesomeIcon className="size-[18px] shrink-0 text-[#5b21b6]" />
-                Layout AI
+              <span className="hero-eyebrow relative inline-flex h-7 items-center justify-center gap-1 overflow-hidden rounded-full border border-[#ddd6fe] bg-[linear-gradient(135deg,#f5f3ff_0%,#ebe9fe_100%)] px-2.5 font-[family-name:var(--font-inter)] text-xs font-semibold leading-4 text-[#5b21b6] shadow-[inset_0_1px_#ffffffb3,inset_0_-1px_#5b21b60f,0_1px_2px_#5b21b614]">
+                <AutoAwesomeIcon className="size-3.5 shrink-0 text-[#5b21b6]" />
+                {PRODUCT_NAME}
                 <span className="hero-eyebrow__shine" aria-hidden />
               </span>
 
               <h1 className="hero-title">
                 <span className="hero-title-lead">
-                  Let&apos;s create a layout that feels{" "}
+                  Let&apos;s create a layout that{" "}
+                  <span className="hero-title-phrase">
+                    feels <HeroAccent phrases={HERO_ACCENT_PHRASES} />
+                  </span>
                 </span>
-                <HeroAccent phrases={HERO_ACCENT_PHRASES} />
               </h1>
             </div>
 

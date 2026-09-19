@@ -39,9 +39,6 @@ export function isMultilinePlacedKind(kind: string): boolean {
  * table, and the generic "container" wrapper — return false.
  */
 export function isTextPlacedKind(kind: string): boolean {
-  if (kind.startsWith("columns-")) {
-    return true
-  }
   return (
     kind === "heading" ||
     kind === "paragraph" ||
@@ -60,8 +57,14 @@ export function getPlacedElementLayerKind(kind: string): BuilderLayerKind {
   if (kind === "image") {
     return "image"
   }
+  if (kind === "table") {
+    return "container"
+  }
   if (isStructuralPlacedKind(kind)) {
     return "structural"
+  }
+  if (kind === "container" || kind.startsWith("columns-")) {
+    return "container"
   }
   if (isTextPlacedKind(kind)) {
     return "text"

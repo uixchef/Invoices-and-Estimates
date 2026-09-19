@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import {
   PAYMENTS_HUB_DEFAULTS,
+  SHELL_UNAVAILABLE_LABEL,
   resolvePaymentsHubNavUrls,
   type PaymentsHubNavUrls,
 } from "@/lib/payment-hub-nav"
@@ -132,17 +133,18 @@ export function Topbar() {
                   }
 
                   return (
-                    <button
+                    <span
                       key={tab.id}
-                      type="button"
-                      className={primaryTabClassName(
-                        isActive,
-                        showTrailingChevron
+                      aria-disabled="true"
+                      title={SHELL_UNAVAILABLE_LABEL}
+                      className={cn(
+                        primaryTabClassName(isActive, showTrailingChevron),
+                        "pointer-events-none cursor-default"
                       )}
                     >
                       {label}
                       {trailingIcon}
-                    </button>
+                    </span>
                   )
                 })}
               </nav>
@@ -152,37 +154,41 @@ export function Topbar() {
               className="flex h-full shrink-0 items-center gap-3"
               aria-label="Global header actions"
             >
-              <button
-                type="button"
-                className="flex size-8 items-center justify-center rounded-lg p-1.5 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-                aria-label="Phone"
+              <span
+                className="flex size-8 items-center justify-center rounded-lg p-1.5"
+                title={SHELL_UNAVAILABLE_LABEL}
+                aria-label={`Phone. ${SHELL_UNAVAILABLE_LABEL}`}
+                role="img"
               >
                 <span className="relative flex size-5 items-center justify-center rounded-full bg-[#34d399]">
                   <Phone className="size-3 text-white" strokeWidth={2} />
                 </span>
-              </button>
-              <button
-                type="button"
-                className="flex size-8 items-center justify-center rounded-lg p-1.5 text-[#667085] hover:bg-slate-50 hover:text-[#101828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-                aria-label="Announcements"
+              </span>
+              <span
+                className="flex size-8 items-center justify-center rounded-lg p-1.5 text-[#667085]"
+                title={SHELL_UNAVAILABLE_LABEL}
+                aria-label={`Announcements. ${SHELL_UNAVAILABLE_LABEL}`}
+                role="img"
               >
                 <Megaphone className="size-5" strokeWidth={2} />
-              </button>
-              <button
-                type="button"
-                className="flex size-8 items-center justify-center rounded-lg p-1.5 text-[#667085] hover:bg-slate-50 hover:text-[#101828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-                aria-label="Help"
+              </span>
+              <span
+                className="flex size-8 items-center justify-center rounded-lg p-1.5 text-[#667085]"
+                title={SHELL_UNAVAILABLE_LABEL}
+                aria-label={`Help. ${SHELL_UNAVAILABLE_LABEL}`}
+                role="img"
               >
                 <HelpCircle className="size-5" strokeWidth={2} />
-              </button>
-              <button
-                type="button"
-                className="relative flex size-8 items-center justify-center rounded-lg p-1.5 text-[#667085] hover:bg-slate-50 hover:text-[#101828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#155eef]/40"
-                aria-label="Notifications"
+              </span>
+              <span
+                className="relative flex size-8 items-center justify-center rounded-lg p-1.5 text-[#667085]"
+                title={SHELL_UNAVAILABLE_LABEL}
+                aria-label={`Notifications. ${SHELL_UNAVAILABLE_LABEL}`}
+                role="img"
               >
                 <Bell className="size-5" strokeWidth={2} />
                 <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-[#f56565]" />
-              </button>
+              </span>
               <div
                 className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#d9d6fe] text-sm font-medium leading-5 text-[#475467]"
                 aria-hidden

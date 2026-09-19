@@ -15,7 +15,7 @@ import { useRouter } from "next/navigation"
 
 import { useHubToast } from "@/components/payment-hub/hub-toast"
 import { primeCompletionSound } from "@/lib/completion-sound"
-import { detectBuilderMediumFromText } from "@/lib/mediums-data"
+import { detectBuilderMediumFromText, getDefaultBuilderMediumId } from "@/lib/mediums-data"
 import {
   CREATE_WITH_AI_MEDIUM_REQUIRED_MESSAGE,
   type CreateWithAiGenerateInput,
@@ -27,36 +27,27 @@ import {
   type LayoutBuilderEditSeed,
   type LayoutBuilderSeed,
 } from "@/lib/layout-builder-types"
-
-const IMAGE_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-])
-
-const MAX_ATTACHMENTS = 5
-
-function createAttachment(file: File): PromptAttachment {
-  const usedForGeneration = IMAGE_MIME_TYPES.has(file.type)
-
-  return {
-    id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
-    file,
-    previewUrl: usedForGeneration ? URL.createObjectURL(file) : "",
-    name: file.name,
-    mimeType: file.type,
-    usedForGeneration,
-  }
-}
-
-function revokeAttachmentUrls(attachments: PromptAttachment[]) {
-  for (const attachment of attachments) {
-    if (attachment.previewUrl) {
-      URL.revokeObjectURL(attachment.previewUrl)
-    }
-  }
-}
+import { resolveGenerationPrompt } from "@/lib/composer-copy"
+import {
+  appendAttachments,
+  attachmentFeedbackMessages,
+  imageAttachmentsForSubmission,
+  imagePreviewForAttachment,
+  removeAttachmentById,
+  revokeAttachmentUrls,
+  revokePreviewUrl,
+} from "@/lib/prompt-attachments"
+import {
+  fileForPrimaryAnalysis,
+  primaryAfterAppend,
+  primaryAfterRemove,
+  resolvePrimaryReferenceId,
+} from "@/lib/reference-roles"
+import { snapshotComposerAttachments } from "@/lib/builder-attachments"
+import {
+  analyzeReferenceImage,
+  type ReferenceAnalysis,
+} from "@/lib/reference-layout"
 
 type CreateWithAiContextValue = {
   isOpen: boolean
@@ -68,6 +59,10 @@ type CreateWithAiContextValue = {
   attachments: PromptAttachment[]
   addAttachments: (files: File[]) => void
   removeAttachment: (id: string) => void
+  primaryReferenceId: string | null
+  setPrimaryReferenceId: (id: string) => void
+  mediumId: string
+  setMediumId: (id: string) => void
   generateLayout: (input: CreateWithAiGenerateRequest) => void
   /** Reads and clears the generation request queued for the builder route. */
   consumePendingGeneration: () => LayoutBuilderSeed | null
@@ -96,6 +91,10 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(true)
   const [prompt, setPrompt] = useState("")
   const [attachments, setAttachments] = useState<PromptAttachment[]>([])
+  const [primaryReferenceId, setPrimaryReferenceIdState] = useState<
+    string | null
+  >(null)
+  const [mediumId, setMediumId] = useState(() => getDefaultBuilderMediumId())
 
   attachmentsRef.current = attachments
 
@@ -108,83 +107,110 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    setAttachments((current) => {
-      const remaining = MAX_ATTACHMENTS - current.length
-      if (remaining <= 0) {
-        return current
-      }
-
-      return [...current, ...files.slice(0, remaining).map(createAttachment)]
-    })
-  }, [])
+    const result = appendAttachments(
+      attachmentsRef.current,
+      files,
+      imagePreviewForAttachment
+    )
+    setAttachments(result.next)
+    setPrimaryReferenceIdState((current) =>
+      primaryAfterAppend(current, result.next)
+    )
+    for (const message of attachmentFeedbackMessages(result)) {
+      showError(message)
+    }
+  }, [showError])
 
   const removeAttachment = useCallback((id: string) => {
     setAttachments((current) => {
-      const target = current.find((attachment) => attachment.id === id)
-      if (target?.previewUrl) {
-        URL.revokeObjectURL(target.previewUrl)
-      }
-
-      return current.filter((attachment) => attachment.id !== id)
+      const { next, removed } = removeAttachmentById(current, id)
+      revokePreviewUrl(removed?.previewUrl)
+      setPrimaryReferenceIdState((primary) => primaryAfterRemove(primary, next))
+      return next
     })
   }, [])
 
+  const setPrimaryReferenceId = useCallback((id: string) => {
+    setPrimaryReferenceIdState((current) =>
+      resolvePrimaryReferenceId(attachmentsRef.current, id) ?? current
+    )
+  }, [])
+
   const generateLayout = useCallback(
-    ({ mediumId, modelId }: CreateWithAiGenerateRequest) => {
-      const trimmedPrompt = prompt.trim()
-      const imageAttachments = attachments.filter(
-        (attachment) => attachment.usedForGeneration
+    async ({ mediumId: requestedMediumId, modelId }: CreateWithAiGenerateRequest) => {
+      const imageAttachments = imageAttachmentsForSubmission(attachments)
+      const trimmedPrompt = resolveGenerationPrompt(
+        prompt,
+        imageAttachments.length > 0
       )
 
-      if (!trimmedPrompt && imageAttachments.length === 0) {
+      if (!trimmedPrompt) {
         return
       }
 
-      if (!mediumId) {
+      const resolvedPickerId = requestedMediumId || mediumId
+      if (!resolvedPickerId) {
         showError(CREATE_WITH_AI_MEDIUM_REQUIRED_MESSAGE)
         return
       }
 
+      const resolvedPrimaryId = resolvePrimaryReferenceId(
+        attachments,
+        primaryReferenceId
+      )
+
       const payload: CreateWithAiGenerateInput = {
         prompt: trimmedPrompt,
         referenceImages: imageAttachments.map((attachment) => attachment.file),
-        mediumId,
+        primaryReferenceId: resolvedPrimaryId,
+        mediumId: resolvedPickerId,
         modelId,
       }
 
-      // Generation API will consume prompt + referenceImages as multimodal input.
       void payload
 
-      // Warm the audio context under this click so the builder's completion
-      // cue can play once the (timer-driven) first generation settles.
       primeCompletionSound()
 
-      // An explicit paper size in the prompt ("US letter", "legal size", …)
-      // wins over the picker selection: the prompt is the stronger signal of
-      // intent, so the builder opens on the size the user actually described.
       const resolvedMediumId =
-        detectBuilderMediumFromText(trimmedPrompt) ?? mediumId
+        detectBuilderMediumFromText(trimmedPrompt) ?? resolvedPickerId
 
-      // Hand the prompt off to the builder. Preview URLs are transferred to the
-      // builder session, so clear attachments without revoking them here.
+      let referenceAnalysis: ReferenceAnalysis | undefined
+      const primaryFile = fileForPrimaryAnalysis(attachments, resolvedPrimaryId)
+      if (primaryFile) {
+        try {
+          referenceAnalysis = await analyzeReferenceImage(primaryFile)
+        } catch {
+          referenceAnalysis = undefined
+        }
+      }
+
+      const submitted = await snapshotComposerAttachments(attachments)
+
       pendingGenerationRef.current = {
         prompt: trimmedPrompt,
         mediumId: resolvedMediumId,
         modelId,
-        references: imageAttachments.map((attachment) => ({
-          id: attachment.id,
-          name: attachment.name,
-          previewUrl: attachment.previewUrl,
-        })),
+        references: submitted
+          .filter((attachment) => attachment.kind === "image")
+          .map((attachment) => ({
+            id: attachment.id,
+            name: attachment.name,
+            previewUrl: attachment.previewUrl,
+          })),
+        attachments: submitted,
+        primaryReferenceId: resolvedPrimaryId,
+        referenceAnalysis,
       }
 
+      revokeAttachmentUrls(attachments)
       setAttachments([])
+      setPrimaryReferenceIdState(null)
       setPrompt("")
       setIsOpen(false)
 
       router.push(LAYOUT_BUILDER_ROUTE)
     },
-    [attachments, prompt, router, showError]
+    [attachments, mediumId, primaryReferenceId, prompt, router, showError]
   )
 
   const consumePendingGeneration = useCallback(() => {
@@ -245,6 +271,10 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
       attachments,
       addAttachments,
       removeAttachment,
+      primaryReferenceId,
+      setPrimaryReferenceId,
+      mediumId,
+      setMediumId,
       generateLayout,
       consumePendingGeneration,
       requestLayoutEdit,
@@ -261,9 +291,12 @@ export function CreateWithAiProvider({ children }: { children: ReactNode }) {
       requestLayoutEdit,
       generateLayout,
       isOpen,
+      mediumId,
       open,
+      primaryReferenceId,
       prompt,
       removeAttachment,
+      setPrimaryReferenceId,
       toggle,
       startBlankLayout,
       consumePendingBlank,

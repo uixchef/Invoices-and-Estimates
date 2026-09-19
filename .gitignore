@@ -13,6 +13,20 @@
 # testing
 /coverage
 
+# Playwright / e2e routine QA output (regenerable; not committed).
+# Curated portfolio/case-study stills or walkthroughs can still be
+# force-added with `git add -f <path>` when intentionally retained.
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+# Intermediate per-test videos left behind by capture-* scripts
+# (each script keeps only walkthrough.webm; these are leftovers).
+artifacts/**/page@*.webm
+# Runtime-generated fixture copies (identical to public/demo assets;
+# regenerated on demand by the capture scripts' fixtures() helper).
+artifacts/**/fixtures/
+
 # next.js
 /.next/
 /out/

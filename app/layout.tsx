@@ -26,8 +26,8 @@ const inter = Inter({
 const newsreader = Newsreader({
   variable: "--font-newsreader",
   subsets: ["latin"],
-  weight: ["500", "600"],
-  style: ["italic"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
 })
 
 const instrumentSerif = Instrument_Serif({
@@ -40,6 +40,14 @@ const instrumentSerif = Instrument_Serif({
 export const metadata: Metadata = {
   title: "Invoice Layouts | Payment Hub",
   description: "Configure invoice templates within the Payments hub",
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
 }
 
 export default function RootLayout({

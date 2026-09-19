@@ -19,6 +19,7 @@ import {
   getDeleteSuccessMessage,
 } from "@/lib/delete-confirmation-copy"
 import { useLayoutPreview } from "@/lib/layout-preview-context"
+import { useLayoutCatalogOptional } from "@/lib/layout-catalog-context"
 import type { LayoutRow } from "@/lib/layouts-data"
 
 type LayoutDeleteContextValue = {
@@ -31,6 +32,7 @@ const LayoutDeleteContext = createContext<LayoutDeleteContextValue | null>(null)
 export function LayoutDeleteProvider({ children }: { children: ReactNode }) {
   const { showSuccess } = useHubToast()
   const { layout: previewLayout, close: closePreview } = useLayoutPreview()
+  const catalog = useLayoutCatalogOptional()
   const [pendingDelete, setPendingDelete] = useState<LayoutRow | null>(null)
   const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set())
 
@@ -49,13 +51,15 @@ export function LayoutDeleteProvider({ children }: { children: ReactNode }) {
       return next
     })
 
+    catalog?.removeRecord(pendingDelete.id)
+
     if (previewLayout?.id === pendingDelete.id) {
       closePreview()
     }
 
     showSuccess(getDeleteSuccessMessage("layout", pendingDelete.name))
     setPendingDelete(null)
-  }, [closePreview, pendingDelete, previewLayout?.id, showSuccess])
+  }, [catalog, closePreview, pendingDelete, previewLayout?.id, showSuccess])
 
   const requestDelete = useCallback((layout: LayoutRow) => {
     setPendingDelete(layout)

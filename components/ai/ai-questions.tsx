@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { ChevronDown, ChevronLeft, CornerDownLeft } from "lucide-react"
 
 import {
@@ -10,6 +10,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import {
+  CONTINUE_LABEL,
+  USE_YOUR_JUDGMENT_LABEL,
+  clarificationContinueEnabled,
+} from "@/lib/clarification-copy"
+import {
+  clarificationSequenceState,
+  clarificationStepperStates,
+} from "@/lib/clarification"
 
 /**
  * Figma: HighRise AI — "Questions" / Prompt Stencil (User Input Form) (37815:27411)
@@ -494,7 +503,11 @@ type AiQuestionsProps = {
    */
   docked?: boolean
   onComplete: (answers: AiAnswers) => void
-  onSkip?: () => void
+  onUseJudgment?: () => void
+  /** Questions already answered in earlier rounds of this clarification plan. */
+  progressAskedCount?: number
+  /** Askable candidates remaining in the current planning pass, including this round. */
+  progressAskableCount?: number
   className?: string
 }
 
@@ -503,7 +516,9 @@ export function AiQuestions({
   title = "Questions",
   docked = false,
   onComplete,
-  onSkip,
+  onUseJudgment,
+  progressAskedCount,
+  progressAskableCount,
   className,
 }: AiQuestionsProps) {
   const [answers, setAnswers] = useState<AiAnswers>(() =>
@@ -512,20 +527,16 @@ export function AiQuestions({
   const [otherText, setOtherText] = useState<Record<string, string>>({})
   const [activeIndex, setActiveIndex] = useState(0)
 
-  const total = questions.length
+  const roundTotal = questions.length
   const activeQuestion = questions[activeIndex]
-
-  const canContinue = useMemo(() => {
-    if (!activeQuestion) {
-      return false
-    }
-    if (!activeQuestion.required) {
-      return true
-    }
-    return isAnswered(activeQuestion, answers)
-  }, [activeQuestion, answers])
-
-  const isLast = activeIndex >= total - 1
+  const canContinue = clarificationContinueEnabled(activeQuestion, answers)
+  const isLast = activeIndex >= roundTotal - 1
+  const sequence = clarificationSequenceState({
+    askedCount: progressAskedCount ?? 0,
+    askableCount: progressAskableCount ?? roundTotal,
+    activeIndex,
+  })
+  const stepper = clarificationStepperStates(sequence.current, sequence.total)
 
   const mergeOtherText = (current: AiAnswers): AiAnswers => {
     const next: AiAnswers = { ...current }
@@ -561,13 +572,32 @@ export function AiQuestions({
       onComplete(mergeOtherText(answers))
       return
     }
-    setActiveIndex((index) => Math.min(index + 1, total - 1))
+    setActiveIndex((index) => Math.min(index + 1, roundTotal - 1))
   }
 
   const goPrev = () => setActiveIndex((index) => Math.max(index - 1, 0))
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.shiftKey) {
+        return
+      }
+      const target = event.target as HTMLElement | null
+      if (target && ["TEXTAREA", "INPUT"].includes(target.tagName)) {
+        return
+      }
+      if (canContinue) {
+        event.preventDefault()
+        handleContinue()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  })
+
   return (
     <div
+      data-clarification-card=""
       className={cn(
         "flex w-full flex-col overflow-hidden border border-[#bdb4fe] font-[family-name:var(--font-inter)]",
         "bg-gradient-to-b from-[#ebe9fe] to-[#fafaff]",
@@ -594,23 +624,21 @@ export function AiQuestions({
             </span>
           </div>
           <span className="shrink-0 text-sm font-medium leading-5 text-[#475467]">
-            {activeIndex + 1} of {total}
+            {sequence.current} of {sequence.total}
           </span>
         </div>
 
-        {/* Pill Progress Steps (Figma 3399:51744) — feedforward for how many
-            questions remain. Completed steps read purple/300, the current step
-            purple/600, and upcoming steps gray/300. */}
-        {total > 1 ? (
+        {sequence.total > 1 ? (
           <div className="flex items-center gap-1" aria-hidden>
-            {questions.map((question, index) => (
+            {stepper.map((state, index) => (
               <span
-                key={question.id}
+                key={index}
+                data-stepper-state={state}
                 className={cn(
                   "h-0.5 flex-1 rounded-full transition-colors",
-                  index < activeIndex
+                  state === "completed"
                     ? "bg-[#bdb4fe]"
-                    : index === activeIndex
+                    : state === "current"
                       ? "bg-[#6938ef]"
                       : "bg-[#d0d5dd]"
                 )}
@@ -646,42 +674,44 @@ export function AiQuestions({
         ) : null}
       </div>
 
-      <div className="flex shrink-0 items-center justify-between gap-1 bg-[#fafaff] px-4 pb-4 pt-3">
+      <div className="flex h-auto shrink-0 flex-nowrap items-center justify-end gap-1 bg-[#fafaff] px-4 pb-4 pt-3">
         <button
           type="button"
           onClick={goPrev}
           disabled={activeIndex === 0}
           className={cn(
-            "flex h-8 items-center justify-center gap-1 rounded-[4px] pl-1.5 pr-2.5 text-[13px] font-semibold leading-[18px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#bdb4fe]",
+            "mr-auto flex h-8 shrink-0 items-center justify-center gap-1 rounded-[4px] pl-1.5 pr-2.5 text-[13px] font-semibold leading-[18px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#bdb4fe]",
             activeIndex === 0
-              ? "invisible"
+              ? "hidden"
               : "text-[#475467] hover:bg-[#ffffff80]"
           )}
         >
           <ChevronLeft className="size-4" aria-hidden />
           Back
         </button>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={onSkip}
-            className="flex h-8 items-center justify-center rounded-[4px] px-2.5 text-[13px] font-semibold leading-[18px] text-[#5925dc] outline-none transition-colors hover:bg-[#ffffff80] focus-visible:ring-2 focus-visible:ring-[#bdb4fe]"
-          >
-            Skip
-          </button>
+        <div className="ml-auto flex h-8 shrink-0 items-center gap-1">
+          {onUseJudgment ? (
+            <button
+              type="button"
+              onClick={onUseJudgment}
+              className="flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-[4px] px-2.5 text-[13px] font-semibold leading-[18px] text-[#5925dc] outline-none transition-colors hover:bg-[#ffffff80] focus-visible:ring-2 focus-visible:ring-[#bdb4fe]"
+            >
+              {USE_YOUR_JUDGMENT_LABEL}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={handleContinue}
             disabled={!canContinue}
             className={cn(
-              "flex h-8 items-center justify-center gap-2 rounded-[4px] border px-2.5 text-[13px] font-semibold leading-[18px] text-white outline-none transition-colors",
+              "flex h-8 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[4px] border px-2.5 text-[13px] font-semibold leading-[18px] text-white outline-none transition-colors",
               "shadow-[0px_1px_2px_0px_rgba(16,24,40,0.05)] focus-visible:ring-2 focus-visible:ring-[#bdb4fe]",
               canContinue
                 ? "border-[#6938ef] bg-[#6938ef] hover:bg-[#5925dc]"
                 : "cursor-not-allowed border-[#d9d6fe] bg-[#d9d6fe]"
             )}
           >
-            {isLast ? "Done" : "Continue"}
+            {CONTINUE_LABEL}
             <CornerDownLeft className="size-4" aria-hidden />
           </button>
         </div>
@@ -689,3 +719,4 @@ export function AiQuestions({
     </div>
   )
 }
+
